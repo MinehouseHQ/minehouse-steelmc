@@ -15,7 +15,8 @@ pub use api::{
     CommandArgument, CommandArgumentParser, CommandContext, CommandError, CommandNode,
     CommandParserSource, CommandReader, CommandReaderCursor, CommandRegistration,
     CommandRegistrationError, CommandRegistry, CommandSource, CommandSuggestionContext,
-    CommandSuggestions, SuspendedCommand, SuspendedCommandPoll, argument, literal,
+    CommandSuggestions, DetachedCommandSource, SuspendedCommand, SuspendedCommandPoll, argument,
+    literal,
 };
 pub use execution::CommandSuspensionOrder;
 
