@@ -1067,7 +1067,7 @@ impl Raid {
                             0.0,
                             0.0,
                         );
-                        rider.start_riding(&entity);
+                        rider.start_riding(&entity, false);
                     }
                 }
             }

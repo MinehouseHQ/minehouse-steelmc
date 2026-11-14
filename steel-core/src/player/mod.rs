@@ -65,7 +65,7 @@ use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
-    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
+    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CPlayerRotation, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
     LookAtAnchor, RelativeMovement, SoundSource,
 };
@@ -117,7 +117,7 @@ use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
     EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, get_kill_credit, start_riding_entities,
+    apply_entity_look_at, apply_force_set_rotation, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -1499,6 +1499,16 @@ impl Entity for Player {
         ));
     }
 
+    fn force_set_rotation(&self, yaw: f32, relative_yaw: bool, pitch: f32, relative_pitch: bool) {
+        apply_force_set_rotation(self, (yaw, relative_yaw), (pitch, relative_pitch));
+        self.send_packet(CPlayerRotation {
+            y_rot: yaw,
+            relative_y: relative_yaw,
+            x_rot: pitch,
+            relative_x: relative_pitch,
+        });
+    }
+
     fn look_at_entity(
         &self,
         from_anchor: EntityAnchor,
@@ -1559,14 +1569,14 @@ impl Entity for Player {
         self.teleport(pos, yaw, pitch)
     }
 
-    fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
+    fn start_riding(&self, entity_to_ride: &SharedEntity, force: bool) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
         let Some(passenger) = world.get_entity_by_id(self.id()) else {
             return false;
         };
-        if !start_riding_entities(&passenger, entity_to_ride) {
+        if !start_riding_entities(&passenger, entity_to_ride, force) {
             return false;
         }
 

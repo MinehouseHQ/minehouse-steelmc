@@ -49,7 +49,7 @@ fn can_use_portal_respects_passenger_gate() {
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
-    assert!(start_riding_entities(&passenger, &vehicle));
+    assert!(start_riding_entities(&passenger, &vehicle, false));
 
     assert!(!passenger.can_use_portal(false));
     assert!(passenger.can_use_portal(true));

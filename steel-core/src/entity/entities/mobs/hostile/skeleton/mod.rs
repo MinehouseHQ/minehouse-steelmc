@@ -846,7 +846,7 @@ impl SkeletonEntity {
             && let Some(vehicle) = world.get_entity_by_id(vehicle_id)
             && !vehicle.is_removed()
         {
-            let _ = self.start_riding(&vehicle);
+            let _ = self.start_riding(&vehicle, false);
         }
         if self.level().is_none() || !LivingEntity::is_alive(self) || self.is_no_ai() {
             return;

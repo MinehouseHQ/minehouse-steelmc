@@ -336,7 +336,7 @@ pub trait AbstractNautilus: TamableAnimal + PathfinderMob {
         if let Some(world) = self.level()
             && let Some(vehicle) = world.get_entity_by_id(self.id())
         {
-            let _ = player.start_riding(&vehicle);
+            let _ = player.start_riding(&vehicle, false);
         }
         if !self.is_vehicle() {
             self.clear_home();

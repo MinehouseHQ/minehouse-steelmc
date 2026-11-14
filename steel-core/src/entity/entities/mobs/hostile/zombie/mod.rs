@@ -867,7 +867,7 @@ macro_rules! impl_zombie_traits {
                 if let Some(mount) = mount
                     && !mount.is_removed()
                 {
-                    let _ = self.start_riding(&mount);
+                    let _ = self.start_riding(&mount, false);
                 }
                 let entity = Arc::clone(&self).into_shared_entity();
                 if let Some(living) = entity.as_living_entity() {

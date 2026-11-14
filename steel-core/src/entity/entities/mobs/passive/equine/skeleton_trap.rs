@@ -98,7 +98,7 @@ impl Goal for SkeletonTrapGoal {
         if world.try_add_entity(Arc::clone(&skeleton)).is_err() {
             return;
         }
-        let _ = start_riding_entities(&skeleton, entity);
+        let _ = start_riding_entities(&skeleton, entity, false);
 
         let mut random = LegacyRandom::from_seed(rand::random());
         for _ in 0..EXTRA_HORSEMEN {
@@ -117,7 +117,7 @@ impl Goal for SkeletonTrapGoal {
                 continue;
             }
             if world.try_add_entity(Arc::clone(&other_skeleton)).is_ok() {
-                let _ = start_riding_entities(&other_skeleton, &other_horse);
+                let _ = start_riding_entities(&other_skeleton, &other_horse, false);
             }
         }
     }

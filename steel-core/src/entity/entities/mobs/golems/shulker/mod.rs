@@ -677,7 +677,7 @@ impl Entity for ShulkerEntity {
         LivingEntity::is_alive(self)
     }
 
-    fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
+    fn start_riding(&self, entity_to_ride: &SharedEntity, force: bool) -> bool {
         self.set_attach_face(Direction::Down);
         let Some(world) = self.level() else {
             return false;
@@ -685,7 +685,7 @@ impl Entity for ShulkerEntity {
         let Some(passenger) = world.get_entity_by_id(self.id()) else {
             return false;
         };
-        start_riding_entities(&passenger, entity_to_ride)
+        start_riding_entities(&passenger, entity_to_ride, force)
     }
 
     fn stop_riding(&self) {

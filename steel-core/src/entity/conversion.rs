@@ -142,12 +142,12 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
             passenger.set_removed(RemovalReason::Discarded);
         }
 
-        start_riding_entities(&root_passenger, to_arc);
+        start_riding_entities(&root_passenger, to_arc, false);
     }
 
     if let Some(vehicle) = from.vehicle() {
         from.stop_riding();
-        start_riding_entities(to_arc, &vehicle);
+        start_riding_entities(to_arc, &vehicle, false);
     }
 
     if params.keep_equipment {
@@ -435,7 +435,7 @@ mod tests {
         let pig = add_pig(world);
         let passenger = add_pig(world);
         assert!(
-            passenger.start_riding(&pig),
+            passenger.start_riding(&pig, false),
             "passenger should ride the pig"
         );
         assert_eq!(pig.first_passenger().map(|p| p.id()), Some(passenger.id()));
@@ -552,7 +552,7 @@ mod tests {
         let source = add_pig(world);
         let passenger = add_pig(world);
         assert!(
-            passenger.start_riding(&source),
+            passenger.start_riding(&source, false),
             "the passenger should ride the source"
         );
 
@@ -586,7 +586,7 @@ mod tests {
         let source = add_pig(world);
         let vehicle = add_pig(world);
         assert!(
-            source.start_riding(&vehicle),
+            source.start_riding(&vehicle, false),
             "the source should ride its vehicle"
         );
 

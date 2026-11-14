@@ -452,7 +452,7 @@ pub trait AbstractBoat: VehicleEntity + Leashable {
         else {
             return InteractionResult::Pass;
         };
-        if player.start_riding(&boat) {
+        if player.start_riding(&boat, false) {
             InteractionResult::Success
         } else {
             InteractionResult::Pass
@@ -650,7 +650,7 @@ fn push_and_board_entities<B: AbstractBoat>(boat: &Arc<B>) {
                 &EntityTypeTag::CANNOT_BE_PUSHED_ONTO_BOATS,
             )
         {
-            entity.start_riding(&vehicle);
+            entity.start_riding(&vehicle, false);
         } else {
             boat.push_entity(entity.as_ref());
         }

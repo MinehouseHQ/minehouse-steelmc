@@ -27,6 +27,8 @@ mod perms;
 mod playsound;
 mod position;
 mod return_command;
+mod ride;
+mod rotate;
 mod save;
 mod seed;
 mod setblock;
@@ -104,6 +106,8 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(ride::registration())?;
+    builder.register(rotate::registration())?;
     builder.register(save::save_all_registration())?;
     builder.register(save::save_off_registration())?;
     builder.register(save::save_on_registration())?;
@@ -201,6 +205,8 @@ mod tests {
                 "perms",
                 "playsound",
                 "return",
+                "ride",
+                "rotate",
                 "save-all",
                 "save-off",
                 "save-on",
