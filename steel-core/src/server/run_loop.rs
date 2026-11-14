@@ -143,6 +143,10 @@ impl Server {
             Ok(saved) => log::info!("Saved {saved} domain boss bar sets"),
             Err(error) => log::error!("Failed to save domain boss bars: {error}"),
         }
+        match command_data.random_sequences {
+            Ok(saved) => log::info!("Saved {saved} domain random sequence sets"),
+            Err(error) => log::error!("Failed to save domain random sequences: {error}"),
+        }
         match self.worlds.save_maps() {
             Ok(saved) => log::info!("Saved {saved} maps"),
             Err(error) => log::error!("Failed to save maps: {error}"),

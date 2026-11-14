@@ -106,6 +106,10 @@ impl Server {
             log::error!("Failed to save domain boss bars: {error}");
             result.success = false;
         }
+        if let Err(error) = command_data.random_sequences {
+            log::error!("Failed to save domain random sequences: {error}");
+            result.success = false;
+        }
         if let Err(error) = self.worlds.save_maps() {
             log::error!("Failed to save maps: {error}");
             result.success = false;

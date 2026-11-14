@@ -70,6 +70,7 @@ use crate::portal::{
     end_gateway, end_portal, nether_portal,
 };
 pub use crate::portal::{PreparedSpawn, WorldEntry};
+use crate::random_sequences::DomainRandomSequences;
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
@@ -158,6 +159,8 @@ pub struct CommandDataSaveResults {
     pub storage: io::Result<usize>,
     /// Number of changed domain `/bossbar` sets written, or the save error.
     pub boss_events: io::Result<usize>,
+    /// Number of changed domain `/random` sequence sets written, or the save error.
+    pub random_sequences: io::Result<usize>,
 }
 
 mod known_players;
@@ -214,6 +217,9 @@ pub async fn test_server_with_worlds_and_config(
     let custom_boss_events = DomainCustomBossEvents::load(&worlds)
         .await
         .map_err(|error| format!("test boss bars should load: {error}"))?;
+    let random_sequences = DomainRandomSequences::load(&worlds)
+        .await
+        .map_err(|error| format!("test random sequences should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -262,6 +268,7 @@ pub async fn test_server_with_worlds_and_config(
         scoreboards,
         command_storage,
         custom_boss_events,
+        random_sequences,
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
@@ -509,6 +516,8 @@ pub struct Server {
     pub(crate) command_storage: DomainCommandStorage,
     /// `/bossbar` boss bars isolated by Steel domain.
     pub custom_boss_events: DomainCustomBossEvents,
+    /// `/random` sequences isolated by Steel domain.
+    pub random_sequences: DomainRandomSequences,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -828,6 +837,9 @@ impl Server {
         let custom_boss_events = DomainCustomBossEvents::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain boss bars: {error}"))?;
+        let random_sequences = DomainRandomSequences::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain random sequences: {error}"))?;
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -860,6 +872,7 @@ impl Server {
             scoreboards,
             command_storage,
             custom_boss_events,
+            random_sequences,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
@@ -906,6 +919,7 @@ impl Server {
             scoreboards: self.scoreboards.save(&self.worlds).await,
             storage: self.save_command_storage().await,
             boss_events: self.custom_boss_events.save(&self.worlds).await,
+            random_sequences: self.random_sequences.save(&self.worlds).await,
         }
     }
 

@@ -34,6 +34,7 @@ use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
     vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS, vanilla_items,
 };
+use steel_utils::random::{Random as _, xoroshiro::Xoroshiro};
 use steel_utils::{BlockPos, ChunkPos, Identifier, UuidExt as _, translations, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
@@ -55,6 +56,7 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
+use crate::random_sequences::SeedDefaults;
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -5377,5 +5379,56 @@ fn forceload_adds_queries_and_removes_forced_chunks() {
 
         run_command(&server, console(), "forceload remove all");
         assert_eq!(forced().len(), 0);
+    });
+}
+
+#[test]
+fn random_draws_from_named_sequences_and_resets_them() {
+    let world_fixture = fresh_test_world("random");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await else {
+            panic!("test server should initialize");
+        };
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let Some(sequences) = server.random_sequences.get(world.domain()) else {
+            panic!("the test domain should have random sequences");
+        };
+        let dice = Identifier::from_steel("dice");
+
+        run_command(&server, console(), "random value 1..6 steel:dice");
+        run_command(&server, console(), "random roll 1..6 steel:dice");
+        // A bare value does not touch the named sequences.
+        run_command(&server, console(), "random value 1..6");
+        assert_eq!(sequences.ids(), slice::from_ref(&dice));
+
+        // Resetting with explicit settings restarts the same stream each time.
+        run_command(&server, console(), "random reset steel:dice 9 false true");
+        let first = sequences.draw(&dice, world.seed(), Xoroshiro::next_i64);
+        run_command(&server, console(), "random reset steel:dice 9 false");
+        assert_eq!(
+            sequences.draw(&dice, world.seed(), Xoroshiro::next_i64),
+            first
+        );
+
+        // Empty and oversized ranges fail without creating a sequence.
+        run_command(&server, console(), "random value 3..3 steel:coin");
+        run_command(&server, console(), "random value ..5 steel:coin");
+        assert_eq!(sequences.ids(), slice::from_ref(&dice));
+
+        run_command(&server, console(), "random reset * 5 false false");
+        assert_eq!(sequences.ids().len(), 0);
+        assert_eq!(
+            sequences.seed_defaults(),
+            SeedDefaults {
+                salt: 5,
+                include_world_seed: false,
+                include_sequence_id: false,
+            }
+        );
     });
 }
