@@ -45,7 +45,24 @@ pub fn slot_changed_crafting_grid<R: Container>(
 /// in the grid attached the way vanilla recipes read it through `Level.getMapData`.
 #[must_use]
 pub fn positioned_input(crafting: &CraftingContainer, world: &World) -> PositionedCraftingInput {
-    let mut positioned = crafting.as_positioned_input();
+    positioned_grid_input(
+        crafting.width(),
+        crafting.height(),
+        crafting.items().to_vec(),
+        world,
+    )
+}
+
+/// [`positioned_input`] for a crafting grid held outside a [`CraftingContainer`],
+/// like a crafter's slots.
+#[must_use]
+pub fn positioned_grid_input(
+    width: usize,
+    height: usize,
+    items: Vec<ItemStack>,
+    world: &World,
+) -> PositionedCraftingInput {
+    let mut positioned = CraftingInput::positioned(width, height, items);
     let map_data: Vec<(usize, MapRecipeData)> = positioned
         .input
         .items
@@ -173,8 +190,15 @@ pub fn get_remaining_items(
 ) -> Option<(Vec<ItemStack>, PositionedCraftingInput)> {
     let positioned = positioned_input(crafting, world);
     let recipe = find_recipe(&positioned.input)?;
-    let mut remainders: Vec<_> = positioned
-        .input
+    let remainders = recipe_remainders(recipe, &positioned.input);
+    Some((remainders, positioned))
+}
+
+/// Vanilla `CraftingRecipe.getRemainingItems`: what stays behind in each slot
+/// of `input` after crafting `recipe`.
+#[must_use]
+pub fn recipe_remainders(recipe: CraftingRecipeRef, input: &CraftingInput) -> Vec<ItemStack> {
+    let mut remainders: Vec<_> = input
         .items
         .iter()
         .map(|stack| {
@@ -188,7 +212,7 @@ pub fn get_remaining_items(
 
     match recipe.data() {
         CraftingRecipe::BannerDuplicate(_) => {
-            for (slot, stack) in positioned.input.items.iter().enumerate() {
+            for (slot, stack) in input.items.iter().enumerate() {
                 if remainders[slot].is_empty()
                     && stack
                         .get(BANNER_PATTERNS)
@@ -199,7 +223,7 @@ pub fn get_remaining_items(
             }
         }
         CraftingRecipe::BookCloning(_) => {
-            for (slot, stack) in positioned.input.items.iter().enumerate() {
+            for (slot, stack) in input.items.iter().enumerate() {
                 if remainders[slot].is_empty() && stack.has(WRITTEN_BOOK_CONTENT) {
                     remainders[slot] = stack.copy_with_count(1);
                     break;
@@ -209,7 +233,7 @@ pub fn get_remaining_items(
         _ => {}
     }
 
-    Some((remainders, positioned))
+    remainders
 }
 
 fn assemble_dye(recipe: &DyeRecipe, input: &CraftingInput) -> ItemStack {

@@ -32,7 +32,7 @@ use steel_registry::{
 use steel_utils::{Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
-use crate::inventory::menu::kinds::{InventoryKind, MerchantKind};
+use crate::inventory::menu::kinds::{CrafterKind, InventoryKind, MerchantKind};
 use crate::{
     entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
@@ -246,6 +246,16 @@ impl Menu {
         };
         let mut guard = self.behavior.lock_all_containers();
         kind.select_trade(&self.behavior, &mut guard, index);
+    }
+
+    /// Vanilla `handleContainerSlotStateChanged` on a crafter menu: enables or
+    /// disables an empty grid slot. A no-op for any other menu.
+    pub(crate) fn set_crafter_slot_state(&mut self, slot: usize, enabled: bool) {
+        let Some(kind) = self.kind.downcast_ref::<CrafterKind>() else {
+            return;
+        };
+        let mut guard = self.behavior.lock_all_containers();
+        kind.set_slot_state(&mut guard, slot, enabled);
     }
 
     /// Recomputes the base inventory menu's crafting result. A no-op for any

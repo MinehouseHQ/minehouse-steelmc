@@ -354,6 +354,54 @@ impl PropertyEnum for FrontAndTop {
     }
 }
 
+impl FrontAndTop {
+    /// Vanilla `FrontAndTop.fromFrontAndTop`: the value with `front` and
+    /// `top`, or `None` for a pair vanilla has no value for.
+    #[must_use]
+    pub const fn from_front_and_top(front: Direction, top: Direction) -> Option<Self> {
+        Some(match (front, top) {
+            (Direction::Down, Direction::East) => Self::DownEast,
+            (Direction::Down, Direction::North) => Self::DownNorth,
+            (Direction::Down, Direction::South) => Self::DownSouth,
+            (Direction::Down, Direction::West) => Self::DownWest,
+            (Direction::Up, Direction::East) => Self::UpEast,
+            (Direction::Up, Direction::North) => Self::UpNorth,
+            (Direction::Up, Direction::South) => Self::UpSouth,
+            (Direction::Up, Direction::West) => Self::UpWest,
+            (Direction::West, Direction::Up) => Self::WestUp,
+            (Direction::East, Direction::Up) => Self::EastUp,
+            (Direction::North, Direction::Up) => Self::NorthUp,
+            (Direction::South, Direction::Up) => Self::SouthUp,
+            _ => return None,
+        })
+    }
+
+    /// Vanilla `FrontAndTop.front`.
+    #[must_use]
+    pub const fn front(self) -> Direction {
+        match self {
+            Self::DownEast | Self::DownNorth | Self::DownSouth | Self::DownWest => Direction::Down,
+            Self::UpEast | Self::UpNorth | Self::UpSouth | Self::UpWest => Direction::Up,
+            Self::WestUp => Direction::West,
+            Self::EastUp => Direction::East,
+            Self::NorthUp => Direction::North,
+            Self::SouthUp => Direction::South,
+        }
+    }
+
+    /// Vanilla `FrontAndTop.top`.
+    #[must_use]
+    pub const fn top(self) -> Direction {
+        match self {
+            Self::DownEast | Self::UpEast => Direction::East,
+            Self::DownNorth | Self::UpNorth => Direction::North,
+            Self::DownSouth | Self::UpSouth => Direction::South,
+            Self::DownWest | Self::UpWest => Direction::West,
+            Self::WestUp | Self::EastUp | Self::NorthUp | Self::SouthUp => Direction::Up,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq, Eq)]
 pub enum AttachFace {
