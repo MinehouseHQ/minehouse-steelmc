@@ -5157,3 +5157,53 @@ fn autosave_writes_changed_chunks_and_save_off_stops_it() {
         server.finish_save_writes().await;
     });
 }
+
+#[test]
+fn kick_disconnects_with_the_default_or_given_reason() {
+    let world_fixture = fresh_test_world("kick");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) =
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 2).await
+        else {
+            panic!("test server should initialize");
+        };
+        let mut reasons = Vec::new();
+        for (index, name) in ["Alice", "Bob"].into_iter().enumerate() {
+            let id = i32::try_from(index).unwrap_or_default() + 1;
+            let handles = test_connection();
+            let player = test_player_with_connection(
+                &server,
+                Arc::clone(world),
+                name,
+                id,
+                Arc::clone(&handles.connection),
+            );
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            reasons.push(handles.disconnect_reason);
+        }
+        let [alice_reason, bob_reason] = reasons.as_slice() else {
+            panic!("both players should join");
+        };
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        run_command(&server, console(), "kick Alice");
+        assert_eq!(
+            alice_reason.lock().clone(),
+            Some(TextComponent::from(
+                &translations::MULTIPLAYER_DISCONNECT_KICKED
+            ))
+        );
+        assert_eq!(bob_reason.lock().clone(), None);
+
+        run_command(&server, console(), "kick Bob griefing the spawn");
+        assert_eq!(
+            bob_reason.lock().clone(),
+            Some(TextComponent::plain("griefing the spawn"))
+        );
+    });
+}
