@@ -16,7 +16,7 @@ use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _, vanilla_game_events, vanilla_particle_types,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Direction, Identifier, UuidExt as _};
+use steel_utils::{BlockPos, ChunkPos, Direction, Identifier, UuidExt as _};
 use uuid::Uuid;
 
 use super::{GameEventContext, GameEventListener};
@@ -95,6 +95,35 @@ pub fn game_event_frequency(event: GameEventRef) -> i32 {
         .iter()
         .find(|(candidate, _)| candidate.key == event.key)
         .map_or(0, |(_, frequency)| *frequency)
+}
+
+/// Vanilla `getResonanceEventByFrequency`: the resonate event for a
+/// frequency from 1 to 15.
+///
+/// # Panics
+/// If `frequency` is outside 1 to 15, like vanilla's array lookup.
+#[must_use]
+pub fn resonance_event_by_frequency(frequency: i32) -> GameEventRef {
+    use vanilla_game_events as e;
+    const EVENTS: [&GameEvent; 15] = [
+        &e::RESONATE_1,
+        &e::RESONATE_2,
+        &e::RESONATE_3,
+        &e::RESONATE_4,
+        &e::RESONATE_5,
+        &e::RESONATE_6,
+        &e::RESONATE_7,
+        &e::RESONATE_8,
+        &e::RESONATE_9,
+        &e::RESONATE_10,
+        &e::RESONATE_11,
+        &e::RESONATE_12,
+        &e::RESONATE_13,
+        &e::RESONATE_14,
+        &e::RESONATE_15,
+    ];
+    let index = usize::try_from(frequency - 1).expect("resonance frequency is 1 to 15");
+    EVENTS[index]
 }
 
 /// Vanilla `getRedstoneStrengthForDistance`.
@@ -401,6 +430,12 @@ pub trait VibrationUser: Send + Sync {
         false
     }
 
+    /// Vanilla `requiresAdjacentChunksToBeTicking`: whether a vibration is
+    /// only received while the chunks around the listener tick blocks.
+    fn requires_adjacent_chunks_to_be_ticking(&self) -> bool {
+        false
+    }
+
     /// Vanilla `calculateTravelTimeInTicks`.
     fn calculate_travel_time_in_ticks(&self, distance_to_destination: f32) -> i32 {
         distance_to_destination.floor() as i32
@@ -448,10 +483,18 @@ pub trait VibrationSystem: VibrationUser {
     fn vibration_data(&self) -> &SyncMutex<VibrationData>;
 }
 
-/// Vanilla `VibrationSystem.Listener`, attached to an entity that is a
-/// [`VibrationSystem`].
+/// Vanilla `VibrationSystem.Listener`, attached to an entity or a block
+/// entity that is a [`VibrationSystem`].
 pub struct VibrationListener {
-    owner: Weak<dyn Entity>,
+    owner: VibrationOwner,
+}
+
+/// Who a [`VibrationListener`] hears for.
+enum VibrationOwner {
+    /// An entity that returns itself from [`Entity::as_vibration_system`].
+    Entity(Weak<dyn Entity>),
+    /// A vibration system owned directly, like a sculk sensor's.
+    System(Weak<dyn VibrationSystem>),
 }
 
 impl VibrationListener {
@@ -460,13 +503,26 @@ impl VibrationListener {
     #[must_use]
     pub fn new(owner: &SharedEntity) -> Self {
         Self {
-            owner: Arc::downgrade(owner),
+            owner: VibrationOwner::Entity(Arc::downgrade(owner)),
+        }
+    }
+
+    /// Creates a listener for a vibration system that is not an entity.
+    #[must_use]
+    pub fn for_system(system: &Arc<dyn VibrationSystem>) -> Self {
+        Self {
+            owner: VibrationOwner::System(Arc::downgrade(system)),
         }
     }
 
     fn with_system<R>(&self, f: impl FnOnce(&dyn VibrationSystem) -> R) -> Option<R> {
-        let owner = self.owner.upgrade()?;
-        owner.as_vibration_system().map(f)
+        match &self.owner {
+            VibrationOwner::Entity(owner) => {
+                let owner = owner.upgrade()?;
+                owner.as_vibration_system().map(f)
+            }
+            VibrationOwner::System(system) => Some(f(system.upgrade()?.as_ref())),
+        }
     }
 
     /// Vanilla `forceScheduleVibration`.
@@ -680,6 +736,11 @@ fn receive_vibration(
     let destination = system
         .vibration_listener_pos()
         .map_or(origin, BlockPos::from);
+    if system.requires_adjacent_chunks_to_be_ticking()
+        && !are_adjacent_chunks_ticking(world, destination)
+    {
+        return false;
+    }
     let source = current.entity(world);
     let owner = current.projectile_owner(world);
     system.on_receive_vibration(
@@ -692,6 +753,22 @@ fn receive_vibration(
     );
     system.vibration_data().lock().current_vibration = None;
     true
+}
+
+/// Vanilla `areAdjacentChunksTicking`: the listener's chunk and the eight
+/// around it all tick blocks.
+fn are_adjacent_chunks_ticking(world: &World, listener_pos: BlockPos) -> bool {
+    let center = ChunkPos::from_block_pos(listener_pos);
+    (-1..=1).all(|dx| {
+        (-1..=1).all(|dz| {
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_simulated(ChunkPos::new(
+                    center.0.x + dx,
+                    center.0.y + dz,
+                ))
+        })
+    })
 }
 
 #[cfg(test)]
