@@ -15,6 +15,57 @@ pub struct Xoroshiro {
     next_gaussian: f64,
 }
 
+/// Vanilla `RandomSupport.Seed128bit`: a 128-bit Xoroshiro seed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Seed128 {
+    /// The low 64 bits.
+    pub lo: u64,
+    /// The high 64 bits.
+    pub hi: u64,
+}
+
+impl Seed128 {
+    /// Vanilla `RandomSupport.upgradeSeedTo128bitUnmixed`.
+    #[must_use]
+    pub const fn upgrade_unmixed(seed: u64) -> Self {
+        let (lo, hi) = Xoroshiro::upgrade_seed_to_128_bit(seed);
+        Self { lo, hi }
+    }
+
+    /// Vanilla `RandomSupport.seedFromHashOf`: the MD5 digest of `name`,
+    /// read as two big-endian longs. Unlike [`NameHash`], any length works.
+    #[must_use]
+    pub fn from_hash_of(name: &str) -> Self {
+        let digest = md5::compute(name.as_bytes()).0;
+        let mut lo = [0; 8];
+        let mut hi = [0; 8];
+        lo.copy_from_slice(&digest[..8]);
+        hi.copy_from_slice(&digest[8..]);
+        Self {
+            lo: u64::from_be_bytes(lo),
+            hi: u64::from_be_bytes(hi),
+        }
+    }
+
+    /// Vanilla `Seed128bit.xor`.
+    #[must_use]
+    pub const fn xor(self, other: Self) -> Self {
+        Self {
+            lo: self.lo ^ other.lo,
+            hi: self.hi ^ other.hi,
+        }
+    }
+
+    /// Vanilla `Seed128bit.mixed`.
+    #[must_use]
+    pub const fn mixed(self) -> Self {
+        Self {
+            lo: mix_stafford_13(self.lo),
+            hi: mix_stafford_13(self.hi),
+        }
+    }
+}
+
 /// A splitter for the Xoroshiro128++ random number generator.
 #[derive(Clone)]
 pub struct XoroshiroSplitter {
@@ -39,6 +90,22 @@ impl Xoroshiro {
         // From RandomSupport and
         let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
         Self::new(lo, hi)
+    }
+
+    /// Vanilla `new XoroshiroRandomSource(Seed128bit)`: uses the seed as the
+    /// generator state without mixing.
+    #[must_use]
+    pub const fn from_seed_128(seed: Seed128) -> Self {
+        Self::new(seed.lo, seed.hi)
+    }
+
+    /// The generator state, as vanilla's `XoroshiroRandomSource.CODEC` saves it.
+    #[must_use]
+    pub const fn state(&self) -> Seed128 {
+        Seed128 {
+            lo: self.seed_lo,
+            hi: self.seed_hi,
+        }
     }
 
     const fn new(lo: u64, hi: u64) -> Self {
@@ -451,5 +518,34 @@ mod tests {
     fn zero_seed_produces_fallback_values() {
         let mut rng = Xoroshiro::new(0, 0);
         assert_eq!(rng.next_i64(), 6807859099481836695);
+    }
+
+    #[test]
+    fn seed_from_hash_of_matches_the_const_name_hash() {
+        for name in ["minecraft:dice", "steel:offset", ""] {
+            let seed = Seed128::from_hash_of(name);
+            assert_eq!([seed.lo, seed.hi], NameHash::new(name).md5, "{name}");
+        }
+        // Past one MD5 block the const hash cannot run, the runtime one can.
+        let long = "steel:a/very/long/random/sequence/identifier/path/for/md5";
+        assert!(long.len() >= 56);
+        assert_ne!(
+            Seed128::from_hash_of(long),
+            Seed128::from_hash_of("steel:a")
+        );
+    }
+
+    #[test]
+    fn a_saved_state_resumes_the_same_stream() {
+        let mut random = Xoroshiro::from_seed_128(Seed128::upgrade_unmixed(42).mixed());
+        let _ = random.next_i64();
+        let mut restored = Xoroshiro::from_seed_128(random.state());
+        for _ in 0..8 {
+            assert_eq!(random.next_i64(), restored.next_i64());
+        }
+        assert_eq!(
+            Xoroshiro::from_seed_128(Seed128::upgrade_unmixed(42).mixed()).state(),
+            Xoroshiro::from_seed(42).state()
+        );
     }
 }

@@ -34,6 +34,9 @@ pub mod names {
     /// Vanilla `CustomBossEvents.TYPE`, the `/bossbar` bars of a domain,
     /// persisted through the domain default world.
     pub const CUSTOM_BOSS_EVENTS: SavedDataName = SavedDataName::trusted("custom_boss_events");
+    /// Vanilla `RandomSequences.TYPE`, the `/random` sequences of a domain,
+    /// persisted through the domain default world.
+    pub const RANDOM_SEQUENCES: SavedDataName = SavedDataName::trusted("random_sequences");
     /// Vanilla `MapIndex.TYPE`, persisted through the domain default world as `data/map_index.bin`.
     pub const MAP_INDEX: WincodeSavedDataName =
         WincodeSavedDataName::trusted("map_index", *b"STMI", 1);

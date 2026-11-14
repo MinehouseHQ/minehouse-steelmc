@@ -27,6 +27,7 @@ mod operator;
 mod perms;
 mod playsound;
 mod position;
+mod random;
 mod return_command;
 mod ride;
 mod rotate;
@@ -107,6 +108,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
+    builder.register(random::registration())?;
     builder.register(return_command::registration())?;
     builder.register(ride::registration())?;
     builder.register(rotate::registration())?;
@@ -207,6 +209,7 @@ mod tests {
                 "op",
                 "perms",
                 "playsound",
+                "random",
                 "return",
                 "ride",
                 "rotate",
