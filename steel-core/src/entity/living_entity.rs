@@ -22,6 +22,8 @@ use steel_registry::damage_type::DamageType;
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 /// Vanilla `DATA_LIVING_ENTITY_FLAGS` bit 1: using an item.
 pub(crate) const LIVING_FLAG_USING_ITEM: i8 = 1;
+/// Vanilla `LIVING_ENTITY_FLAG_SPIN_ATTACK`: mid riptide spin.
+pub(crate) const LIVING_FLAG_SPIN_ATTACK: i8 = 4;
 /// Vanilla `DATA_LIVING_ENTITY_FLAGS` bit 2: the used item is in the off hand.
 pub(crate) const LIVING_FLAG_OFF_HAND_ACTIVE: i8 = 1 << 1;
 
@@ -2242,6 +2244,47 @@ pub trait LivingEntity: Entity {
         self.stop_using_held_item();
     }
 
+    /// Vanilla `isAutoSpinAttack`: mid riptide spin.
+    fn is_auto_spin_attack(&self) -> bool {
+        self.living_synced_data()
+            .is_some_and(|data| data.living_entity_flag(LIVING_FLAG_SPIN_ATTACK))
+    }
+
+    /// Vanilla `checkAutoSpinAttack`: the spin hits the first living entity
+    /// it sweeps through and bounces back, or stops against a wall.
+    fn check_auto_spin_attack(&self, old: WorldAabb, current: WorldAabb) {
+        let living_base = self.living_base();
+        if let Some(world) = self.level() {
+            let id = self.id();
+            let entities = world.get_entities_in_aabb_matching(
+                &WorldAabb::encapsulating(&old, &current),
+                |entity| entity.id() != id && !entity.is_spectator(),
+            );
+            if entities.is_empty() {
+                if self.horizontal_collision() {
+                    living_base.set_auto_spin_attack_ticks(0);
+                }
+            } else if let Some(target) = entities
+                .iter()
+                .find(|entity| entity.as_living_entity().is_some())
+            {
+                self.do_auto_attack_on_touch(target);
+                living_base.set_auto_spin_attack_ticks(0);
+                self.set_velocity(self.velocity() * -0.2);
+            }
+        }
+
+        if living_base.auto_spin_attack_ticks() <= 0 {
+            if let Some(data) = self.living_synced_data() {
+                data.set_living_entity_flag(LIVING_FLAG_SPIN_ATTACK, false);
+            }
+            living_base.clear_auto_spin_attack();
+        }
+    }
+
+    /// Vanilla `doAutoAttackOnTouch`: only players hit what they spin into.
+    fn do_auto_attack_on_touch(&self, _target: &SharedEntity) {}
+
     /// Vanilla `isBlocking`: raising a shield or similar item long enough.
     fn is_blocking(&self) -> bool {
         self.item_blocking_with().is_some()
@@ -3093,6 +3136,7 @@ pub trait LivingEntity: Entity {
             f64::from(input.vertical()),
             f64::from(input.forward()),
         );
+        let before_travel_box = self.bounding_box();
         let result = if Entity::is_alive(self)
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
@@ -3106,6 +3150,12 @@ pub trait LivingEntity: Entity {
 
         self.apply_effects_from_blocks();
         self.tick_freezing();
+        let spin_ticks = self.living_base().auto_spin_attack_ticks();
+        if spin_ticks > 0 {
+            self.living_base()
+                .set_auto_spin_attack_ticks(spin_ticks - 1);
+            self.check_auto_spin_attack(before_travel_box, self.bounding_box());
+        }
         self.push_entities();
         if self.is_sensitive_to_water()
             && self.is_in_water_or_rain()

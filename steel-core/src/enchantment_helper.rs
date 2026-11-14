@@ -16,6 +16,7 @@ use steel_registry::enchantment_effect::{
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -229,6 +230,50 @@ pub(crate) fn modify_crossbow_charging_time(crossbow: &ItemStack, time: f32) -> 
         }
     }
     value.max(0.0)
+}
+
+/// Vanilla `EnchantmentHelper.getTridentSpinAttackStrength` (Riptide); zero
+/// without it.
+pub(crate) fn trident_spin_attack_strength(trident: &ItemStack) -> f32 {
+    let Some(enchantments) = trident.get_enchantments() else {
+        return 0.0;
+    };
+    let mut random = LegacyRandom::from_seed(rand::random());
+    let mut value = 0.0;
+    for (key, level) in enchantments.iter() {
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        if let Some(effect) = &enchantment.effects.trident_spin_attack_strength {
+            value = effect.process_with_random(*level as i32, &mut random, value);
+        }
+    }
+    value
+}
+
+/// Vanilla `EnchantmentHelper.pickHighestLevel(trident, TRIDENT_SOUND)`.
+pub(crate) fn pick_trident_sound(trident: &ItemStack) -> Option<SoundEventRef> {
+    let enchantments = trident.get_enchantments()?;
+    let mut found: Option<(&'static [SoundEventRef], i32)> = None;
+    for (key, level) in enchantments.iter() {
+        let level = *level as i32;
+        if found.is_some_and(|(_, found_level)| found_level >= level) {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let sounds = enchantment.effects.trident_sound;
+        if !sounds.is_empty() {
+            found = Some((sounds, level));
+        }
+    }
+    let (sounds, level) = found?;
+    let index = usize::try_from(level)
+        .ok()?
+        .min(sounds.len())
+        .checked_sub(1)?;
+    sounds.get(index).copied()
 }
 
 /// Vanilla `EnchantmentHelper.pickHighestLevel(crossbow, CROSSBOW_CHARGING_SOUNDS)`:

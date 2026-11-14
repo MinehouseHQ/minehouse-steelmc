@@ -108,6 +108,7 @@ use crate::behavior::{
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
+use crate::entity::LIVING_FLAG_SPIN_ATTACK;
 use crate::entity::LivingEntityRef;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
@@ -426,6 +427,16 @@ impl Player {
                 .living_entity_mut()
                 .living_entity_flags
                 .set(flags);
+        }
+    }
+
+    /// Vanilla `Player.startAutoSpinAttack`: a riptide spin for `ticks`
+    /// hitting for `damage` with `item`.
+    pub fn start_auto_spin_attack(&self, ticks: i32, damage: f32, item: ItemStack) {
+        self.living_base.start_auto_spin_attack(ticks, damage, item);
+        self.remove_entities_on_shoulder();
+        if let Some(data) = LivingEntity::living_synced_data(self) {
+            data.set_living_entity_flag(LIVING_FLAG_SPIN_ATTACK, true);
         }
     }
 
@@ -2027,6 +2038,14 @@ impl LivingEntity for Player {
 
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    /// Vanilla `Player.doAutoAttackOnTouch`: a riptide spin attacks what it
+    /// runs into.
+    fn do_auto_attack_on_touch(&self, target: &SharedEntity) {
+        if let Some(player) = self.get_world().players.get_by_entity_id(self.id()) {
+            let _ = player.attack(target);
+        }
     }
 
     /// Vanilla `Player.blockUsingItem`: an axe-like weapon knocks the shield

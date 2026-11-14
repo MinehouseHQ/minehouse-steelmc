@@ -887,6 +887,7 @@ pub use living_base::{
     LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
     MobEffectSyncPacket, sync_dirty_mob_effects,
 };
+pub(crate) use living_entity::LIVING_FLAG_SPIN_ATTACK;
 pub use living_entity::LivingEntity;
 pub(crate) use manager::EntityCollisionCandidates;
 #[cfg(feature = "benchmark-support")]

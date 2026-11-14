@@ -113,6 +113,9 @@ pub trait LivingEntitySyncedData: EntitySyncedData {
     /// Sets or clears bits of vanilla `DATA_LIVING_ENTITY_FLAGS`
     /// (`LivingEntity.setLivingEntityFlag`).
     fn set_living_entity_flag(&self, flag: i8, value: bool);
+
+    /// Whether `flag` is set in vanilla `DATA_LIVING_ENTITY_FLAGS`.
+    fn living_entity_flag(&self, flag: i8) -> bool;
 }
 
 impl<T> LivingEntitySyncedData for SyncMutex<T>
@@ -136,6 +139,10 @@ where
 
     fn set_stinger_count(&self, count: i32) {
         self.lock().living_entity_mut().stinger_count.set(count);
+    }
+
+    fn living_entity_flag(&self, flag: i8) -> bool {
+        *self.lock().living_entity().living_entity_flags.get() & flag != 0
     }
 
     fn set_living_entity_flag(&self, flag: i8, value: bool) {

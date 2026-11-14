@@ -458,6 +458,29 @@ impl Player {
         true
     }
 
+    /// Vanilla `getWeaponItem` and the attack's base damage: the riptide
+    /// trident and its spin damage while spinning, else the main hand and
+    /// the attack damage attribute.
+    fn attack_weapon_and_damage(&self) -> (ItemStack, f32) {
+        let spin_attack = self.is_auto_spin_attack();
+        let damage = if spin_attack {
+            self.living_base.auto_spin_attack_damage()
+        } else {
+            self.attributes()
+                .lock()
+                .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32
+        };
+        let spin_item = spin_attack
+            .then(|| self.living_base.auto_spin_attack_item())
+            .flatten();
+        let item = spin_item.unwrap_or_else(|| {
+            let inventory = self.inventory.lock();
+            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            stack.copy_with_count(stack.count())
+        });
+        (item, damage)
+    }
+
     /// Vanilla `Player.attack`: a melee hit with the main-hand weapon,
     /// including critical hits, sweep attacks and the attack sounds.
     ///
@@ -469,16 +492,10 @@ impl Player {
             return false;
         }
 
-        // TODO: Riptide auto spin attacks use `autoSpinAttackDmg` once they exist.
-        let attacking_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
-        let (attack_damage, attack_speed, attack_knockback) = {
+        let (attacking_item, attack_damage) = self.attack_weapon_and_damage();
+        let (attack_speed, attack_knockback) = {
             let attributes = self.attributes().lock();
             (
-                attributes.required_value(vanilla_attributes::ATTACK_DAMAGE) as f32,
                 attributes.required_value(vanilla_attributes::ATTACK_SPEED),
                 attributes.required_value(vanilla_attributes::ATTACK_KNOCKBACK),
             )

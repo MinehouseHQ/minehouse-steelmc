@@ -728,6 +728,9 @@ struct LivingEntityState {
     remove_arrow_time: i32,
     stinger_count: i32,
     remove_stinger_time: i32,
+    auto_spin_attack_ticks: i32,
+    auto_spin_attack_damage: f32,
+    auto_spin_attack_item: Option<ItemStack>,
 }
 
 impl LivingEntityState {
@@ -769,6 +772,9 @@ impl LivingEntityState {
             remove_arrow_time: 0,
             stinger_count: 0,
             remove_stinger_time: 0,
+            auto_spin_attack_ticks: 0,
+            auto_spin_attack_damage: 0.0,
+            auto_spin_attack_item: None,
         }
     }
 
@@ -946,6 +952,45 @@ impl LivingEntityBase {
     #[must_use]
     pub fn swing_state(&self) -> LivingSwingState {
         self.state.lock().swing
+    }
+
+    /// Vanilla `Player.startAutoSpinAttack`'s state: a riptide spin for
+    /// `ticks` hitting for `damage` with `item`.
+    pub fn start_auto_spin_attack(&self, ticks: i32, damage: f32, item: ItemStack) {
+        let mut state = self.state.lock();
+        state.auto_spin_attack_ticks = ticks;
+        state.auto_spin_attack_damage = damage;
+        state.auto_spin_attack_item = Some(item);
+    }
+
+    /// Vanilla `autoSpinAttackTicks`.
+    #[must_use]
+    pub fn auto_spin_attack_ticks(&self) -> i32 {
+        self.state.lock().auto_spin_attack_ticks
+    }
+
+    /// Sets vanilla `autoSpinAttackTicks`.
+    pub fn set_auto_spin_attack_ticks(&self, ticks: i32) {
+        self.state.lock().auto_spin_attack_ticks = ticks;
+    }
+
+    /// Vanilla `autoSpinAttackDmg`.
+    #[must_use]
+    pub fn auto_spin_attack_damage(&self) -> f32 {
+        self.state.lock().auto_spin_attack_damage
+    }
+
+    /// Vanilla `autoSpinAttackItemStack`.
+    #[must_use]
+    pub fn auto_spin_attack_item(&self) -> Option<ItemStack> {
+        self.state.lock().auto_spin_attack_item.clone()
+    }
+
+    /// Forgets the spin's damage and item once it ends.
+    pub fn clear_auto_spin_attack(&self) {
+        let mut state = self.state.lock();
+        state.auto_spin_attack_damage = 0.0;
+        state.auto_spin_attack_item = None;
     }
 
     /// Returns a snapshot of vanilla active item-use state.
