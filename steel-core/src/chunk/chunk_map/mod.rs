@@ -642,6 +642,17 @@ impl ChunkMap {
         self.scheduling.add_or_refresh_portal_ticket(center);
     }
 
+    /// Vanilla `ServerChunkCache.updateChunkForced`; `true` when the chunk's
+    /// forced state changed.
+    pub(crate) fn update_chunk_forced(&self, pos: ChunkPos, forced: bool) -> bool {
+        self.scheduling.update_chunk_forced(pos, forced)
+    }
+
+    /// Vanilla `ServerChunkCache.getForceLoadedChunks`, in no particular order.
+    pub(crate) fn force_loaded_chunks(&self) -> Vec<ChunkPos> {
+        self.scheduling.forced_chunks()
+    }
+
     /// Advances eligible timed chunk tickets by one server tick.
     pub(crate) fn tick_timed_tickets(&self) {
         let expirations = self.eligible_timed_ticket_expirations();

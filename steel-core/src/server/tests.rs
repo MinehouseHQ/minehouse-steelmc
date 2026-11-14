@@ -5333,3 +5333,49 @@ fn rotate_turns_a_player_with_a_rotation_packet() {
         assert!((alice.rotation().1 + 90.0).abs() < 1e-3);
     });
 }
+
+#[test]
+fn forceload_adds_queries_and_removes_forced_chunks() {
+    let world_fixture = fresh_test_world("forceload");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await else {
+            panic!("test server should initialize");
+        };
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let forced = || {
+            let mut chunks = world.force_loaded_chunks();
+            chunks.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
+            chunks
+        };
+
+        run_command(&server, console(), "forceload add 0 0 31 15");
+        run_command(&server, console(), "forceload add -1 -1");
+        assert_eq!(
+            forced(),
+            [
+                ChunkPos::new(-1, -1),
+                ChunkPos::new(0, 0),
+                ChunkPos::new(1, 0)
+            ]
+        );
+
+        // 17 × 17 chunks exceed vanilla's 256 limit and nothing changes.
+        run_command(&server, console(), "forceload add 0 0 271 271");
+        // Blocks past ±30,000,000 are out of the world.
+        run_command(&server, console(), "forceload add 30000000 0");
+        assert_eq!(forced().len(), 3);
+
+        run_command(&server, console(), "forceload remove 16 0");
+        assert_eq!(forced(), [ChunkPos::new(-1, -1), ChunkPos::new(0, 0)]);
+        run_command(&server, console(), "forceload query");
+        run_command(&server, console(), "forceload query 0 0");
+
+        run_command(&server, console(), "forceload remove all");
+        assert_eq!(forced().len(), 0);
+    });
+}

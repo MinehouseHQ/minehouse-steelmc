@@ -201,6 +201,35 @@ pub(super) fn parse_vec2(
     )))
 }
 
+/// Vanilla `ColumnPosArgument.parse`: two integer world coordinates, with
+/// the height kept relative to the source.
+pub(super) fn parse_column_pos(
+    reader: &mut StringReader<'_>,
+) -> Result<Coordinates, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    if !reader.can_read() {
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    let x = parse_world_coordinate_int(reader)?;
+    if reader.peek() != Some(' ') {
+        reader.restore(start);
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    reader.skip();
+    let z = parse_world_coordinate_int(reader)?;
+    Ok(Coordinates::World(WorldCoordinates::new(
+        x,
+        WorldCoordinate::new(true, 0.0),
+        z,
+    )))
+}
+
 pub(super) fn suggest_vec2(
     builder: &mut SuggestionsBuilder<'_>,
     parser: impl Fn(&mut StringReader<'_>) -> Result<Coordinates, CommandSyntaxError>,

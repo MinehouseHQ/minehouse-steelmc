@@ -6,7 +6,8 @@ use super::{
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
     coordinates::{
-        parse_block_pos, parse_rotation, parse_vec2, parse_vec3, suggest_coordinates, suggest_vec2,
+        parse_block_pos, parse_column_pos, parse_rotation, parse_vec2, parse_vec3,
+        suggest_coordinates, suggest_vec2,
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -189,6 +190,10 @@ impl SteelArgumentType {
 
     pub(crate) fn vec2(center_integers: bool) -> Self {
         Self::new(Vec2Parser { center_integers })
+    }
+
+    pub(crate) fn column_pos() -> Self {
+        Self::new(ColumnPosParser)
     }
 
     pub(crate) fn rotation() -> Self {
@@ -763,6 +768,19 @@ impl SteelArgumentParser for Vec2Parser {
         (ProtocolArgumentType::Vec2, None)
     }
 }
+
+unit_argument_parser!(
+    ColumnPosParser,
+    "steel:command/parser/column_pos",
+    Coordinates,
+    parse | reader,
+    _source | { parse_column_pos(reader) },
+    suggest | _context,
+    builder | {
+        suggest_vec2(builder, parse_column_pos);
+    },
+    protocol(ProtocolArgumentType::ColumnPos, None)
+);
 
 unit_argument_parser!(
     RotationParser,

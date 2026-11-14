@@ -374,6 +374,19 @@ impl ChunkSchedulingCoordinator {
         ingress.record_changes(changes);
     }
 
+    /// Adds or removes the forced ticket at `pos`; `true` when it changed.
+    pub(crate) fn update_chunk_forced(&self, pos: ChunkPos, forced: bool) -> bool {
+        let mut ingress = self.ticket_ingress.lock();
+        let (updated, changes) = ingress.storage.update_chunk_forced(pos, forced);
+        ingress.record_changes(changes);
+        updated
+    }
+
+    #[must_use]
+    pub(crate) fn forced_chunks(&self) -> Vec<ChunkPos> {
+        self.ticket_ingress.lock().storage.forced_chunks()
+    }
+
     pub(crate) fn add_or_refresh_ender_pearl_ticket(&self, pos: ChunkPos) {
         let mut ingress = self.ticket_ingress.lock();
         let changes = ingress.storage.add_or_refresh_ender_pearl_ticket(pos);

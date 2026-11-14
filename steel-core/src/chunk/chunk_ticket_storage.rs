@@ -1,6 +1,6 @@
 //! Authoritative chunk ticket source storage.
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ptr};
 
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -110,6 +110,16 @@ impl TimedTicketExpiration {
     pub(crate) const fn can_expire_if_unloaded(self) -> bool {
         self.ticket.ticket_type().can_expire_if_unloaded()
     }
+}
+
+/// Vanilla `TicketStorage.updateChunkForced`'s ticket at
+/// `ChunkMap.FORCED_TICKET_LEVEL`, the entity-ticking level.
+#[must_use]
+const fn forced_ticket() -> ChunkTicket {
+    ChunkTicket::new(
+        &vanilla_ticket_types::FORCED,
+        ChunkTicketLevel::ENTITY_TICKING_CHUNK,
+    )
 }
 
 #[must_use]
@@ -315,6 +325,44 @@ impl ChunkTicketStorage {
         pos: ChunkPos,
     ) -> SourceProjectionChanges {
         self.add_ticket(pos, portal_ticket())
+    }
+
+    /// Vanilla `TicketStorage.updateChunkForced`: adds or removes the
+    /// forced ticket and reports whether the set of forced chunks changed.
+    pub(crate) fn update_chunk_forced(
+        &mut self,
+        pos: ChunkPos,
+        forced: bool,
+    ) -> (bool, SourceProjectionChanges) {
+        let ticket = forced_ticket();
+        let present = self
+            .tickets
+            .get(&pos)
+            .is_some_and(|tickets| tickets.iter().any(|stored| stored.ticket == ticket));
+        let changes = if forced {
+            self.add_ticket(pos, ticket)
+        } else {
+            self.remove_ticket(pos, ticket)
+        };
+        (present != forced, changes)
+    }
+
+    /// Vanilla `TicketStorage.getForceLoadedChunks`: every chunk holding a
+    /// ticket of type `forced`, at any level.
+    #[must_use]
+    pub(crate) fn forced_chunks(&self) -> Vec<ChunkPos> {
+        self.tickets
+            .iter()
+            .filter(|(_, tickets)| {
+                tickets.iter().any(|stored| {
+                    ptr::eq(
+                        stored.ticket.ticket_type(),
+                        &raw const vanilla_ticket_types::FORCED,
+                    )
+                })
+            })
+            .map(|(pos, _)| *pos)
+            .collect()
     }
 
     /// Adds or refreshes Vanilla's in-flight ender pearl ticket.
@@ -747,5 +795,43 @@ mod tests {
         let _ = storage.tick_timed_tickets(&expirations);
 
         assert_eq!(storage.tickets[&pos][0].ticket.ticks_left(), i64::MAX);
+    }
+
+    #[test]
+    fn forcing_a_chunk_reports_only_real_changes_like_vanilla() {
+        init_registry();
+        let mut storage = ChunkTicketStorage::new();
+        let pos = ChunkPos::new(-3, 7);
+
+        let (added, changes) = storage.update_chunk_forced(pos, true);
+        assert!(added);
+        assert_eq!(changes.load_positions, vec![pos]);
+        assert_eq!(changes.simulation_positions, vec![pos]);
+        assert_eq!(
+            storage.load_source_level(pos),
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        );
+        // Forcing again only refreshes the ticket.
+        assert!(!storage.update_chunk_forced(pos, true).0);
+        assert_eq!(storage.forced_chunks(), vec![pos]);
+        // Forced chunks persist across restarts.
+        assert_eq!(storage.to_persistent().tickets.len(), 1);
+
+        // A forced ticket at another level still counts as force-loaded, but
+        // `updateChunkForced` only removes its own level.
+        let other = ChunkPos::new(4, 4);
+        let _ = storage.add_ticket(
+            other,
+            ChunkTicket::new(&vanilla_ticket_types::FORCED, ChunkTicketLevel::FULL_CHUNK),
+        );
+        let mut forced = storage.forced_chunks();
+        forced.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
+        assert_eq!(forced, vec![pos, other]);
+        assert!(!storage.update_chunk_forced(other, false).0);
+
+        assert!(storage.update_chunk_forced(pos, false).0);
+        assert!(!storage.update_chunk_forced(pos, false).0);
+        assert_eq!(storage.load_source_level(pos), None);
+        assert_eq!(storage.forced_chunks(), vec![other]);
     }
 }
