@@ -718,6 +718,12 @@ pub(crate) fn build() -> TokenStream {
         } else {
             quote! { None }
         };
+        let increased_fire_burnout = matches!(
+            biome
+                .attributes
+                .get("minecraft:gameplay/increased_fire_burnout"),
+            Some(Value::Bool(true))
+        );
         let spawners =
             generate_hashmap_string(&biome.spawners, |v| generate_vec(v, generate_spawner_data));
         let spawn_costs = generate_hashmap_resource(&biome.spawn_costs, generate_spawn_cost);
@@ -738,6 +744,7 @@ pub(crate) fn build() -> TokenStream {
                 creature_spawn_probability: #creature_spawn_probability,
                 snow_golem_melts: #snow_golem_melts,
                 can_pillager_patrol_spawn: #can_pillager_patrol_spawn,
+                increased_fire_burnout: #increased_fire_burnout,
                 spawners: #spawners,
                 spawn_costs: #spawn_costs,
                 carvers: #carvers,

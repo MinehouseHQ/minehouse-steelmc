@@ -23,6 +23,9 @@ pub struct Biome {
     /// The `minecraft:gameplay/can_pillager_patrol_spawn` environment attribute, when this
     /// biome sets it.
     pub can_pillager_patrol_spawn: Option<bool>,
+    /// The `minecraft:gameplay/increased_fire_burnout` environment attribute: fire
+    /// burns out and spreads faster here.
+    pub increased_fire_burnout: bool,
     pub spawners: FxHashMap<String, Vec<SpawnerData>>,
     pub spawn_costs: FxHashMap<Identifier, SpawnCost>,
     pub carvers: Vec<Identifier>,

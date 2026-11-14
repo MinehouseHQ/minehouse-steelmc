@@ -1,6 +1,7 @@
 mod end_portal_block;
 mod end_portal_frame_block;
 mod fire;
+mod fire_flammability;
 mod nether_portal_block;
 mod respawn_anchor_block;
 
