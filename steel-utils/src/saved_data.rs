@@ -31,6 +31,9 @@ pub mod names {
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
     /// Domain command storage, persisted through the domain default world.
     pub const COMMAND_STORAGE: SavedDataName = SavedDataName::trusted("command_storage");
+    /// Vanilla `CustomBossEvents.TYPE`, the `/bossbar` bars of a domain,
+    /// persisted through the domain default world.
+    pub const CUSTOM_BOSS_EVENTS: SavedDataName = SavedDataName::trusted("custom_boss_events");
     /// Vanilla `MapIndex.TYPE`, persisted through the domain default world as `data/map_index.bin`.
     pub const MAP_INDEX: WincodeSavedDataName =
         WincodeSavedDataName::trusted("map_index", *b"STMI", 1);

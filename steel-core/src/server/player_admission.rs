@@ -305,6 +305,7 @@ impl Server {
         }
         let previous_name = self.record_known_player(&player.gameprofile);
         self.broadcast_player_join_message(&player, previous_name.as_deref());
+        self.connect_player_to_boss_bars(state.world.domain(), &player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
             // Vanilla `PlayerList.placeNewPlayer` ends with `initInventoryMenu`.
@@ -313,6 +314,20 @@ impl Server {
         self.schedule_domain_restores(&player, residence_token, restores);
         if player.connection.closed() {
             self.queue_player_disconnect(player);
+        }
+    }
+
+    /// Vanilla `CustomBossEvents.onPlayerConnect` for the player's domain.
+    pub(super) fn connect_player_to_boss_bars(&self, domain: &str, player: &Arc<Player>) {
+        if let Some(events) = self.custom_boss_events.get(domain) {
+            events.on_player_connect(player);
+        }
+    }
+
+    /// Vanilla `CustomBossEvents.onPlayerDisconnect` for the player's domain.
+    pub(super) fn disconnect_player_from_boss_bars(&self, domain: &str, player: &Player) {
+        if let Some(events) = self.custom_boss_events.get(domain) {
+            events.on_player_disconnect(player);
         }
     }
 
@@ -601,6 +616,7 @@ impl Server {
             self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
             return None;
         };
+        self.disconnect_player_from_boss_bars(&domain, &player);
 
         Some(PendingPlayerDisconnect {
             player,

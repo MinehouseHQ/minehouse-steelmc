@@ -271,6 +271,16 @@ impl DomainSwitchJob {
         })
     }
 
+    /// Ends the relocation and joins the target domain's boss bars, like a
+    /// connect.
+    fn admit_to_target_domain(&self, server: &Server) {
+        server.release_player_admission(
+            self.player.gameprofile.id(),
+            PlayerAdmissionState::Relocating,
+        );
+        server.connect_player_to_boss_bars(&self.target_domain, &self.player);
+    }
+
     fn commit_target_state(&mut self, server: &Arc<Server>, state: DomainPlayerState) -> JobPoll {
         if !self
             .player
@@ -351,10 +361,7 @@ impl DomainSwitchJob {
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
-        server.release_player_admission(
-            self.player.gameprofile.id(),
-            PlayerAdmissionState::Relocating,
-        );
+        self.admit_to_target_domain(server);
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();

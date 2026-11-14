@@ -368,6 +368,11 @@ impl SteelArgumentType {
         Self::new(NbtPathParser)
     }
 
+    /// Vanilla `IdentifierArgument.id`.
+    pub(crate) fn identifier() -> Self {
+        Self::new(IdentifierParser)
+    }
+
     pub(crate) fn storage_key() -> Self {
         Self::new(StorageKeyParser)
     }
@@ -1258,6 +1263,16 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::NbtPath, None)
+);
+unit_argument_parser!(
+    IdentifierParser,
+    "steel:command/parser/identifier",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::ResourceLocation, None)
 );
 unit_argument_parser!(
     StorageKeyParser,

@@ -68,7 +68,7 @@ impl Server {
 
     /// The write half of vanilla `saveEverything`, together with the
     /// server-wide saved data vanilla `saveAllChunks` stores: scoreboards,
-    /// command storage and maps.
+    /// command storage, `/bossbar` bars and maps.
     pub(crate) async fn write_save(&self, save: ServerSave) -> ServerSaveResult {
         let mut result = ServerSaveResult {
             success: true,
@@ -100,6 +100,10 @@ impl Server {
         }
         if let Err(error) = command_data.storage {
             log::error!("Failed to save domain command storage: {error}");
+            result.success = false;
+        }
+        if let Err(error) = command_data.boss_events {
+            log::error!("Failed to save domain boss bars: {error}");
             result.success = false;
         }
         if let Err(error) = self.worlds.save_maps() {

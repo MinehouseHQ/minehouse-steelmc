@@ -18,6 +18,7 @@ use super::super::super::{
         SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument, literal,
     },
 };
+use super::super::bossbar;
 use super::{
     condition::{invalid_block_data_source, loaded_block_position},
     objective, source_command_storage, source_scoreboard,
@@ -30,7 +31,6 @@ type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 
 pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
-    // TODO: Add bossbar after Steel has a persistent custom-bossbar manager.
     // TODO: Add entity after live entity NBT can reload every command-visible field.
     literal(name)
         .then(
@@ -41,6 +41,19 @@ pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
                             store_score(context, store_result)
                         }),
                 ),
+            ),
+        )
+        .then(
+            literal("bossbar").then(
+                bossbar::boss_bar_id()
+                    .then(
+                        literal("value").redirects_with(EXECUTE_ROOT, move |context| {
+                            store_boss_bar(context, true, store_result)
+                        }),
+                    )
+                    .then(literal("max").redirects_with(EXECUTE_ROOT, move |context| {
+                        store_boss_bar(context, false, store_result)
+                    })),
             ),
         )
         .then(
@@ -213,6 +226,26 @@ fn store_score(
         let value = stored_value(store_result, success, result);
         if let Err(error) = store_score_value(scoreboard, &holders, &objective, value) {
             tracing::warn!(%error, "failed to store execute result in scoreboard");
+        }
+    });
+    let callback = CommandResultCallback::chain(source.callback(), callback);
+    Ok(source.with_callback(callback))
+}
+
+/// Vanilla `storeValue` for a boss bar: the result becomes its value or max.
+fn store_boss_bar(
+    context: &SteelCommandContext<CommandSource>,
+    store_into_value: bool,
+    store_result: bool,
+) -> Result<CommandSource, CommandSyntaxError> {
+    let bar = bossbar::get_boss_bar(context)?;
+    let source = context.source();
+    let callback = CommandResultCallback::new(move |success, result| {
+        let value = stored_value(store_result, success, result);
+        if store_into_value {
+            bar.set_value(value);
+        } else {
+            bar.set_max(value);
         }
     });
     let callback = CommandResultCallback::chain(source.callback(), callback);

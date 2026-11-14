@@ -597,6 +597,8 @@ impl Server {
             );
             return Err("player is not present in the current world".to_owned());
         };
+        // The player leaves the source domain's boss bars like a disconnect.
+        self.disconnect_player_from_boss_bars(&current_domain, &player);
         self.jobs.spawn(DomainSwitchJob::new(
             self,
             player,
