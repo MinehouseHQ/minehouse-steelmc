@@ -81,6 +81,10 @@ impl VibrationUser for SensorVibrations {
         true
     }
 
+    fn requires_adjacent_chunks_to_be_ticking(&self) -> bool {
+        true
+    }
+
     fn can_receive_vibration(
         &self,
         world: &Arc<World>,
@@ -291,7 +295,16 @@ mod tests {
         init_behaviors();
         init_block_entities();
         let fixture = fresh_test_world(name);
-        insert_ready_full_chunk(&fixture.world, ChunkPos::from_block_pos(SENSOR));
+        // Sensors only hear while the chunks around them tick.
+        let center = ChunkPos::from_block_pos(SENSOR);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                insert_ready_full_chunk(
+                    &fixture.world,
+                    ChunkPos::new(center.0.x + dx, center.0.y + dz),
+                );
+            }
+        }
         assert!(
             fixture
                 .world
@@ -389,6 +402,24 @@ mod tests {
         );
         let world = &fixture.world;
         place_event(world, BlockPos::new(8, 64, 18));
+        tick_until_received(world);
+        assert_eq!(phase(world), SculkSensorPhase::Inactive);
+    }
+
+    #[test]
+    fn a_sensor_hears_nothing_while_a_neighboring_chunk_does_not_tick() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+        let fixture = fresh_test_world("sculk_sensor_lonely_chunk");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(SENSOR));
+        assert!(world.set_block(
+            SENSOR,
+            vanilla_blocks::SCULK_SENSOR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        place_event(world, BlockPos::new(8, 64, 12));
         tick_until_received(world);
         assert_eq!(phase(world), SculkSensorPhase::Inactive);
     }

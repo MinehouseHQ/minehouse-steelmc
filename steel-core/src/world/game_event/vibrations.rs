@@ -16,7 +16,7 @@ use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _, vanilla_game_events, vanilla_particle_types,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Direction, Identifier, UuidExt as _};
+use steel_utils::{BlockPos, ChunkPos, Direction, Identifier, UuidExt as _};
 use uuid::Uuid;
 
 use super::{GameEventContext, GameEventListener};
@@ -430,6 +430,12 @@ pub trait VibrationUser: Send + Sync {
         false
     }
 
+    /// Vanilla `requiresAdjacentChunksToBeTicking`: whether a vibration is
+    /// only received while the chunks around the listener tick blocks.
+    fn requires_adjacent_chunks_to_be_ticking(&self) -> bool {
+        false
+    }
+
     /// Vanilla `calculateTravelTimeInTicks`.
     fn calculate_travel_time_in_ticks(&self, distance_to_destination: f32) -> i32 {
         distance_to_destination.floor() as i32
@@ -730,6 +736,11 @@ fn receive_vibration(
     let destination = system
         .vibration_listener_pos()
         .map_or(origin, BlockPos::from);
+    if system.requires_adjacent_chunks_to_be_ticking()
+        && !are_adjacent_chunks_ticking(world, destination)
+    {
+        return false;
+    }
     let source = current.entity(world);
     let owner = current.projectile_owner(world);
     system.on_receive_vibration(
@@ -742,6 +753,22 @@ fn receive_vibration(
     );
     system.vibration_data().lock().current_vibration = None;
     true
+}
+
+/// Vanilla `areAdjacentChunksTicking`: the listener's chunk and the eight
+/// around it all tick blocks.
+fn are_adjacent_chunks_ticking(world: &World, listener_pos: BlockPos) -> bool {
+    let center = ChunkPos::from_block_pos(listener_pos);
+    (-1..=1).all(|dx| {
+        (-1..=1).all(|dz| {
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_simulated(ChunkPos::new(
+                    center.0.x + dx,
+                    center.0.y + dz,
+                ))
+        })
+    })
 }
 
 #[cfg(test)]
