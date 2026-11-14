@@ -16,6 +16,8 @@ use super::{
 };
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
+use crate::entity::AbstractArrow;
+use crate::entity::entities::ThrownTridentEntity;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, MobEffectInstance,
     SharedEntity,
@@ -40,12 +42,13 @@ use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
+use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot, SUseItem};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::entity_data::EntityPose;
 use steel_registry::packets::play::C_REMOVE_ENTITIES;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
@@ -735,7 +738,7 @@ fn end_credits_removes_all_menus_before_detaching() {
     let world_fixture = fresh_test_world("end_credits_menu_removal");
     let world = &world_fixture.world;
     let player = test_player(Arc::clone(world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
 
     player
@@ -785,7 +788,7 @@ fn admitted_world_change_prevents_end_credits_detach() {
     let world_fixture = fresh_test_world("end_credits_pending_world_change");
     let world = &world_fixture.world;
     let player = test_player(Arc::clone(world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     let Some(pending_token) = player.begin_pending_world_change() else {
         panic!("test player should accept a pending world change");
@@ -809,7 +812,7 @@ fn duplicate_exact_player_admission_cleans_existing_membership() {
     let world_fixture = fresh_test_world("duplicate_player_admission");
     let world = &world_fixture.world;
     let player = test_player(Arc::clone(world));
-    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
 
     assert!(!world.add_player(Arc::clone(&player), ResetReason::WorldChange));
 
@@ -2004,4 +2007,158 @@ fn axe_hit_knocks_the_shield_down() {
 
     assert!(!victim.is_using_item());
     assert!(victim.is_item_on_cooldown(&shield));
+}
+
+fn trident_thrower(
+    name: &'static str,
+    trident: ItemStack,
+    in_water: bool,
+) -> (TestWorld, Arc<Player>) {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world(name);
+    let world = Arc::clone(&world_fixture.world);
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "Thrower", next_entity_id()).build();
+    player.set_client_loaded(true);
+    player.base.set_position_local(DVec3::new(0.5, 64.0, 0.5));
+    player.set_rotation((0.0, 0.0));
+    if in_water {
+        // The fluid scan wants the neighboring chunks loaded too.
+        for (x, z) in [(-1, -1), (-1, 0), (0, -1)] {
+            insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+        }
+        assert!(world.set_block(
+            BlockPos::new(0, 64, 0),
+            vanilla_blocks::WATER.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let _ = player.update_fluid_interaction();
+        assert!(player.is_in_water());
+    }
+    player.inventory.lock().set_selected_item(trident);
+    assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
+    (world_fixture, player)
+}
+
+fn charge_and_release(player: &Arc<Player>, ticks: usize) {
+    let entity: SharedEntity = Arc::<Player>::clone(player);
+    player.start_using_item(InteractionHand::MainHand);
+    for _ in 0..ticks {
+        player.tick_active_item_use(&entity);
+    }
+    player.release_using_item(&entity);
+}
+
+fn thrown_tridents(world: &World) -> usize {
+    world
+        .get_entities_in_aabb_matching(
+            &WorldAabb::new(-8.0, 56.0, -8.0, 8.0, 72.0, 16.0),
+            |entity| entity.entity_type() == &vanilla_entities::TRIDENT,
+        )
+        .len()
+}
+
+fn riptide_trident() -> ItemStack {
+    let mut trident = ItemStack::new(&vanilla_items::TRIDENT);
+    trident.set_enchantments(&[(vanilla_enchantments::RIPTIDE.key.clone(), 3)], false);
+    trident
+}
+
+#[test]
+fn charged_trident_is_thrown_and_worn() {
+    let (world, player) = trident_thrower(
+        "trident_charged_throw",
+        ItemStack::new(&vanilla_items::TRIDENT),
+        false,
+    );
+    charge_and_release(&player, 10);
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .get_item_in_hand(InteractionHand::MainHand)
+            .is_empty()
+    );
+    let tridents = world.world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-8.0, 56.0, -8.0, 8.0, 72.0, 16.0),
+        |entity| entity.entity_type() == &vanilla_entities::TRIDENT,
+    );
+    assert_eq!(tridents.len(), 1);
+    let Some(trident) = tridents[0].as_ref().downcast_ref::<ThrownTridentEntity>() else {
+        panic!("a thrown trident entity");
+    };
+    assert_eq!(
+        AbstractArrow::pickup_item_stack(trident).get_damage_value(),
+        1
+    );
+    // Thrown along the player's yaw 0 look: towards +Z.
+    assert!(trident.velocity().z > 2.0);
+}
+
+#[test]
+fn trident_needs_ten_ticks_of_charge() {
+    let (world, player) = trident_thrower(
+        "trident_short_charge",
+        ItemStack::new(&vanilla_items::TRIDENT),
+        false,
+    );
+    charge_and_release(&player, 9);
+
+    assert_eq!(thrown_tridents(&world.world), 0);
+    let held = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(held.is(&vanilla_items::TRIDENT));
+    assert_eq!(held.get_damage_value(), 0);
+}
+
+#[test]
+fn riptide_trident_spins_the_player_in_water() {
+    let (world, player) = trident_thrower("trident_riptide_spin", riptide_trident(), true);
+    charge_and_release(&player, 10);
+
+    assert_eq!(thrown_tridents(&world.world), 0);
+    assert!(player.is_auto_spin_attack());
+    assert_eq!(player.get_desired_pose(), EntityPose::SpinAttack);
+    // Riptide III: strength 3 along the look direction.
+    assert!((player.velocity().z - 3.0).abs() < 1.0e-3);
+    let held = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert_eq!(held.get_damage_value(), 1);
+
+    let target =
+        TestPlayerBuilder::new(Arc::clone(&world.world), "Target", next_entity_id()).build();
+    target.set_client_loaded(true);
+    target.base.set_position_local(DVec3::new(0.5, 64.0, 1.0));
+    assert!(
+        world
+            .world
+            .add_player(Arc::clone(&target), super::ResetReason::InitialJoin)
+    );
+    let health = target.get_health();
+    let area = player.bounding_box();
+    player.check_auto_spin_attack(area, area);
+
+    assert!(target.get_health() < health);
+    assert!(!player.is_auto_spin_attack());
+    assert_eq!(player.living_base.auto_spin_attack_ticks(), 0);
+}
+
+#[test]
+fn riptide_trident_cannot_be_raised_on_dry_land() {
+    let (_world, player) = trident_thrower("trident_riptide_dry", riptide_trident(), false);
+    player.handle_use_item(SUseItem {
+        hand: InteractionHand::MainHand,
+        sequence: 1,
+        y_rot: 0.0,
+        x_rot: 0.0,
+    });
+    assert!(!player.is_using_item());
 }
