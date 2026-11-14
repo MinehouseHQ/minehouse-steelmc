@@ -152,7 +152,14 @@ async fn apply(
         }
     }
 
-    let known = |group: &str| server.permission_groups.contains_group(group);
+    // Plain data, not the server: the update below must stay `Send` without the compiler
+    // having to prove it through every field of `Server`.
+    let existing: Vec<&String> = mapping
+        .managed_groups()
+        .iter()
+        .filter(|group| server.permission_groups.contains_group(group))
+        .collect();
+    let known = |group: &str| existing.iter().any(|name| name.as_str() == group);
     let current = server
         .player_permission_state(player.uuid)
         .unwrap_or_default();
