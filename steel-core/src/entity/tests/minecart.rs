@@ -118,7 +118,7 @@ fn passenger_getting_off_a_minecart_lands_on_the_first_free_offset() {
     world
         .try_add_entity(Arc::clone(&pig))
         .expect("test pig should attach to the loaded chunk");
-    assert!(start_riding_entities(&pig, &cart_shared));
+    assert!(start_riding_entities(&pig, &cart_shared, false));
 
     pig.stop_riding();
 

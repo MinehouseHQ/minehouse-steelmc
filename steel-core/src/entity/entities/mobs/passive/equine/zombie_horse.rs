@@ -263,7 +263,7 @@ impl EquineHooks for ZombieHorseEntity {
             return;
         };
         if world.try_add_entity(Arc::clone(&rider)).is_ok() {
-            let _ = start_riding_entities(&rider, entity);
+            let _ = start_riding_entities(&rider, entity, false);
         }
     }
 }

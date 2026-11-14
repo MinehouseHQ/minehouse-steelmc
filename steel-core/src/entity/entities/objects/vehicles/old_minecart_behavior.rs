@@ -359,7 +359,7 @@ fn push_and_pickup_entities<M: AbstractMinecart>(minecart: &Arc<M>) {
             if stays_out {
                 entity.push_entity(minecart.as_ref());
             } else {
-                entity.start_riding(&vehicle);
+                entity.start_riding(&vehicle, false);
             }
         }
         return;

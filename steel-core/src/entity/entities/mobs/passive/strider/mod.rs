@@ -415,7 +415,7 @@ impl Entity for StriderEntity {
             && let Some(world) = self.level()
             && let Some(vehicle) = world.get_entity_by_id(self.id())
         {
-            let _ = jockey.start_riding(&vehicle);
+            let _ = jockey.start_riding(&vehicle, false);
         }
         self.tick_heat_and_sounds();
         let entity = Arc::clone(&self).into_shared_entity();
@@ -728,7 +728,7 @@ impl Mob for StriderEntity {
             if let Some(world) = self.level()
                 && let Some(vehicle) = world.get_entity_by_id(self.id())
             {
-                player.start_riding(&vehicle);
+                player.start_riding(&vehicle, false);
             }
             return InteractionResult::Success;
         }

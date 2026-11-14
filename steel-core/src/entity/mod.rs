@@ -860,13 +860,13 @@ pub use callback::{
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use crossbow_attack_mob::CrossbowAttackMob;
-pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::dismount_after_stop_riding;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
+pub(crate) use entity::{apply_entity_look_at, apply_force_set_rotation};
 pub(crate) use fish::{
     AbstractFish, AbstractSchoolingFish, SchoolSpawnGroupData, SchoolState,
     WATER_ANIMAL_AMBIENT_SOUND_INTERVAL, handle_water_animal_air_supply, init_abstract_fish,
@@ -986,9 +986,12 @@ impl EntityAnchor {
     }
 }
 
+/// Vanilla `Entity.startRiding`: `force` skips the passenger's and the
+/// vehicle's own boarding rules, like `/ride`.
 pub(crate) fn start_riding_entities(
     passenger: &SharedEntity,
     entity_to_ride: &SharedEntity,
+    force: bool,
 ) -> bool {
     if !entity_to_ride.could_accept_passenger() {
         return false;
@@ -1010,8 +1013,9 @@ pub(crate) fn start_riding_entities(
         vehicle_entity = vehicle.vehicle();
     }
 
-    if !passenger.can_ride(entity_to_ride.as_ref())
-        || !entity_to_ride.can_add_passenger(passenger.as_ref())
+    if !force
+        && (!passenger.can_ride(entity_to_ride.as_ref())
+            || !entity_to_ride.can_add_passenger(passenger.as_ref()))
     {
         return false;
     }

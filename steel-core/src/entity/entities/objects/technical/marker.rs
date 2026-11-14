@@ -153,6 +153,6 @@ mod tests {
             TEST_POSITION,
             Arc::downgrade(world),
         ));
-        assert!(!start_riding_entities(&passenger, &marker));
+        assert!(!start_riding_entities(&passenger, &marker, false));
     }
 }

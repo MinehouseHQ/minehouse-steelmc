@@ -740,15 +740,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         dismount_after_stop_riding(self.as_entity_event_source(), old_vehicle.as_deref());
     }
 
-    /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
-    fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
+    /// Starts riding `entity_to_ride` if vanilla boarding rules allow it, or
+    /// regardless of them when `force` is set.
+    fn start_riding(&self, entity_to_ride: &SharedEntity, force: bool) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
         let Some(passenger) = world.get_entity_by_id(self.id()) else {
             return false;
         };
-        start_riding_entities(&passenger, entity_to_ride)
+        start_riding_entities(&passenger, entity_to_ride, force)
     }
 
     /// Gets this entity's direct passengers.
@@ -2117,6 +2118,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Rotates this entity to face a fixed position.
     fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
         apply_entity_look_at(self.as_entity_event_source(), from_anchor, target);
+    }
+
+    /// Vanilla `forceSetRotation`: sets the rotation, each part absolute or
+    /// added to the current one.
+    fn force_set_rotation(&self, yaw: f32, relative_yaw: bool, pitch: f32, relative_pitch: bool) {
+        apply_force_set_rotation(
+            self.as_entity_event_source(),
+            (yaw, relative_yaw),
+            (pitch, relative_pitch),
+        );
     }
 
     /// Rotates this entity to follow an anchored point on another entity.
@@ -4479,6 +4490,27 @@ pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: 
 pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAnchor, target: DVec3) {
     let rotation = look_at_rotation(from_anchor.position(entity), target);
     entity.set_rotation(rotation);
+    let rotation = entity.rotation();
+    if let Some(living) = entity.as_living_entity() {
+        living.set_y_head_rot(rotation.0);
+    }
+    entity.base().set_old_rotation_to_current();
+}
+
+/// The entity half of vanilla `Entity.forceSetRotation`.
+pub(crate) fn apply_force_set_rotation(
+    entity: &dyn Entity,
+    (yaw, relative_yaw): (f32, bool),
+    (pitch, relative_pitch): (f32, bool),
+) {
+    let (current_yaw, current_pitch) = entity.rotation();
+    let yaw = if relative_yaw { current_yaw + yaw } else { yaw };
+    let pitch = if relative_pitch {
+        current_pitch + pitch
+    } else {
+        pitch
+    };
+    entity.set_rotation((yaw, pitch));
     let rotation = entity.rotation();
     if let Some(living) = entity.as_living_entity() {
         living.set_y_head_rot(rotation.0);

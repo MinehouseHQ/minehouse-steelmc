@@ -41,7 +41,7 @@ fn start_riding_entities_links_passenger_and_vehicle() {
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
 
-    assert!(start_riding_entities(&passenger, &vehicle));
+    assert!(start_riding_entities(&passenger, &vehicle, false));
 
     assert!(passenger.is_passenger());
     assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(2));
@@ -112,7 +112,7 @@ fn mob_start_riding_drops_attached_leash() {
     assert!(mob.set_leashed_to(&leash_holder));
     assert!(mob.is_leashed());
 
-    assert!(start_riding_entities(&passenger, &vehicle));
+    assert!(start_riding_entities(&passenger, &vehicle, false));
 
     assert!(passenger.is_passenger());
     assert!(
@@ -278,9 +278,41 @@ fn start_riding_entities_respects_boarding_cooldown() {
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
     passenger.base().set_boarding_cooldown(2);
 
-    assert!(!start_riding_entities(&passenger, &vehicle));
+    assert!(!start_riding_entities(&passenger, &vehicle, false));
     assert!(!passenger.is_passenger());
     assert!(!vehicle.is_vehicle());
+}
+
+#[test]
+fn forced_riding_ignores_boarding_cooldown_but_not_cycles() {
+    init_vanilla_registry();
+
+    let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
+    let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
+    passenger.base().set_boarding_cooldown(2);
+
+    // `/ride` forces the mount past the passenger's own boarding rules.
+    assert!(start_riding_entities(&passenger, &vehicle, true));
+    assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(2));
+
+    // Riding one's own passenger stays impossible even when forced.
+    assert!(!start_riding_entities(&vehicle, &passenger, true));
+    assert!(!vehicle.is_passenger());
+}
+
+#[test]
+fn force_set_rotation_adds_relative_parts_and_syncs_old_rotation() {
+    init_vanilla_registry();
+
+    let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+    entity.set_rotation((30.0, 10.0));
+
+    entity.force_set_rotation(15.0, true, -40.0, false);
+    assert_eq!(entity.rotation(), (45.0, -40.0));
+    assert_eq!(entity.base().old_rotation(), (45.0, -40.0));
+
+    entity.force_set_rotation(90.0, false, 5.0, true);
+    assert_eq!(entity.rotation(), (90.0, -35.0));
 }
 
 #[test]
@@ -291,7 +323,7 @@ fn start_riding_entities_rejects_vehicle_cycles() {
     let child = PushableTestEntity::shared(2, DVec3::ZERO);
     EntityBase::restore_passenger_relationship(&root, &child);
 
-    assert!(!start_riding_entities(&root, &child));
+    assert!(!start_riding_entities(&root, &child, false));
     assert_eq!(child.vehicle().map(|entity| entity.id()), Some(1));
     assert_eq!(root.first_passenger().map(|entity| entity.id()), Some(2));
 }
@@ -305,8 +337,8 @@ fn start_riding_entities_inserts_player_passenger_first() {
     let player_passenger =
         KnownMovementTestEntity::shared(3, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
 
-    assert!(start_riding_entities(&mob_passenger, &vehicle));
-    assert!(start_riding_entities(&player_passenger, &vehicle));
+    assert!(start_riding_entities(&mob_passenger, &vehicle, false));
+    assert!(start_riding_entities(&player_passenger, &vehicle, false));
 
     let passenger_ids = vehicle
         .passengers()
@@ -357,8 +389,8 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
     let vehicle = ControlledVehicleTestEntity::shared(2, Some(Arc::clone(&passenger)));
     let root_vehicle = ControlledVehicleTestEntity::shared(3, None);
 
-    assert!(start_riding_entities(&passenger, &vehicle));
-    assert!(start_riding_entities(&vehicle, &root_vehicle));
+    assert!(start_riding_entities(&passenger, &vehicle, false));
+    assert!(start_riding_entities(&vehicle, &root_vehicle, false));
 
     let controlled_vehicle = passenger
         .controlled_vehicle()
@@ -435,7 +467,7 @@ fn passenger_dismounting_an_animal_lands_on_free_floor_beside_it() {
     let vehicle = spawn_pig(DVec3::new(8.5, 65.0, 8.5));
     vehicle.set_rotation((0.0, 0.0));
     let passenger = spawn_pig(DVec3::new(8.5, 65.0, 8.5));
-    assert!(start_riding_entities(&passenger, &vehicle));
+    assert!(start_riding_entities(&passenger, &vehicle, false));
 
     passenger.stop_riding();
 

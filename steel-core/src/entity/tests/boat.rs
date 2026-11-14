@@ -162,8 +162,8 @@ fn a_chest_boat_seats_one_and_spills_its_chest_when_broken() {
         .expect("test chest boat should attach to the loaded chunk");
     let first = spawn_pig(world, position);
     let second = spawn_pig(world, position);
-    assert!(first.start_riding(&(Arc::clone(&boat) as SharedEntity)));
-    assert!(!second.start_riding(&(Arc::clone(&boat) as SharedEntity)));
+    assert!(first.start_riding(&(Arc::clone(&boat) as SharedEntity), false));
+    assert!(!second.start_riding(&(Arc::clone(&boat) as SharedEntity), false));
 
     let chest = boat.container_ref();
     {
@@ -205,7 +205,7 @@ fn a_downward_bubble_column_sinks_the_boat_and_throws_out_its_riders() {
     let boat = spawn_boat(world, DVec3::new(8.5, 64.0, 8.5));
     tick_boat(&boat, 40);
     let pig = spawn_pig(world, boat.position());
-    assert!(pig.start_riding(&(Arc::clone(&boat) as SharedEntity)));
+    assert!(pig.start_riding(&(Arc::clone(&boat) as SharedEntity), false));
 
     for _ in 0..59 {
         boat.on_above_bubble_column(true, BlockPos::new(8, 63, 8));

@@ -556,7 +556,7 @@ impl Mob for PigEntity {
             if let Some(world) = self.level()
                 && let Some(vehicle) = world.get_entity_by_id(self.id())
             {
-                player.start_riding(&vehicle);
+                player.start_riding(&vehicle, false);
             }
             return InteractionResult::Success;
         }

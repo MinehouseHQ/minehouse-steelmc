@@ -155,7 +155,7 @@ impl Entity for MinecartEntity {
         else {
             return InteractionResult::Consume;
         };
-        if player.start_riding(&vehicle) {
+        if player.start_riding(&vehicle, false) {
             InteractionResult::SuccessServer
         } else {
             InteractionResult::Consume

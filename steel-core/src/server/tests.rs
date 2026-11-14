@@ -26,9 +26,9 @@ use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{
-    C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT,
-    C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
-    C_UPDATE_ADVANCEMENTS,
+    C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_PLAYER_ROTATION,
+    C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION,
+    C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
 };
 use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
@@ -5285,5 +5285,51 @@ fn bossbar_commands_manage_a_domain_bar_and_execute_store_feeds_it() {
         run_command(&server, console(), "bossbar remove test:fight");
         assert!(events.get(&id).is_none());
         assert_eq!(events.ids().len(), 0);
+    });
+}
+
+#[test]
+fn rotate_turns_a_player_with_a_rotation_packet() {
+    let world_fixture = fresh_test_world("rotate");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) =
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 2).await
+        else {
+            panic!("test server should initialize");
+        };
+        let (alice, packets) = test_player_with_packets(&server, Arc::clone(world), "Alice", 1);
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        alice.set_rotation((70.0, 20.0));
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+
+        packets.lock().clear();
+        // `~` is relative to the console's own rotation, (0, 0).
+        run_command(&server, console(), "rotate Alice ~10 30");
+        assert_eq!(alice.rotation(), (10.0, 30.0));
+        assert_eq!(
+            packets
+                .lock()
+                .iter()
+                .filter(|packet| packet_id(packet) == C_PLAYER_ROTATION)
+                .count(),
+            1
+        );
+
+        // Facing a point straight above the feet looks fully up.
+        let position = alice.position();
+        let command = format!(
+            "rotate Alice facing {:.3} {:.3} {:.3}",
+            position.x,
+            position.y + 10.0,
+            position.z
+        );
+        run_command(&server, console(), &command);
+        assert!((alice.rotation().1 + 90.0).abs() < 1e-3);
     });
 }
