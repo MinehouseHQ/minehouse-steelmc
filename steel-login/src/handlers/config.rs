@@ -90,6 +90,11 @@ impl JavaTcpClient {
         self.send_packet_now(&self.server.registry_cache.tags_packet)
             .await;
 
+        if self.start_login_gate() {
+            // The gate finishes the configuration, or disconnects.
+            return;
+        }
+
         // Finish configuration with CFinishConfigurationPacket
         self.send_bare_packet_now(CFinishConfiguration {}).await;
     }
@@ -101,6 +106,15 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
+        if !self.login_gate_passed() {
+            // The client finished on its own, before the gate let it in.
+            log::warn!("Client {} tried to skip the login gate", self.id);
+            self.kick(TextComponent::translated(
+                translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+            ))
+            .await;
+            return ConnectionAction::none();
+        }
         // Admission can reject the join; the client already expects Play disconnect packets.
         self.protocol.store(ConnectionProtocol::Play);
         let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id()) else {

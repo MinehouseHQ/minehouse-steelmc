@@ -16,6 +16,15 @@ pub fn path(name: &str) -> PathBuf {
     Path::new(CONFIG_DIR).join(format!("{name}.toml"))
 }
 
+/// Path of file `name` with data a module keeps between runs (caches). The directory is
+/// `MINEHOUSE_DATA_DIR`, or `config/minehouse/data`: in a container point it at a volume.
+#[must_use]
+pub fn data_path(name: &str) -> PathBuf {
+    env_value("MINEHOUSE_DATA_DIR")
+        .map_or_else(|| Path::new(CONFIG_DIR).join("data"), PathBuf::from)
+        .join(name)
+}
+
 /// Loads a module config. Missing fields take their defaults and the file is written back, so
 /// new options show up after an update (as the Fabric mods do with their JSON configs). A file
 /// that can't be written is only logged: in a container the settings may come from the
