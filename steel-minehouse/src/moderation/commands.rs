@@ -16,6 +16,7 @@ use tokio::{
     sync::oneshot::{self, error::TryRecvError},
     task::AbortHandle,
 };
+use uuid::Uuid;
 
 use super::{
     Moderation, announce_ban,
@@ -23,6 +24,7 @@ use super::{
     broadcast,
     format::{duration_between, format_time, parse_duration, render},
     settings::BansConfig,
+    wipe::{self, WipeReport},
 };
 use crate::site::SiteError;
 
@@ -207,17 +209,107 @@ fn success(source: CommandSource<'_>, text: String, color: Option<Color>, broadc
     source.send_success(&message, broadcast);
 }
 
-/// `/ban <ник> --wipe` resets the account's progress on the Fabric server. Steel can't do that
-/// yet, and banning with the flag as the reason would be a surprise.
-fn wipe_unsupported() -> CommandNode {
-    let refuse = |_: &CommandContext<'_>| -> Result<i32, CommandError> {
-        Err(CommandError::from(
-            "Сброс прогресса (--wipe) на этом сервере пока не работает. Выполни команду без него.",
-        ))
+/// How a `/ban`-like command was typed.
+#[derive(Clone, Copy)]
+struct Options {
+    /// `/tempban`: there is a `duration` argument.
+    temporary: bool,
+    /// There is a `reason` argument.
+    with_reason: bool,
+    /// `--wipe`: the account also starts over as a new player, see [`wipe`].
+    wipe: bool,
+}
+
+type Handler = fn(&Arc<Moderation>, CommandContext<'_>, Options) -> Result<SiteCall, CommandError>;
+
+/// `<node> [--wipe] [причина]`.
+fn with_reason_and_wipe(
+    node: CommandNode,
+    moderation: &Arc<Moderation>,
+    handler: Handler,
+    temporary: bool,
+) -> CommandNode {
+    let run = |with_reason: bool, wipe: bool| {
+        let moderation = Arc::clone(moderation);
+        let options = Options {
+            temporary,
+            with_reason,
+            wipe,
+        };
+        move |context: &CommandContext<'_>| handler(&moderation, *context, options)
     };
-    literal(WIPE_FLAG)
-        .executes(refuse)
-        .then(reason().executes(refuse))
+    node.executes_suspended(run(false, false))
+        .then(
+            literal(WIPE_FLAG)
+                .executes_suspended(run(false, true))
+                .then(reason().executes_suspended(run(true, true))),
+        )
+        .then(reason().executes_suspended(run(true, false)))
+}
+
+/// Resets the account when the command had `--wipe`. Runs off the tick.
+async fn wipe_if_asked(
+    moderation: &Moderation,
+    asked: bool,
+    uuids: &[Uuid],
+    kick_message: Option<&str>,
+) -> Option<WipeReport> {
+    if !asked || uuids.is_empty() {
+        return None;
+    }
+    let server = moderation.server()?;
+    // A ban kicks with its own text; the reset then finds nobody online.
+    if let Some(message) = kick_message {
+        moderation.kick(&server, uuids, Some(message));
+    }
+    Some(wipe::wipe_players(&server, uuids, wipe::WIPED_MESSAGE).await)
+}
+
+/// Tells the moderator what `--wipe` did.
+fn report_wipe(
+    source: CommandSource<'_>,
+    asked: bool,
+    nickname: &str,
+    nicknames: usize,
+    report: Option<&WipeReport>,
+) {
+    if !asked {
+        return;
+    }
+    let Some(report) = report else {
+        source.send_failure(TextComponent::plain(format!(
+            "Сайт не вернул UUID ников {nickname}, прогресс не сброшен."
+        )));
+        return;
+    };
+    for error in &report.errors {
+        source.send_failure(TextComponent::plain(format!("Не удалось сбросить {error}")));
+    }
+    if report.wiped == 0 {
+        if report.errors.is_empty() {
+            success(
+                source,
+                format!("У {nickname} нет сохранённого прогресса, сбрасывать нечего."),
+                Some(Color::Green),
+                true,
+            );
+        }
+        return;
+    }
+    let count = if nicknames > 1 {
+        format!(" (ников: {})", report.wiped)
+    } else {
+        String::new()
+    };
+    success(
+        source,
+        format!(
+            "Прогресс {nickname} сброшен начисто, как у нового игрока: позиция, точка \
+             возрождения, инвентарь, эндер-сундук, опыт, эффекты, статистика и достижения{count}."
+        ),
+        Some(Color::Green),
+        true,
+    );
 }
 
 /// Registers every command of the module.
@@ -242,40 +334,16 @@ pub(super) fn register(
 }
 
 fn ban_tree(moderation: Arc<Moderation>) -> CommandNode {
-    let plain = Arc::clone(&moderation);
-    literal("ban").then(
-        player()
-            .executes_suspended(move |context| ban(&plain, *context, false, false))
-            .then(wipe_unsupported())
-            .then(
-                reason().executes_suspended(move |context| ban(&moderation, *context, false, true)),
-            ),
-    )
+    literal("ban").then(with_reason_and_wipe(player(), &moderation, ban, false))
 }
 
 fn tempban_tree(moderation: Arc<Moderation>) -> CommandNode {
-    let plain = Arc::clone(&moderation);
-    literal("tempban").then(
-        player().then(
-            argument("duration", CommandArgument::custom(WordParser::Duration))
-                .executes_suspended(move |context| ban(&plain, *context, true, false))
-                .then(wipe_unsupported())
-                .then(
-                    reason()
-                        .executes_suspended(move |context| ban(&moderation, *context, true, true)),
-                ),
-        ),
-    )
+    let duration = argument("duration", CommandArgument::custom(WordParser::Duration));
+    literal("tempban").then(player().then(with_reason_and_wipe(duration, &moderation, ban, true)))
 }
 
 fn unban_tree(moderation: Arc<Moderation>) -> CommandNode {
-    let plain = Arc::clone(&moderation);
-    literal("unban").then(
-        player()
-            .executes_suspended(move |context| unban(&plain, *context, false))
-            .then(wipe_unsupported())
-            .then(reason().executes_suspended(move |context| unban(&moderation, *context, true))),
-    )
+    literal("unban").then(with_reason_and_wipe(player(), &moderation, unban, false))
 }
 
 fn banlist_tree(moderation: Arc<Moderation>) -> CommandNode {
@@ -283,13 +351,7 @@ fn banlist_tree(moderation: Arc<Moderation>) -> CommandNode {
 }
 
 fn warn_tree(moderation: Arc<Moderation>) -> CommandNode {
-    let plain = Arc::clone(&moderation);
-    literal("warn").then(
-        player()
-            .executes_suspended(move |context| warn(&plain, *context, false))
-            .then(wipe_unsupported())
-            .then(reason().executes_suspended(move |context| warn(&moderation, *context, true))),
-    )
+    literal("warn").then(with_reason_and_wipe(player(), &moderation, warn, false))
 }
 
 fn unwarn_tree(moderation: Arc<Moderation>) -> CommandNode {
@@ -318,12 +380,11 @@ fn whitelist_tree(moderation: Arc<Moderation>) -> CommandNode {
 fn ban(
     moderation: &Arc<Moderation>,
     context: CommandContext<'_>,
-    temporary: bool,
-    with_reason: bool,
+    options: Options,
 ) -> Result<SiteCall, CommandError> {
     let source = context.source();
     let target = word(context, "player")?;
-    let seconds = if temporary {
+    let seconds = if options.temporary {
         let raw = word(context, "duration")?;
         Some(parse_duration(&raw).ok_or_else(|| {
             CommandError::from(format!(
@@ -333,7 +394,7 @@ fn ban(
     } else {
         None
     };
-    let reason = reason_of(context, with_reason)?;
+    let reason = reason_of(context, options.with_reason)?;
     if is_self(source, &target) {
         return Err(CommandError::from("Себя забанить нельзя."));
     }
@@ -345,6 +406,16 @@ fn ban(
         let config = BansConfig::load();
         let reason = reason.unwrap_or_else(|| config.default_reason.clone());
         let result = moderation.site.ban(&target, &reason, seconds, &by).await?;
+        let wiped = match &result {
+            Some(result) => {
+                let message = result
+                    .message
+                    .as_deref()
+                    .unwrap_or(&moderation.banned_message);
+                wipe_if_asked(&moderation, options.wipe, &result.uuids, Some(message)).await
+            }
+            None => None,
+        };
 
         Ok(completion(move |source| {
             let Some(result) = result else {
@@ -374,6 +445,13 @@ fn ban(
                 Some(&by.name),
             );
             moderation.kick(server, &result.uuids, result.message.as_deref());
+            report_wipe(
+                source,
+                options.wipe,
+                &result.nickname,
+                result.uuids.len(),
+                wiped.as_ref(),
+            );
             Ok(1)
         }))
     }))
@@ -382,29 +460,40 @@ fn ban(
 fn unban(
     moderation: &Arc<Moderation>,
     context: CommandContext<'_>,
-    with_reason: bool,
+    options: Options,
 ) -> Result<SiteCall, CommandError> {
     let source = context.source();
     let target = word(context, "player")?;
-    let reason = reason_of(context, with_reason)?.unwrap_or_default();
+    let reason = reason_of(context, options.with_reason)?.unwrap_or_default();
     let by = actor(source);
-    let site = moderation.site.clone();
+    let moderation_task = Arc::clone(moderation);
 
     Ok(moderation.call(source, async move {
-        let result = site.unban(&target, &reason, &by).await?;
+        let moderation = moderation_task;
+        let result = moderation.site.unban(&target, &reason, &by).await?;
+        let wiped = match &result {
+            Unban::Done(_, uuids) => wipe_if_asked(&moderation, options.wipe, uuids, None).await,
+            _ => None,
+        };
         Ok(completion(move |source| match result {
-            Unban::Done(nickname) => {
+            Unban::Done(nickname, uuids) => {
                 success(
                     source,
                     format!("{nickname} разблокирован."),
                     Some(Color::Green),
                     true,
                 );
+                report_wipe(source, options.wipe, &nickname, uuids.len(), wiped.as_ref());
                 Ok(1)
             }
-            Unban::NotBanned(nickname) => {
-                Err(CommandError::from(format!("{nickname} не заблокирован.")))
-            }
+            Unban::NotBanned(nickname) => Err(CommandError::from(format!(
+                "{nickname} не заблокирован.{}",
+                if options.wipe {
+                    " Прогресс не сброшен."
+                } else {
+                    ""
+                }
+            ))),
             Unban::NotFound => Err(CommandError::from(format!("Игрок {target} не найден."))),
         }))
     }))
@@ -451,14 +540,29 @@ fn banlist(moderation: &Arc<Moderation>, context: CommandContext<'_>) -> SiteCal
     })
 }
 
+/// How long the ban of the last warn is; `None` = forever.
+fn warn_ban_seconds(config: &BansConfig) -> Option<u64> {
+    let duration = config.warn_ban_duration.trim();
+    if duration.is_empty() {
+        return None;
+    }
+    let seconds = parse_duration(duration);
+    if seconds.is_none() {
+        log::warn!(
+            "warn_ban_duration «{duration}» is not a duration, the warn ban will be permanent"
+        );
+    }
+    seconds
+}
+
 fn warn(
     moderation: &Arc<Moderation>,
     context: CommandContext<'_>,
-    with_reason: bool,
+    options: Options,
 ) -> Result<SiteCall, CommandError> {
     let source = context.source();
     let target = word(context, "player")?;
-    let reason = reason_of(context, with_reason)?;
+    let reason = reason_of(context, options.with_reason)?;
     if is_self(source, &target) {
         return Err(CommandError::from("Себе предупреждение выдать нельзя."));
     }
@@ -470,20 +574,25 @@ fn warn(
         let config = BansConfig::load();
         let reason = reason.unwrap_or_else(|| config.default_reason.clone());
         let limit = config.warn_limit;
-        let duration = config.warn_ban_duration.trim();
-        let ban_seconds = (!duration.is_empty())
-            .then(|| parse_duration(duration))
-            .flatten();
-        if !duration.is_empty() && ban_seconds.is_none() {
-            log::warn!(
-                "warn_ban_duration «{duration}» is not a duration, the warn ban will be permanent"
-            );
-        }
+        let ban_seconds = warn_ban_seconds(&config);
         let ban_reason = Some(config.warn_ban_reason.trim()).filter(|reason| !reason.is_empty());
         let result = moderation
             .site
             .warn(&target, &reason, &by, limit, ban_seconds, ban_reason)
             .await?;
+        let wiped = match &result {
+            Some(result) => {
+                // The third warn bans: then the ban text is what the player reads.
+                let message = result.banned.then(|| {
+                    result
+                        .message
+                        .as_deref()
+                        .unwrap_or(&moderation.banned_message)
+                });
+                wipe_if_asked(&moderation, options.wipe, &result.uuids, message).await
+            }
+            None => None,
+        };
 
         Ok(completion(move |source| {
             let Some(result) = result else {
@@ -545,6 +654,13 @@ fn warn(
             {
                 online.send_message(&render(config.warn_player.trim(), &values));
             }
+            report_wipe(
+                source,
+                options.wipe,
+                &result.nickname,
+                result.uuids.len(),
+                wiped.as_ref(),
+            );
             Ok(1)
         }))
     }))

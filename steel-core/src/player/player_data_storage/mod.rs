@@ -9,7 +9,11 @@ mod stats;
 #[cfg(test)]
 mod tests;
 
-use std::{io::Cursor, path::PathBuf, sync::Arc};
+use std::{
+    io::Cursor,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use rustc_hash::FxHashMap;
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
@@ -245,6 +249,53 @@ impl PlayerDataStorage {
         self.write_domain_data(domain, uuid, data).await?;
         *newest_written = data.capture_order;
         Ok(())
+    }
+
+    /// Takes everything stored about a player out of these domains: their data, statistics
+    /// and advancements, and the record of their last domain. The player then joins as new.
+    ///
+    /// The disk backend moves the files under `archive` (one folder per domain) instead of
+    /// deleting them, so a reset can be undone by hand. Returns whether anything was stored.
+    ///
+    /// The player must be offline: the save of a player who is online brings the data back.
+    /// Saves captured before this call, a disconnect still being written included, are
+    /// skipped.
+    pub async fn archive_player(
+        &self,
+        uuid: Uuid,
+        domains: &[String],
+        archive: &Path,
+    ) -> io::Result<bool> {
+        let mut found = false;
+        for domain in domains {
+            let order = Arc::clone(
+                self.domain_save_order
+                    .lock()
+                    .entry((domain.as_str().into(), uuid))
+                    .or_default(),
+            );
+            let mut newest_written = order.lock().await;
+            found |= match &self.backend {
+                PlayerDataStorageBackend::File(storage) => {
+                    storage
+                        .archive_domain_player(domain, uuid, &archive.join(domain))
+                        .await?
+                }
+                PlayerDataStorageBackend::Memory(storage) => {
+                    storage.remove_domain_player(domain, uuid)
+                }
+            };
+            *newest_written = next_capture_order();
+        }
+        found |= match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage
+                    .archive_global_player(uuid, &archive.join("global"))
+                    .await?
+            }
+            PlayerDataStorageBackend::Memory(storage) => storage.remove_global_player(uuid),
+        };
+        Ok(found)
     }
 
     async fn write_domain_data(

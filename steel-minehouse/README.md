@@ -45,7 +45,7 @@ off.
 In `steel-core` this is the `LoginGate` hook (`server/login_gate.rs`); `steel-login` holds the
 client, keeps it alive and refuses a client that finishes the configuration on its own.
 
-Not ported yet: Discord roles, feature flags, Twitch.
+Not ported yet: feature flags, Twitch.
 
 ## Moderation
 
@@ -73,5 +73,32 @@ snake_case: the chat formats (`&` colors, `{player}`, `{reason}`, `{by}`, `{dura
 read again before every use. The commands are registered only while the login check is on:
 they share its site client and server id.
 
-Not ported yet: `--wipe` (resetting the account's progress, also when asked on the site);
-the commands refuse the flag instead of taking it for the reason.
+`/ban`, `/tempban`, `/unban` and `/warn` take `--wipe` before the reason: the account also
+starts over as a new player (`src/moderation/wipe.rs`). Whoever is online is kicked first, then
+the data, statistics and advancements of every nickname, in every domain, move to
+`wipes/<uuid>-<time>/` in the data directory (`PlayerDataStorage::archive_player` in
+`steel-core`); nothing is deleted, so a reset can be undone by hand while the server is
+stopped. The same happens for the resets asked for on the site, which the sync picks up under
+the console id of the server (`MINEHOUSE_SERVER_ID`, else the id of the login check).
+Scoreboard scores are not reset.
+
+## Roles
+
+`src/roles/`: Discord roles decide the permission groups, as `roleSync` of the Fabric mod did
+with `LuckPerms`. `config/minehouse/roles.toml`:
+
+```toml
+enabled = true
+sync_seconds = 60
+
+[groups]
+ADMIN = "admin"
+"Модератор" = "moderator"
+```
+
+A key is a role name (case-insensitive) or a role ID, a value is a group of
+`config/groups.toml` or several separated by commas. Players are checked a few seconds after
+joining and then every `sync_seconds`. Only the groups listed here are added and removed;
+every other group of a player stays. A player who left the Discord server loses all of them;
+when the site does not answer, nothing changes. A listed group that does not exist is skipped
+with a warning. The sync runs only while the login check is on.

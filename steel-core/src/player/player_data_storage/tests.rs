@@ -1090,3 +1090,80 @@ async fn an_older_player_snapshot_never_overwrites_a_newer_one() {
         .expect("player data should exist");
     assert_eq!(loaded.experience_level, 1);
 }
+
+#[tokio::test]
+async fn archived_player_joins_as_new_and_keeps_a_copy() {
+    init_vanilla_registry();
+
+    let root = temp_storage_root("archive");
+    let storage = PlayerDataStorage::on_disk(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(11);
+    let other = Uuid::from_u128(12);
+    let data = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+
+    // Two saves, so the data file also has its `_old` backup a load would recover from.
+    for _ in 0..2 {
+        for player in [uuid, other] {
+            storage
+                .save_domain_data("lobby", player, &data)
+                .await
+                .expect("player data should be stored");
+        }
+    }
+    storage
+        .save_global(
+            uuid,
+            &GlobalPlayerData {
+                last_active_domain: "lobby".to_owned(),
+            },
+        )
+        .await
+        .expect("global data should be stored");
+
+    let archive = root.join("wiped");
+    let domains = ["lobby".to_owned(), "empty".to_owned()];
+    let found = storage
+        .archive_player(uuid, &domains, &archive)
+        .await
+        .expect("player should be archived");
+    assert!(found);
+    assert!(archive.join("lobby/data").join(uuid.to_string()).exists());
+    assert!(archive.join("global/data").join(uuid.to_string()).exists());
+
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load");
+    assert!(loaded.is_none());
+    let global = storage
+        .load_global(uuid)
+        .await
+        .expect("global data should load");
+    assert!(global.is_none());
+    let kept = storage
+        .load_domain("lobby", other)
+        .await
+        .expect("player data should load");
+    assert!(kept.is_some());
+
+    // A disconnect snapshot taken before the reset must not bring the data back.
+    storage
+        .save_domain_data("lobby", uuid, &data)
+        .await
+        .expect("stale save should be skipped");
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load");
+    assert!(loaded.is_none());
+
+    let again = storage
+        .archive_player(uuid, &domains, &archive)
+        .await
+        .expect("an empty archive should succeed");
+    assert!(!again);
+}

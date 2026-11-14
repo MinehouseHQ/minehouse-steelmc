@@ -40,6 +40,18 @@ impl MemoryPlayerDataStorage {
             .cloned()
     }
 
+    pub(crate) fn remove_domain_player(&self, domain: &str, uuid: Uuid) -> bool {
+        self.state
+            .lock()
+            .domain_players
+            .get_mut(domain)
+            .is_some_and(|players| players.remove(&uuid).is_some())
+    }
+
+    pub(crate) fn remove_global_player(&self, uuid: Uuid) -> bool {
+        self.state.lock().global_players.remove(&uuid).is_some()
+    }
+
     pub(crate) fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) {
         self.state.lock().global_players.insert(uuid, data.clone());
     }

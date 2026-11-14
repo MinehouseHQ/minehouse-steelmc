@@ -217,6 +217,67 @@ impl FilePlayerDataStorage {
         }))
     }
 
+    /// Moves a player's data, statistics and advancements of one domain under `archive`.
+    /// Returns whether any of them existed.
+    pub(crate) async fn archive_domain_player(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        archive: &Path,
+    ) -> io::Result<bool> {
+        let players_dir = self.domain_players_dir(domain);
+        let mut found = false;
+        for path in [
+            Self::player_data_file(&players_dir, uuid),
+            Self::player_stats_file(&players_dir, uuid),
+            Self::player_advancements_file(&players_dir, uuid),
+        ] {
+            found |= self.archive_path(&players_dir, &path, archive).await?;
+        }
+        Ok(found)
+    }
+
+    /// Moves the server-wide record of a player under `archive`.
+    pub(crate) async fn archive_global_player(
+        &self,
+        uuid: Uuid,
+        archive: &Path,
+    ) -> io::Result<bool> {
+        let players_dir = self.global_players_dir();
+        let path = Self::player_data_file(&players_dir, uuid);
+        self.archive_path(&players_dir, &path, archive).await
+    }
+
+    /// Moves one data file out of the way together with its backup, which a later load
+    /// would otherwise recover it from, and drops an unfinished write of it.
+    async fn archive_path(&self, base: &Path, path: &Path, archive: &Path) -> io::Result<bool> {
+        let _guard = self.file_lock(path).await;
+        let mut found = false;
+        for source in [path.to_path_buf(), Self::atomic_backup_path(path)] {
+            if !fs::try_exists(&source).await? {
+                continue;
+            }
+            let target = archive.join(source.strip_prefix(base).unwrap_or(&source));
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            if fs::rename(&source, &target).await.is_err() {
+                // Another filesystem: copy, then remove.
+                Self::copy_synced_file(&source, &target).await?;
+                fs::remove_file(&source).await?;
+            }
+            found = true;
+        }
+        let temp_path = Self::atomic_temp_path(path);
+        if fs::try_exists(&temp_path).await? {
+            fs::remove_file(&temp_path).await?;
+        }
+        if found && let Some(parent) = path.parent() {
+            Self::sync_parent(parent).await?;
+        }
+        Ok(found)
+    }
+
     pub(crate) async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
         self.load_player_permissions_file()
             .await?
