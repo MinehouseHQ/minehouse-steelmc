@@ -97,6 +97,35 @@ pub fn game_event_frequency(event: GameEventRef) -> i32 {
         .map_or(0, |(_, frequency)| *frequency)
 }
 
+/// Vanilla `getResonanceEventByFrequency`: the resonate event for a
+/// frequency from 1 to 15.
+///
+/// # Panics
+/// If `frequency` is outside 1 to 15, like vanilla's array lookup.
+#[must_use]
+pub fn resonance_event_by_frequency(frequency: i32) -> GameEventRef {
+    use vanilla_game_events as e;
+    const EVENTS: [&GameEvent; 15] = [
+        &e::RESONATE_1,
+        &e::RESONATE_2,
+        &e::RESONATE_3,
+        &e::RESONATE_4,
+        &e::RESONATE_5,
+        &e::RESONATE_6,
+        &e::RESONATE_7,
+        &e::RESONATE_8,
+        &e::RESONATE_9,
+        &e::RESONATE_10,
+        &e::RESONATE_11,
+        &e::RESONATE_12,
+        &e::RESONATE_13,
+        &e::RESONATE_14,
+        &e::RESONATE_15,
+    ];
+    let index = usize::try_from(frequency - 1).expect("resonance frequency is 1 to 15");
+    EVENTS[index]
+}
+
 /// Vanilla `getRedstoneStrengthForDistance`.
 #[must_use]
 pub fn redstone_strength_for_distance(distance: f32, listener_radius: i32) -> i32 {
@@ -448,10 +477,18 @@ pub trait VibrationSystem: VibrationUser {
     fn vibration_data(&self) -> &SyncMutex<VibrationData>;
 }
 
-/// Vanilla `VibrationSystem.Listener`, attached to an entity that is a
-/// [`VibrationSystem`].
+/// Vanilla `VibrationSystem.Listener`, attached to an entity or a block
+/// entity that is a [`VibrationSystem`].
 pub struct VibrationListener {
-    owner: Weak<dyn Entity>,
+    owner: VibrationOwner,
+}
+
+/// Who a [`VibrationListener`] hears for.
+enum VibrationOwner {
+    /// An entity that returns itself from [`Entity::as_vibration_system`].
+    Entity(Weak<dyn Entity>),
+    /// A vibration system owned directly, like a sculk sensor's.
+    System(Weak<dyn VibrationSystem>),
 }
 
 impl VibrationListener {
@@ -460,13 +497,26 @@ impl VibrationListener {
     #[must_use]
     pub fn new(owner: &SharedEntity) -> Self {
         Self {
-            owner: Arc::downgrade(owner),
+            owner: VibrationOwner::Entity(Arc::downgrade(owner)),
+        }
+    }
+
+    /// Creates a listener for a vibration system that is not an entity.
+    #[must_use]
+    pub fn for_system(system: &Arc<dyn VibrationSystem>) -> Self {
+        Self {
+            owner: VibrationOwner::System(Arc::downgrade(system)),
         }
     }
 
     fn with_system<R>(&self, f: impl FnOnce(&dyn VibrationSystem) -> R) -> Option<R> {
-        let owner = self.owner.upgrade()?;
-        owner.as_vibration_system().map(f)
+        match &self.owner {
+            VibrationOwner::Entity(owner) => {
+                let owner = owner.upgrade()?;
+                owner.as_vibration_system().map(f)
+            }
+            VibrationOwner::System(system) => Some(f(system.upgrade()?.as_ref())),
+        }
     }
 
     /// Vanilla `forceScheduleVibration`.
