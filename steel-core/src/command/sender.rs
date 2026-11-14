@@ -3,6 +3,7 @@ use std::{fmt, sync::Arc};
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use super::{execution::CommandResultCallback, rcon::RconSink};
 use crate::{
     player::{DomainResidenceToken, Player},
     server::Server,
@@ -15,8 +16,8 @@ pub enum CommandSender {
     Player(Arc<Player>),
     /// The command was sent via the server's console.
     Console,
-    /// The command was sent via Rcon.
-    Rcon,
+    /// The command was sent via a remote console, which collects its output.
+    Rcon(Arc<RconSink>),
 }
 
 /// Stable identity used to preserve top-level command ordering while work is suspended.
@@ -89,7 +90,7 @@ impl CommandExecutionOwner {
                 residence: self.player_residence,
             },
             CommandSender::Console => CommandSuggestionKey::Console,
-            CommandSender::Rcon => CommandSuggestionKey::Rcon,
+            CommandSender::Rcon(_) => CommandSuggestionKey::Rcon,
         }
     }
 
@@ -114,7 +115,7 @@ impl CommandSender {
         match self {
             Self::Player(player) => CommandSenderKey::Player(player.gameprofile.id()),
             Self::Console => CommandSenderKey::Console,
-            Self::Rcon => CommandSenderKey::Rcon,
+            Self::Rcon(_) => CommandSenderKey::Rcon,
         }
     }
 
@@ -132,8 +133,15 @@ impl CommandSender {
         match self {
             Self::Player(player) => player.send_message(text),
             Self::Console => log::info!("{text}"),
-            // TODO: Implement Rcon message sending
-            Self::Rcon => log::warn!("Dropping Rcon command message until Rcon output is wired"),
+            Self::Rcon(sink) => sink.push_message(text),
+        }
+    }
+
+    /// The callback for a top-level command of this sender: a remote console records the result.
+    pub(crate) fn result_callback(&self) -> CommandResultCallback {
+        match self {
+            Self::Rcon(sink) => CommandResultCallback::new(sink.result_recorder()),
+            Self::Player(_) | Self::Console => CommandResultCallback::empty(),
         }
     }
 }
@@ -146,7 +154,7 @@ impl fmt::Display for CommandSender {
             match self {
                 Self::Player(p) => &p.gameprofile.name(),
                 Self::Console => "Server",
-                Self::Rcon => "Rcon",
+                Self::Rcon(_) => "Rcon",
             }
         )
     }
