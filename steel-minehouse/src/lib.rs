@@ -12,11 +12,13 @@ pub mod auth;
 pub mod config;
 pub mod console;
 pub mod moderation;
+pub mod roles;
 pub mod site;
 
 use auth::{Auth, AuthSetup};
 use console::Console;
 use moderation::Moderation;
+use roles::Roles;
 
 /// What is prepared before the server exists: settings and the commands.
 pub struct Setup {
@@ -30,6 +32,7 @@ pub struct Minehouse {
     /// Kept for the commands and syncs that will use it.
     _auth: Option<Arc<Auth>>,
     moderation: Option<Arc<Moderation>>,
+    roles: Option<Roles>,
 }
 
 impl Minehouse {
@@ -56,10 +59,16 @@ impl Minehouse {
         if let Some(moderation) = &setup.moderation {
             moderation.start(server);
         }
+        // Roles come from the same site as the login check.
+        let roles = setup
+            .auth
+            .as_ref()
+            .and_then(|auth| Roles::start(server, auth.site.clone()));
         Self {
             console: Console::start(server),
             _auth: setup.auth.and_then(|auth| Auth::start(server, auth)),
             moderation: setup.moderation,
+            roles,
         }
     }
 
@@ -67,6 +76,9 @@ impl Minehouse {
     pub async fn shutdown(&self) {
         if let Some(moderation) = &self.moderation {
             moderation.stop();
+        }
+        if let Some(roles) = &self.roles {
+            roles.stop();
         }
         if let Some(console) = &self.console {
             console.stop().await;

@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::wipe::SiteWipe;
 use crate::site::{SiteClient, SiteError};
 
 /// Who runs a command: the player's UUID (none for the console) and the name to show.
@@ -30,8 +31,8 @@ pub struct Banned {
 /// `POST /api/mc/unban`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Unban {
-    /// The ban is lifted.
-    Done(String),
+    /// The ban is lifted; with every nickname of the account, for `--wipe`.
+    Done(String, Vec<Uuid>),
     /// The account had no active ban.
     NotBanned(String),
     /// The site knows no such nickname.
@@ -173,13 +174,28 @@ pub fn parse_ban(text: &str) -> Result<Option<Banned>, SiteError> {
 pub fn parse_unban(text: &str) -> Result<Unban, SiteError> {
     let json = parse(text)?;
     match json.get("status").and_then(Value::as_str) {
-        Some("ok") => Ok(Unban::Done(nickname(&json))),
+        Some("ok") => Ok(Unban::Done(nickname(&json), uuids(&json, "uuids"))),
         Some("not_banned") => Ok(Unban::NotBanned(nickname(&json))),
         Some("not_found") => Ok(Unban::NotFound),
         other => Err(SiteError::Answer(format!(
             "unknown unban status: {other:?}"
         ))),
     }
+}
+
+/// Parses `POST /api/mc/wipes`.
+pub fn parse_wipes(text: &str) -> Result<Vec<SiteWipe>, SiteError> {
+    let json = parse(text)?;
+    Ok(list(&json, "wipes")
+        .iter()
+        .filter_map(|wipe| {
+            Some(SiteWipe {
+                id: wipe.get("id")?.as_i64()?,
+                nickname: nickname(wipe),
+                uuids: uuids(wipe, "uuids"),
+            })
+        })
+        .collect())
 }
 
 /// Parses `GET /api/mc/bans`.
@@ -301,6 +317,25 @@ impl SiteClient {
         parse_unban(&self.post_json("/api/mc/unban", body.to_string()).await?)
     }
 
+    /// Progress resets asked for on the site for `server` and not done yet.
+    pub async fn wipes(&self, server: &str) -> Result<Vec<SiteWipe>, SiteError> {
+        let body = json!({ "server": server });
+        parse_wipes(&self.post_json("/api/mc/wipes", body.to_string()).await?)
+    }
+
+    /// Marks a reset done: how many nicknames had progress, and what went wrong if anything.
+    pub async fn wipe_done(
+        &self,
+        id: i64,
+        wiped: usize,
+        error: Option<&str>,
+    ) -> Result<(), SiteError> {
+        let body = json!({ "id": id, "wiped": wiped, "error": error });
+        self.post_json("/api/mc/wipes/done", body.to_string())
+            .await
+            .map(|_| ())
+    }
+
     /// Active bans, newest first.
     pub async fn bans(&self) -> Result<Vec<BanEntry>, SiteError> {
         parse_bans(&self.get("/api/mc/bans").await?)
@@ -407,8 +442,10 @@ mod tests {
     #[test]
     fn unban_and_unwarn_statuses() {
         assert!(matches!(
-            parse_unban(r#"{"status":"ok","nickname":"Steve"}"#),
-            Ok(Unban::Done(name)) if name == "Steve"
+            parse_unban(
+                r#"{"status":"ok","nickname":"Steve","uuids":["0f6f2d5c-0c0b-4d5e-9d0a-1b2c3d4e5f60"]}"#
+            ),
+            Ok(Unban::Done(name, uuids)) if name == "Steve" && uuids.len() == 1
         ));
         assert!(matches!(
             parse_unban(r#"{"status":"not_banned","nickname":"Steve"}"#),
@@ -424,6 +461,18 @@ mod tests {
             Ok(Unwarn::Done(_, 2))
         ));
         assert!(parse_unwarn("{}").is_err());
+    }
+
+    #[test]
+    fn wipes_keep_rows_with_an_id() {
+        let wipes = parse_wipes(
+            r#"{"wipes":[{"id":3,"nickname":"Steve","uuids":["0f6f2d5c-0c0b-4d5e-9d0a-1b2c3d4e5f60","x"]},{"nickname":"NoId"},4]}"#,
+        );
+        assert!(matches!(
+            wipes,
+            Ok(ref wipes) if wipes.len() == 1 && wipes[0].id == 3 && wipes[0].uuids.len() == 1
+        ));
+        assert!(matches!(parse_wipes(""), Ok(wipes) if wipes.is_empty()));
     }
 
     #[test]
