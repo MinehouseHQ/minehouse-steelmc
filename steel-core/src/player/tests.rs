@@ -31,8 +31,8 @@ use crate::inventory::{
 };
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
-    insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, TestWorld, fresh_test_world, fresh_test_world_in_domain,
+    hard_damage_test_world, insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
 use glam::DVec3;
@@ -1910,4 +1910,98 @@ fn sword_does_not_destroy_blocks_in_creative() {
         dirt,
         "swords should not destroy blocks when player is in creative mode."
     );
+}
+
+/// A victim at the origin facing +Z with a shield raised for `raised_ticks`,
+/// and an attacker standing at `attacker_z` holding `weapon`.
+fn shield_duel(
+    name: &'static str,
+    raised_ticks: usize,
+    attacker_z: f64,
+    weapon: ItemStack,
+) -> (TestWorld, Arc<Player>, Arc<Player>) {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world(name);
+    let world = Arc::clone(&world_fixture.world);
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    insert_ready_full_chunk(&world, ChunkPos::new(0, -1));
+    let victim = test_player(Arc::clone(&world));
+    victim.base.set_position_local(DVec3::new(0.5, 64.0, 0.5));
+    victim.set_rotation((0.0, 0.0));
+    LivingEntity::set_y_head_rot(victim.as_ref(), 0.0);
+    victim
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::SHIELD));
+    let attacker = TestPlayerBuilder::new(Arc::clone(&world), "Attacker", 2).build();
+    attacker.set_client_loaded(true);
+    attacker
+        .base
+        .set_position_local(DVec3::new(0.5, 64.0, 0.5 + attacker_z));
+    attacker.inventory.lock().set_selected_item(weapon);
+
+    let victim_entity: SharedEntity = Arc::<Player>::clone(&victim);
+    victim.start_using_item(InteractionHand::MainHand);
+    for _ in 0..raised_ticks {
+        victim.tick_active_item_use(&victim_entity);
+    }
+    (world_fixture, victim, attacker)
+}
+
+fn hit(victim: &Player, attacker: &Arc<Player>, damage: f32) -> bool {
+    let attacker_entity: SharedEntity = Arc::<Player>::clone(attacker);
+    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, attacker_entity);
+    let world = victim.get_world();
+    victim.hurt(&world, &source, damage)
+}
+
+#[test]
+fn raised_shield_blocks_a_hit_from_the_front() {
+    let (_world, victim, attacker) = shield_duel("shield_blocks_front", 5, 2.0, ItemStack::empty());
+    assert!(victim.is_blocking());
+    let health = victim.get_health();
+
+    assert!(!hit(&victim, &attacker, 4.0));
+
+    assert!((victim.get_health() - health).abs() < f32::EPSILON);
+    let shield = victim
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    // Vanilla shield item damage: floor(1 + 1 * 4) once the hit reaches 3.
+    assert_eq!(shield.get_damage_value(), 5);
+    assert!(victim.is_using_item());
+}
+
+#[test]
+fn shield_needs_its_raise_delay_and_only_covers_the_front() {
+    let (_world, victim, attacker) = shield_duel("shield_raise_delay", 4, 2.0, ItemStack::empty());
+    assert!(!victim.is_blocking());
+    let health = victim.get_health();
+    assert!(hit(&victim, &attacker, 4.0));
+    assert!(victim.get_health() < health);
+
+    let (_world, victim, attacker) = shield_duel("shield_from_behind", 5, -2.0, ItemStack::empty());
+    assert!(victim.is_blocking());
+    let health = victim.get_health();
+    assert!(hit(&victim, &attacker, 4.0));
+    assert!(victim.get_health() < health);
+}
+
+#[test]
+fn axe_hit_knocks_the_shield_down() {
+    let (_world, victim, attacker) = shield_duel(
+        "shield_disabled_by_axe",
+        5,
+        2.0,
+        ItemStack::new(&vanilla_items::IRON_AXE),
+    );
+    let shield = ItemStack::new(&vanilla_items::SHIELD);
+
+    assert!(!hit(&victim, &attacker, 4.0));
+
+    assert!(!victim.is_using_item());
+    assert!(victim.is_item_on_cooldown(&shield));
 }

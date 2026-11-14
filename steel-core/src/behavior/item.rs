@@ -98,8 +98,6 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: Mirror Item.use for BLOCKS_ATTACKS and KINETIC_WEAPON so
-        // specialized behaviors inherit the complete Vanilla base path.
         let (consume_ticks, can_eat) = context.inv.with_item(|item| {
             let can_eat = item
                 .get(FOOD)
@@ -125,11 +123,14 @@ pub trait ItemBehavior: Send + Sync {
             return InteractionResult::Consume;
         }
 
-        let Some(equippable) = context.inv.with_item(|item| item.get_equippable().cloned()) else {
-            return InteractionResult::Pass;
+        let Some(equippable) = context
+            .inv
+            .with_item(|item| item.get_equippable().filter(|e| e.swappable).cloned())
+        else {
+            return use_blocking_or_kinetic_item(context);
         };
 
-        if !equippable.swappable || !equippable.can_be_equipped_by(context.player.entity_type()) {
+        if !equippable.can_be_equipped_by(context.player.entity_type()) {
             return InteractionResult::Pass;
         }
 
@@ -322,6 +323,37 @@ pub trait ItemBehavior: Send + Sync {
     fn as_projectile_item(&self) -> Option<&dyn ProjectileItem> {
         None
     }
+}
+
+/// The tail of vanilla `Item.use`: raise a `blocks_attacks` item, or ready a
+/// `kinetic_weapon` with its sound for everyone else.
+fn use_blocking_or_kinetic_item(context: &mut UseItemContext) -> InteractionResult {
+    let (blocks_attacks, kinetic_sound) = context.inv.with_item(|item| {
+        (
+            item.has(BLOCKS_ATTACKS),
+            item.get(KINETIC_WEAPON)
+                .map(|kinetic_weapon| kinetic_weapon.sound().cloned()),
+        )
+    });
+    if blocks_attacks {
+        context.player.start_using_item(context.hand);
+        return InteractionResult::Consume;
+    }
+    let Some(kinetic_sound) = kinetic_sound else {
+        return InteractionResult::Pass;
+    };
+    context.player.start_using_item(context.hand);
+    if let Some(sound) = kinetic_sound {
+        context.world.play_sound_holder_at(
+            &sound,
+            context.player.sound_source(),
+            context.player.position(),
+            1.0,
+            1.0,
+            Some(context.player.id()),
+        );
+    }
+    InteractionResult::Consume
 }
 
 fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remaining: i32) -> bool {

@@ -73,6 +73,23 @@ impl DamageReduction {
         self.factor
     }
 
+    /// Vanilla `DamageReduction.resolve`: how much of `dealt_damage` this rule
+    /// blocks from a source `angle` radians away from where the user faces.
+    #[must_use]
+    pub fn resolve(&self, damage_type: &'static DamageType, dealt_damage: f32, angle: f64) -> f32 {
+        if angle > f64::from(DEGREES_TO_RADIANS * self.horizontal_blocking_angle) {
+            return 0.0;
+        }
+        if self
+            .damage_types
+            .as_ref()
+            .is_some_and(|types| !types.contains(damage_type))
+        {
+            return 0.0;
+        }
+        mth_clamp(self.base + self.factor * dealt_damage, 0.0, dealt_damage)
+    }
+
     fn to_nbt_compound(&self) -> NbtCompound {
         let mut compound = NbtCompound::new();
         if !float_equals(
@@ -221,6 +238,17 @@ impl ItemDamageFunction {
         self.factor
     }
 
+    /// Vanilla `ItemDamageFunction.apply`: durability the blocking item loses
+    /// for `dealt_damage` blocked.
+    #[must_use]
+    pub fn apply(self, dealt_damage: f32) -> i32 {
+        if dealt_damage < self.threshold {
+            0
+        } else {
+            (self.base + self.factor * dealt_damage).floor() as i32
+        }
+    }
+
     fn to_nbt_compound(self) -> NbtCompound {
         let mut compound = NbtCompound::new();
         compound.insert("threshold", self.threshold);
@@ -366,6 +394,49 @@ impl BlocksAttacks {
     #[must_use]
     pub const fn disabled_sound(&self) -> Option<&SoundEventHolder> {
         self.disabled_sound.as_ref()
+    }
+
+    /// Vanilla `blockDelayTicks`: ticks of use before the item blocks.
+    #[must_use]
+    pub fn block_delay_ticks(&self) -> i32 {
+        java_round(self.block_delay_seconds * TICKS_PER_SECOND)
+    }
+
+    /// Vanilla `disableBlockingForTicks`: the cooldown an attack that disables
+    /// blocking for `base_seconds` puts on this item.
+    #[must_use]
+    pub fn disable_blocking_for_ticks(&self, base_seconds: f32) -> i32 {
+        let seconds = base_seconds * self.disable_cooldown_scale;
+        if seconds > 0.0 {
+            java_round(seconds * TICKS_PER_SECOND)
+        } else {
+            0
+        }
+    }
+
+    /// Vanilla `resolveBlockedDamage`: the part of `dealt_damage` all rules
+    /// block together.
+    #[must_use]
+    pub fn resolve_blocked_damage(
+        &self,
+        damage_type: &'static DamageType,
+        dealt_damage: f32,
+        angle: f64,
+    ) -> f32 {
+        let blocked: f32 = self
+            .damage_reductions
+            .iter()
+            .map(|reduction| reduction.resolve(damage_type, dealt_damage, angle))
+            .sum();
+        mth_clamp(blocked, 0.0, dealt_damage)
+    }
+
+    /// Whether `damage_type` goes through this item (`bypassed_by`).
+    #[must_use]
+    pub fn is_bypassed_by(&self, damage_type: &'static DamageType) -> bool {
+        self.bypassed_by
+            .as_ref()
+            .is_some_and(|types| types.contains(damage_type))
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {
@@ -583,6 +654,20 @@ impl HashComponent for DamageReductionList<'_> {
     }
 }
 
+const TICKS_PER_SECOND: f32 = 20.0;
+/// Vanilla `Mth.DEG_TO_RAD`.
+const DEGREES_TO_RADIANS: f32 = std::f32::consts::PI / 180.0;
+
+/// Vanilla `Mth.clamp(float, float, float)`, which never panics.
+fn mth_clamp(value: f32, min: f32, max: f32) -> f32 {
+    if value < min { min } else { value.min(max) }
+}
+
+/// Java `Math.round(float)`.
+fn java_round(value: f32) -> i32 {
+    (value + 0.5).floor() as i32
+}
+
 const fn float_equals(left: f32, right: f32) -> bool {
     (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
 }
@@ -649,6 +734,41 @@ mod tests {
         tag.write(&mut bytes);
         let borrowed = simdnbt::borrow::read_tag(&mut Cursor::new(bytes.as_slice())).ok()?;
         BlocksAttacks::from_nbt_tag(borrowed.as_tag())
+    }
+
+    #[test]
+    fn reductions_only_block_from_the_front() {
+        init_vanilla_registry();
+        let reduction = DamageReduction::default_rule();
+        let generic = &crate::vanilla_damage_types::GENERIC;
+        assert_eq!(reduction.resolve(generic, 6.0, 0.0), 6.0);
+        assert_eq!(reduction.resolve(generic, 6.0, 1.5), 6.0);
+        assert_eq!(reduction.resolve(generic, 6.0, 1.6), 0.0);
+
+        let half = DamageReduction::new(90.0, None, 1.0, 0.5).expect("valid rule");
+        assert_eq!(half.resolve(generic, 6.0, 0.0), 4.0);
+        let blocks = BlocksAttacks::new(
+            0.25,
+            1.0,
+            vec![half.clone(), half],
+            ItemDamageFunction::DEFAULT,
+            None,
+            None,
+            None,
+        )
+        .expect("valid component");
+        // Two rules together never block more than was dealt.
+        assert_eq!(blocks.resolve_blocked_damage(generic, 6.0, 0.0), 6.0);
+        assert_eq!(blocks.block_delay_ticks(), 5);
+        assert_eq!(blocks.disable_blocking_for_ticks(5.0), 100);
+        assert_eq!(blocks.disable_blocking_for_ticks(0.0), 0);
+    }
+
+    #[test]
+    fn item_damage_needs_the_threshold() {
+        let function = ItemDamageFunction::new(3.0, 1.0, 1.0).expect("valid function");
+        assert_eq!(function.apply(2.9), 0);
+        assert_eq!(function.apply(3.5), 4);
     }
 
     #[test]

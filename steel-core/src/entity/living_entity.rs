@@ -1,9 +1,15 @@
+use std::f32::consts::PI;
+
 use steel_math::{DEGREE_90, trig};
-use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::data_components::components::BlocksAttacks;
+use steel_registry::data_components::vanilla_components::{
+    BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS, WEAPON,
+};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
+use crate::behavior::items::projectile_weapon::as_abstract_arrow;
 use crate::behavior::{
     BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
 };
@@ -18,6 +24,21 @@ const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 pub(crate) const LIVING_FLAG_USING_ITEM: i8 = 1;
 /// Vanilla `DATA_LIVING_ENTITY_FLAGS` bit 2: the used item is in the off hand.
 pub(crate) const LIVING_FLAG_OFF_HAND_ACTIVE: i8 = 1 << 1;
+
+/// Vanilla `blockedByItem` knockback strength.
+const BLOCKED_KNOCKBACK_POWER: f64 = 0.5;
+/// The angle used when a damage source has no position: vanilla's `(float) Math.PI`.
+const PI_F32: f32 = PI;
+
+/// Vanilla `Vec3.normalize`: too short a vector becomes zero.
+fn normalize_like_vanilla(vector: DVec3) -> DVec3 {
+    let length = vector.length();
+    if length < 1.0e-5 {
+        DVec3::ZERO
+    } else {
+        vector / length
+    }
+}
 
 /// Vanilla `InteractionHand.asEquipmentSlot`.
 const fn hand_slot(hand: InteractionHand) -> EquipmentSlot {
@@ -854,7 +875,10 @@ pub trait LivingEntity: Entity {
             damage = 0.0;
         }
 
-        // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
+        let item_in_use = self.use_held_item();
+        let damage_blocked = self.apply_item_blocking(world, source, damage);
+        damage -= damage_blocked;
+        let blocked = damage_blocked > 0.0;
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
             && REGISTRY
                 .entity_types
@@ -883,11 +907,19 @@ pub trait LivingEntity: Entity {
         self.resolve_player_responsible_for_damage(source);
 
         if took_full_damage {
-            self.broadcast_damage_event(world, source);
-            if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
+            match item_in_use.get(BLOCKS_ATTACKS) {
+                Some(blocks_attacks) if blocked => self.on_blocked(world, blocks_attacks),
+                _ => self.broadcast_damage_event(world, source),
+            }
+            if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT)
+                && (!blocked || damage > 0.0)
+            {
                 self.mark_hurt();
             }
-            self.apply_damage_knockback(source);
+            let fully_blocked = blocked && damage <= 0.0;
+            if !fully_blocked {
+                self.apply_damage_knockback(source, blocked);
+            }
         }
 
         if self.is_dead_or_dying() {
@@ -902,21 +934,33 @@ pub trait LivingEntity: Entity {
         }
         // TODO: Play secondary hurt sounds once equipment effects expose them.
 
-        self.record_last_damage_source(source);
-        // TODO: skip when item blocking absorbed all the damage (`!blocked || damage > 0`),
-        // once blocking exists.
-        if let Some(world) = self.level() {
-            let dyn_self = self
-                .as_living_entity()
-                .expect("Self implements LivingEntity");
-            for effect in self.active_mob_effects() {
-                MOB_EFFECT_BEHAVIORS
-                    .get_behavior(effect.effect())
-                    .on_mob_hurt(&world, dyn_self, effect.amplifier(), source, damage);
+        let success = !blocked || damage > 0.0;
+        if success {
+            self.record_last_damage_source(source);
+            if let Some(world) = self.level() {
+                let dyn_self = self
+                    .as_living_entity()
+                    .expect("Self implements LivingEntity");
+                for effect in self.active_mob_effects() {
+                    MOB_EFFECT_BEHAVIORS
+                        .get_behavior(effect.effect())
+                        .on_mob_hurt(&world, dyn_self, effect.amplifier(), source, damage);
+                }
             }
         }
 
-        true
+        if let Some(player) = self.as_player()
+            && damage_blocked > 0.0
+            && damage_blocked < f32::MAX
+        {
+            player.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_BLOCKED_BY_SHIELD,
+                (damage_blocked * 10.0).round() as i32,
+            );
+        }
+        // TODO(advancements): ENTITY_HURT_PLAYER and PLAYER_HURT_ENTITY get `blocked`.
+
+        success
     }
 
     /// Hook before applying damage after vanilla reductions.
@@ -1064,15 +1108,191 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Applies vanilla hurt knockback for a damage source.
-    fn apply_damage_knockback(&self, source: &DamageSource) {
+    /// Vanilla `dealDefaultKnockback`: hurt knockback for a damage source; a
+    /// partly blocked hit pushes without the client-side damage tilt.
+    fn apply_damage_knockback(&self, source: &DamageSource, blocked: bool) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
             return;
         }
 
         let (xd, zd) = self.damage_knockback_direction(source);
         self.knockback(DAMAGE_KNOCKBACK_POWER, xd, zd);
-        self.indicate_damage(xd, zd);
+        if !blocked {
+            self.indicate_damage(xd, zd);
+        }
+    }
+
+    /// Vanilla `getItemBlockingWith`: the used item once it has been raised
+    /// long enough to block.
+    fn item_blocking_with(&self) -> Option<ItemStack> {
+        let active = self.living_base().active_item_use()?;
+        let item = self.use_held_item();
+        if !item.is(active.item()) {
+            return None;
+        }
+        let blocks_attacks = item.get(BLOCKS_ATTACKS)?;
+        let user = self.as_living_entity()?;
+        let elapsed = ITEM_BEHAVIORS
+            .get_behavior(item.item())
+            .get_use_duration(&item, user)
+            - active.remaining_ticks();
+        (elapsed >= blocks_attacks.block_delay_ticks()).then_some(item)
+    }
+
+    /// Vanilla `applyItemBlocking`: how much of `damage` the raised shield (or
+    /// any `blocks_attacks` item) absorbs.
+    fn apply_item_blocking(&self, world: &World, source: &DamageSource, damage: f32) -> f32 {
+        if damage <= 0.0 {
+            return 0.0;
+        }
+        let Some(blocking_with) = self.item_blocking_with() else {
+            return 0.0;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return 0.0;
+        };
+        if blocks_attacks.is_bypassed_by(source.damage_type) {
+            return 0.0;
+        }
+        if source
+            .direct_entity()
+            .and_then(as_abstract_arrow)
+            .is_some_and(|arrow| arrow.pierce_level() > 0)
+        {
+            return 0.0;
+        }
+
+        let angle = source
+            .source_position()
+            .map_or(f64::from(PI_F32), |source_position| {
+                let view = self.calculate_view_vector(0.0, self.living_base().y_head_rot());
+                let position = self.position();
+                let to_source = normalize_like_vanilla(DVec3::new(
+                    source_position.x - position.x,
+                    0.0,
+                    source_position.z - position.z,
+                ));
+                to_source.dot(view).acos()
+            });
+
+        let damage_blocked =
+            blocks_attacks.resolve_blocked_damage(source.damage_type, damage, angle);
+        self.hurt_blocking_item(&blocking_with, blocks_attacks, damage_blocked);
+        if damage_blocked > 0.0
+            && !source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_PROJECTILE)
+            && let Some(attacker) = source.direct_entity()
+            && let Some(attacker) = attacker.as_living_entity()
+        {
+            self.block_using_item(world, attacker, source, damage, damage_blocked >= damage);
+        }
+        damage_blocked
+    }
+
+    /// Vanilla `BlocksAttacks.hurtBlockingItem`: a player's blocking item
+    /// counts a use and loses durability for the blocked damage.
+    fn hurt_blocking_item(&self, item: &ItemStack, blocks_attacks: &BlocksAttacks, damage: f32) {
+        let Some(player) = self.as_player() else {
+            return;
+        };
+        player.award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        let item_damage = blocks_attacks.item_damage().apply(damage);
+        let Some(active) = self.living_base().active_item_use() else {
+            return;
+        };
+        if item_damage <= 0 {
+            return;
+        }
+        let slot = hand_slot(active.hand());
+        let mut item_broke = false;
+        let mut item_ref = item.item();
+        let infinite = self.has_infinite_materials();
+        self.with_equipment_slot_mut(slot, &mut |stack| {
+            item_ref = stack.item();
+            item_broke = stack.hurt_and_break(item_damage, infinite);
+        });
+        if item_broke {
+            self.on_equipped_item_broken(item_ref, slot);
+        }
+    }
+
+    /// Vanilla `BlocksAttacks.onBlocked`: the block sound replaces the hurt
+    /// animation.
+    fn on_blocked(&self, world: &World, blocks_attacks: &BlocksAttacks) {
+        if let Some(sound) = blocks_attacks.block_sound() {
+            world.play_sound_holder_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                1.0,
+                0.8 + rand::random::<f32>() * 0.4,
+                None,
+            );
+        }
+    }
+
+    /// Vanilla `blockUsingItem`: tells the attacker its hit was blocked.
+    fn block_using_item(
+        &self,
+        world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        self.default_block_using_item(world, attacker, source, damage, fully_blocked);
+    }
+
+    /// Vanilla `LivingEntity.blockUsingItem`, for overrides that call `super`.
+    fn default_block_using_item(
+        &self,
+        _world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        if let Some(defender) = self.as_living_entity() {
+            attacker.blocked_by_item(defender, source, damage, fully_blocked);
+        }
+    }
+
+    /// Vanilla `blockedByItem`: an attacker whose hit was only partly blocked
+    /// still pushes the defender back.
+    fn blocked_by_item(
+        &self,
+        defender: &dyn LivingEntity,
+        _source: &DamageSource,
+        _damage: f32,
+        fully_blocked: bool,
+    ) {
+        if !fully_blocked {
+            let defender_position = defender.position();
+            let position = self.position();
+            defender.knockback(
+                BLOCKED_KNOCKBACK_POWER,
+                defender_position.x - position.x,
+                defender_position.z - position.z,
+            );
+        }
+    }
+
+    /// Vanilla `getSecondsToDisableBlocking`: how long this attacker's weapon
+    /// knocks a shield down, when that weapon is the item it is using.
+    fn seconds_to_disable_blocking(&self) -> f32 {
+        if self
+            .living_base()
+            .active_item_use()
+            .is_some_and(|active| active.hand() != InteractionHand::MainHand)
+        {
+            return 0.0;
+        }
+        let mut seconds = 0.0;
+        self.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
+            seconds = stack
+                .get(WEAPON)
+                .map_or(0.0, |weapon| weapon.disable_blocking_for_seconds);
+        });
+        seconds
     }
 
     /// Returns the horizontal direction used by vanilla damage knockback.
@@ -2022,9 +2242,9 @@ pub trait LivingEntity: Entity {
         self.stop_using_held_item();
     }
 
-    /// Checks if the entity is blocking with a shield or similar item.
+    /// Vanilla `isBlocking`: raising a shield or similar item long enough.
     fn is_blocking(&self) -> bool {
-        false
+        self.item_blocking_with().is_some()
     }
 
     /// Checks if the entity is fall flying (using elytra).
