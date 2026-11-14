@@ -14,6 +14,7 @@ mod execute;
 mod experience;
 mod fill;
 mod fly;
+mod forceload;
 pub(crate) mod gamemode;
 mod gamerule;
 mod give;
@@ -93,6 +94,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(experience::registration())?;
     builder.register(fill::registration())?;
     builder.register(fly::registration())?;
+    builder.register(forceload::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
@@ -190,6 +192,7 @@ mod tests {
                 "xp",
                 "fill",
                 "fly",
+                "forceload",
                 "gamemode",
                 "gamerule",
                 "give",

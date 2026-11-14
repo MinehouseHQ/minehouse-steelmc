@@ -794,6 +794,23 @@ impl World {
         }
     }
 
+    /// Vanilla `ServerLevel.setChunkForced`; `true` when the chunk's forced
+    /// state changed.
+    ///
+    /// Vanilla then calls `getChunk`, blocking the server thread until a newly
+    /// forced chunk is full. Steel never blocks the tick on chunk loading: the
+    /// forced ticket alone brings the chunk to entity-ticking on the next
+    /// scheduling pass.
+    pub(crate) fn set_chunk_forced(&self, pos: ChunkPos, forced: bool) -> bool {
+        self.chunk_map.update_chunk_forced(pos, forced)
+    }
+
+    /// Vanilla `ServerLevel.getForceLoadedChunks`, in no particular order.
+    #[must_use]
+    pub(crate) fn force_loaded_chunks(&self) -> Vec<ChunkPos> {
+        self.chunk_map.force_loaded_chunks()
+    }
+
     /// Saves all dirty chunks in this world to disk.
     ///
     /// This should be called during graceful shutdown.
