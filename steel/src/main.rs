@@ -17,6 +17,7 @@ use steel::logger::CommandLogger;
 mod pprof_sampler;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
 use steel_core::GIT_HASH_SHORT;
+use steel_minehouse::{Minehouse, console::log_layer};
 use steel_utils::text::DisplayResolutor;
 #[cfg(all(windows, debug_assertions))]
 use steel_utils::threading::DEBUG_STACK_SIZE;
@@ -97,6 +98,8 @@ async fn init_tracing(
     let logger = Arc::clone(&layer.0);
 
     let tracing = tracing.with(layer);
+    // Feeds the remote console; it trims or stops the buffer once its config is read.
+    let tracing = tracing.with(log_layer());
 
     let tracing = tracing.with(
         EnvFilter::builder()
@@ -359,9 +362,13 @@ async fn run_server(
 
     SERVER.set(Arc::clone(&steel.server)).ok();
 
+    let minehouse = Minehouse::start(&server);
+
     let task_tracker = TaskTracker::new();
 
     steel.start(task_tracker.clone()).await;
+
+    minehouse.shutdown().await;
 
     log::info!("Waiting for pending tasks...");
 
