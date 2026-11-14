@@ -16,7 +16,7 @@ use steel::logger::CommandLogger;
 #[cfg(feature = "pprof")]
 mod pprof_sampler;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
-use steel_core::GIT_HASH_SHORT;
+use steel_core::{GIT_HASH_SHORT, command::CommandRegistry};
 use steel_minehouse::{Minehouse, console::log_layer};
 use steel_utils::text::DisplayResolutor;
 #[cfg(all(windows, debug_assertions))]
@@ -345,10 +345,14 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(
+    let mut commands = CommandRegistry::new();
+    let minehouse_setup = Minehouse::prepare(&mut commands);
+
+    let mut steel = SteelServer::new_with_commands(
         Arc::clone(&chunk_runtime),
         cancel_token.clone(),
         steel_config,
+        commands,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -362,7 +366,7 @@ async fn run_server(
 
     SERVER.set(Arc::clone(&steel.server)).ok();
 
-    let minehouse = Minehouse::start(&server);
+    let minehouse = Minehouse::start(&server, minehouse_setup);
 
     let task_tracker = TaskTracker::new();
 

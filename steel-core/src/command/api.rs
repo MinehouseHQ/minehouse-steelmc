@@ -449,6 +449,33 @@ impl<'source> CommandSource<'source> {
     pub fn send_failure(self, message: TextComponent) {
         self.inner.send_failure(message);
     }
+
+    /// Vanilla `CommandSourceStack.getTextName`: the sender's name, `Server` for the console.
+    #[must_use]
+    pub fn name(self) -> String {
+        self.inner.text_name()
+    }
+
+    /// Copies the source so a [`SuspendedCommand`] can report its result on a later tick.
+    #[must_use]
+    pub fn detach(self) -> DetachedCommandSource {
+        DetachedCommandSource {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+/// An owned copy of a [`CommandSource`], for feedback that is sent after the executor returned.
+pub struct DetachedCommandSource {
+    inner: InternalCommandSource,
+}
+
+impl DetachedCommandSource {
+    /// Borrows the source with the regular API.
+    #[must_use]
+    pub const fn source(&self) -> CommandSource<'_> {
+        CommandSource { inner: &self.inner }
+    }
 }
 
 /// A command parsing or execution error with vanilla-style feedback.

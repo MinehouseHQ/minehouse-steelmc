@@ -3075,6 +3075,7 @@ dependencies = [
 name = "steel-minehouse"
 version = "0.16.1+mc26.3"
 dependencies = [
+ "chrono",
  "hex",
  "hmac",
  "log",
