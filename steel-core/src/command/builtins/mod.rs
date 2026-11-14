@@ -1,6 +1,7 @@
 //! Steel-owned built-in command declarations.
 
 pub mod advancement;
+mod chat_commands;
 mod clear;
 mod damage;
 mod defaultgamemode;
@@ -91,11 +92,14 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(give::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
+    builder.register(chat_commands::me_registration())?;
     builder.register(locate::registration())?;
+    builder.register(chat_commands::msg_registration())?;
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(chat_commands::say_registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
     builder.register(spawnpoint::registration())?;
@@ -178,11 +182,16 @@ mod tests {
                 "give",
                 "kill",
                 "list",
+                "me",
                 "locate",
+                "msg",
+                "tell",
+                "w",
                 "op",
                 "perms",
                 "playsound",
                 "return",
+                "say",
                 "seed",
                 "setblock",
                 "spawnpoint",

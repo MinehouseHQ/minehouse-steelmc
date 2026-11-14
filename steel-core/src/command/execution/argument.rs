@@ -10,6 +10,7 @@ use super::{
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    message::MessageArgument,
     nbt::parse_nbt_path,
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
@@ -340,6 +341,17 @@ impl SteelArgumentType {
         Self::new(MobEffectParser)
     }
 
+    /// Vanilla `MessageArgument.message`.
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
+    /// Vanilla `SignedArgument`: whether clients sign this argument when it
+    /// appears in a chat command.
+    pub(crate) fn is_signed(&self) -> bool {
+        self.0.downcast_type_key() == MessageParser::TYPE_KEY
+    }
+
     pub(crate) fn item_stack() -> Self {
         Self::new(ItemStackParser)
     }
@@ -508,6 +520,7 @@ macro_rules! impl_downcast_type {
 
 impl_downcast_type!(PrimitiveArgumentValue, "steel:command/value/primitive");
 impl_downcast_type!(Coordinates, "steel:command/value/coordinates");
+impl_downcast_type!(MessageArgument, "steel:command/value/message");
 impl_downcast_type!(EntityAnchor, "steel:command/value/entity_anchor");
 impl_downcast_type!(CoordinateAxes, "steel:command/value/swizzle");
 impl_downcast_type!(HeightmapType, "steel:command/value/heightmap");
@@ -1108,6 +1121,16 @@ unit_argument_parser!(
         },
         None,
     )
+);
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageArgument,
+    parse | reader,
+    source | { MessageArgument::parse(reader, source) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None)
 );
 unit_argument_parser!(
     MobEffectParser,

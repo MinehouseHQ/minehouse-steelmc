@@ -25,7 +25,7 @@ use crate::chunk::{
 use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
-    ExecutionStop,
+    ExecutionStop, SteelArgumentType,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
@@ -42,6 +42,7 @@ use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::player::chat::SignedArguments;
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -895,7 +896,37 @@ impl Server {
         self.command_requests.submit(CommandRequest::Execute {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
+            signed_arguments: None,
         })
+    }
+
+    /// Queues a player's signed chat command with the arguments decoded from
+    /// its signatures.
+    pub(crate) fn submit_signed_command(
+        &self,
+        player: Arc<Player>,
+        command: String,
+        signed_arguments: SignedArguments,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests.submit(CommandRequest::Execute {
+            owner: CommandExecutionOwner::capture(CommandSender::Player(player), self),
+            command,
+            signed_arguments: Some(Arc::new(signed_arguments)),
+        })
+    }
+
+    /// Vanilla `SignableCommand.of` on the command as `player` would parse it:
+    /// the message arguments its client signs, by name with their raw text.
+    pub(crate) fn signable_command_arguments(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        command: &str,
+    ) -> Vec<(Box<str>, String)> {
+        let source =
+            CommandSource::new(CommandSender::Player(Arc::clone(player)), Arc::clone(self));
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+        dispatcher.signable_arguments(&parse, SteelArgumentType::is_signed)
     }
 
     pub(crate) fn submit_command_suggestions(
