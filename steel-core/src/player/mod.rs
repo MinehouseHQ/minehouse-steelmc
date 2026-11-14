@@ -70,6 +70,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -2026,6 +2027,46 @@ impl LivingEntity for Player {
 
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    /// Vanilla `Player.blockUsingItem`: an axe-like weapon knocks the shield
+    /// down for a while.
+    fn block_using_item(
+        &self,
+        world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        self.default_block_using_item(world, attacker, source, damage, fully_blocked);
+        let blocking_with = self.item_blocking_with();
+        let seconds = attacker.seconds_to_disable_blocking();
+        if seconds <= 0.0 {
+            return;
+        }
+        let Some(blocking_with) = blocking_with else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let ticks = blocks_attacks.disable_blocking_for_ticks(seconds);
+        if ticks <= 0 {
+            return;
+        }
+        self.add_item_cooldown(&blocking_with, ticks);
+        self.stop_using_item();
+        if let Some(sound) = blocks_attacks.disabled_sound() {
+            world.play_sound_holder_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                0.8,
+                0.8 + rand::random::<f32>() * 0.4,
+                None,
+            );
+        }
     }
 
     fn is_using_item(&self) -> bool {
