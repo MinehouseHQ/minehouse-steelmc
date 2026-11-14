@@ -68,7 +68,7 @@ also asks the site who of the online players was banned elsewhere or taken off t
 whitelist and kicks them, and announces the bans made on the site or in Discord.
 
 `config/minehouse/bans.toml` has the settings of the Fabric `minehouse-bans.properties` in
-snake_case: the chat formats (`&` colours, `{player}`, `{reason}`, `{by}`, `{duration}`,
+snake_case: the chat formats (`&` colors, `{player}`, `{reason}`, `{by}`, `{duration}`,
 `{until}`, `{count}`, `{limit}`), `warn_limit`, `warn_ban_duration`, `warn_ban_reason`. It is
 read again before every use. The commands are registered only while the login check is on:
 they share its site client and server id.

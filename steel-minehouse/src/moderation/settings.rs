@@ -6,7 +6,7 @@ use crate::config;
 
 /// Announcements of bans and warns, and the warn limit.
 ///
-/// Formats take `&` colour codes (`&0`-`&9`, `&a`-`&f`, `&l` bold, `&o` italic, `&n`
+/// Formats take `&` color codes (`&0`-`&9`, `&a`-`&f`, `&l` bold, `&o` italic, `&n`
 /// underlined, `&m` strikethrough, `&r` reset) and the placeholders `{player}`, `{reason}`,
 /// `{by}`; bans also `{duration}` and `{until}` (Moscow time), warns `{count}` and `{limit}`.
 /// An empty format announces nothing. The file is read again before every use.

@@ -182,7 +182,7 @@ impl Style {
             'r' => return Some(Self::default()),
             _ => return None,
         };
-        // A colour resets the decorations, like in vanilla.
+        // A color resets the decorations, like in vanilla.
         Some(Self {
             color: Some(color),
             ..Self::default()
@@ -213,8 +213,8 @@ impl Style {
     }
 }
 
-/// Renders `&` colour codes and `{placeholders}`. Values are inserted as plain text, so a `&`
-/// in a reason or a nickname is not read as a colour.
+/// Renders `&` color codes and `{placeholders}`. Values are inserted as plain text, so a `&`
+/// in a reason or a nickname is not read as a color.
 #[must_use]
 pub fn render(format: &str, values: &[(&str, &str)]) -> TextComponent {
     let mut parts = Vec::new();
