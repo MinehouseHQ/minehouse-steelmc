@@ -8,7 +8,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     future::{Future, pending},
     io::Cursor,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -26,7 +26,10 @@ use steel_protocol::{
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket},
     packet_writer::TCPNetworkEncoder,
     packets::{
-        common::{CDisconnect, SClientInformation, SCustomPayload, SPingRequest},
+        common::{
+            CDisconnect, SClientInformation, SCustomClickAction, SCustomPayload, SKeepAlive,
+            SPingRequest,
+        },
         config::SSelectKnownPacks,
         handshake::{ClientIntent, SClientIntention},
         login::{CLoginDisconnect, SCustomQueryAnswer, SHello, SKey},
@@ -58,7 +61,10 @@ use tokio::{
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
-use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
+use crate::{
+    handlers::gate::GateState,
+    pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState},
+};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
 const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
@@ -230,7 +236,11 @@ pub struct JavaTcpClient {
 
     pub(crate) pre_play_state: SyncMutex<PrePlayState>,
     pub(crate) login_deadline: AtomicCell<Option<LoginDeadline>>,
-    task_tracker: TaskTracker,
+    /// The player's address as the proxy forwarded it.
+    pub(crate) forwarded_address: AtomicCell<Option<IpAddr>>,
+    /// State of the login gate for this client, see `handlers::gate`.
+    pub(crate) gate: SyncMutex<GateState>,
+    pub(crate) task_tracker: TaskTracker,
 }
 
 impl JavaTcpClient {
@@ -301,6 +311,8 @@ impl JavaTcpClient {
             connection_updated: Arc::new(Notify::new()),
             pre_play_state: SyncMutex::new(PrePlayState::new()),
             login_deadline: AtomicCell::new(None),
+            forwarded_address: AtomicCell::new(None),
+            gate: SyncMutex::new(GateState::default()),
             task_tracker,
         };
 
@@ -803,6 +815,15 @@ impl JavaTcpClient {
             config::S_CLIENT_INFORMATION => {
                 self.handle_client_information(SClientInformation::read_packet(data)?)
                     .await;
+                Ok(ConnectionAction::none())
+            }
+            config::S_KEEP_ALIVE => {
+                // Only the login gate pings in this phase; the answer needs no bookkeeping.
+                SKeepAlive::read_packet(data)?;
+                Ok(ConnectionAction::none())
+            }
+            config::S_CUSTOM_CLICK_ACTION => {
+                self.handle_config_custom_click(SCustomClickAction::read_packet(data)?);
                 Ok(ConnectionAction::none())
             }
             config::S_SELECT_KNOWN_PACKS => {

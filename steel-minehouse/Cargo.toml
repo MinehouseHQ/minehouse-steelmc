@@ -9,6 +9,8 @@ authors.workspace = true
 [dependencies]
 steel-core.workspace = true
 steel-utils.workspace = true
+steel-protocol.workspace = true
+steel-registry.workspace = true
 
 tokio = { workspace = true, features = ["time", "sync", "macros"] }
 tokio-util.workspace = true
@@ -23,6 +25,8 @@ hmac = "0.13.0"
 hex.workspace = true
 rand.workspace = true
 uuid.workspace = true
+rustc-hash.workspace = true
+simdnbt.workspace = true
 regex = "1.13.1"
 strip-ansi-escapes = "0.2.1"
 
