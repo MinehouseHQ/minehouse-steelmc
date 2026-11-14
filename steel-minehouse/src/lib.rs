@@ -6,35 +6,68 @@
 
 use std::sync::Arc;
 
-use steel_core::server::Server;
+use steel_core::{command::CommandRegistry, server::Server};
 
 pub mod auth;
 pub mod config;
 pub mod console;
+pub mod moderation;
 pub mod site;
 
-use auth::Auth;
+use auth::{Auth, AuthSetup};
 use console::Console;
+use moderation::Moderation;
+
+/// What is prepared before the server exists: settings and the commands.
+pub struct Setup {
+    auth: Option<AuthSetup>,
+    moderation: Option<Arc<Moderation>>,
+}
 
 /// The running `MineHouse` modules of one server.
 pub struct Minehouse {
     console: Option<Arc<Console>>,
     /// Kept for the commands and syncs that will use it.
     _auth: Option<Arc<Auth>>,
+    moderation: Option<Arc<Moderation>>,
 }
 
 impl Minehouse {
+    /// Loads the settings and adds the `MineHouse` commands to `registry`. Call before the
+    /// server is built: its command tree is fixed at startup.
+    #[must_use]
+    pub fn prepare(registry: &mut CommandRegistry) -> Setup {
+        let auth = Auth::load();
+        // The bans and the whitelist live on the same site as the login check.
+        let moderation = auth.as_ref().and_then(|auth| {
+            Moderation::register(
+                registry,
+                auth.site.clone(),
+                auth.config.server_id.clone(),
+                auth.config.messages.banned.clone(),
+            )
+        });
+        Setup { auth, moderation }
+    }
+
     /// Starts every enabled module. Call once the server is ready for players.
     #[must_use]
-    pub fn start(server: &Arc<Server>) -> Self {
+    pub fn start(server: &Arc<Server>, setup: Setup) -> Self {
+        if let Some(moderation) = &setup.moderation {
+            moderation.start(server);
+        }
         Self {
             console: Console::start(server),
-            _auth: Auth::start(server),
+            _auth: setup.auth.and_then(|auth| Auth::start(server, auth)),
+            moderation: setup.moderation,
         }
     }
 
     /// Lets the modules report their last state while the server is still up.
     pub async fn shutdown(&self) {
+        if let Some(moderation) = &self.moderation {
+            moderation.stop();
+        }
         if let Some(console) = &self.console {
             console.stop().await;
         }

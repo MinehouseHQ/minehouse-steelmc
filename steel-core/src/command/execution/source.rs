@@ -340,6 +340,11 @@ impl CommandSource {
         )
     }
 
+    /// Vanilla `CommandSourceStack.getTextName`.
+    pub(crate) fn text_name(&self) -> String {
+        self.sender.to_string()
+    }
+
     /// Vanilla `CommandSourceStack.sendChatMessage`: a player source gets the
     /// chat message, any other output the chat type's decorated text.
     pub(crate) fn send_chat_message(&self, message: &PlayerChatMessage, chat_type: &BoundChatType) {

@@ -61,10 +61,19 @@ pub struct Auth {
     next_session: AtomicU64,
 }
 
+/// The loaded settings of the login check and its site client.
+pub struct AuthSetup {
+    /// `config/minehouse/auth.toml` with the environment applied.
+    pub config: AuthConfig,
+    /// Client for `/api/mc/*`.
+    pub site: SiteClient,
+}
+
 impl Auth {
-    /// Loads `config/minehouse/auth.toml` and installs the login gate, unless the check is
-    /// turned off.
-    pub fn start(server: &Arc<Server>) -> Option<Arc<Self>> {
+    /// Loads `config/minehouse/auth.toml`. `None` when the check is turned off or can't work;
+    /// needs no server, so the commands that share the site client can be registered first.
+    #[must_use]
+    pub fn load() -> Option<AuthSetup> {
         let config = match config::load::<AuthConfig>(&config::path("auth")) {
             Ok(config) => config.resolved(),
             Err(error) => {
@@ -82,11 +91,6 @@ impl Auth {
                 "No API secret: set api_secret in config/minehouse/auth.toml or MINEHOUSE_API_SECRET. Only players from the local cache will get in."
             );
         }
-        if server.config.velocity_secret.is_none() {
-            log::warn!(
-                "Login check without proxy forwarding: nicknames are not verified and the stable UUIDs of the site are not used. Run Steel behind Gate."
-            );
-        }
 
         let site = match SiteClient::new(
             &config.api_url,
@@ -100,6 +104,18 @@ impl Auth {
                 return None;
             }
         };
+        Some(AuthSetup { config, site })
+    }
+
+    /// Installs the login gate.
+    pub fn start(server: &Arc<Server>, setup: AuthSetup) -> Option<Arc<Self>> {
+        let AuthSetup { config, site } = setup;
+        if server.config.velocity_secret.is_none() {
+            log::warn!(
+                "Login check without proxy forwarding: nicknames are not verified and the stable UUIDs of the site are not used. Run Steel behind Gate."
+            );
+        }
+
         let trusted = TrustedCache::load(
             config::data_path("auth-trusted.json"),
             Duration::from_secs(config.offline_trust_days * 24 * 60 * 60),

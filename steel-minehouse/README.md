@@ -45,5 +45,33 @@ off.
 In `steel-core` this is the `LoginGate` hook (`server/login_gate.rs`); `steel-login` holds the
 client, keeps it alive and refuses a client that finishes the configuration on its own.
 
-Not ported yet: ban, warn and whitelist commands, kicking players banned while online, Discord
-roles, feature flags, Twitch.
+Not ported yet: Discord roles, feature flags, Twitch.
+
+## Moderation
+
+`src/moderation/`: the ban, warn and whitelist commands of the Fabric mod `minehouse-auth`.
+Bans, warns and the whitelist live on the site and hang on the Discord account, so they cover
+every nickname of the player.
+
+| Command | Permission |
+| --- | --- |
+| `/ban <ник> [причина]`, `/tempban <ник> <срок> [причина]`, `/unban <ник> [причина]`, `/banlist` | `minehouse.command.ban`, `.tempban`, `.unban`, `.banlist` |
+| `/warn <ник> [причина]`, `/unwarn <ник>`, `/warns <ник>` | `minehouse.command.warn`, `.unwarn`, `.warns` |
+| `/whitelist add\|remove <ник или Discord ID>` | `minehouse.command.whitelist` |
+
+A length is `30m`, `12h`, `7d`, `2w`, `1mo` or a sum like `1d12h`. The console may run all of
+them; players need the permission from a group in `config/groups.toml`.
+
+A command calls the site from the Tokio runtime and finishes on a later tick
+(`SuspendedCommand`), so a slow site never holds the tick. Every `sync_seconds` the module
+also asks the site who of the online players was banned elsewhere or taken off this server's
+whitelist and kicks them, and announces the bans made on the site or in Discord.
+
+`config/minehouse/bans.toml` has the settings of the Fabric `minehouse-bans.properties` in
+snake_case: the chat formats (`&` colors, `{player}`, `{reason}`, `{by}`, `{duration}`,
+`{until}`, `{count}`, `{limit}`), `warn_limit`, `warn_ban_duration`, `warn_ban_reason`. It is
+read again before every use. The commands are registered only while the login check is on:
+they share its site client and server id.
+
+Not ported yet: `--wipe` (resetting the account's progress, also when asked on the site);
+the commands refuse the flag instead of taking it for the reason.
