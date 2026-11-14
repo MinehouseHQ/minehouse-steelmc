@@ -56,6 +56,12 @@ impl JavaTcpClient {
         profile: GameProfile,
         reader_encryption: Option<[u8; 16]>,
     ) -> ConnectionAction {
+        if let Some(gate) = self.server.login_gate()
+            && let Some(reason) = gate.refuse_login(&self.server, &profile, self.player_address())
+        {
+            self.kick(reason).await;
+            return ConnectionAction::none();
+        }
         // Reject full-server logins before evicting an existing session.
         if self.server.is_player_limit_reached(profile.id()) {
             self.kick(TextComponent::translated(
@@ -161,7 +167,9 @@ impl JavaTcpClient {
                     player.profile.id(),
                     player.address
                 );
-                self.finish_verified_login(player.profile, None).await
+                self.forwarded_address.store(Some(player.address));
+                let profile = self.take_private_properties(player.profile);
+                self.finish_verified_login(profile, None).await
             }
             Err(error) => {
                 log::warn!("Client {} failed proxy forwarding: {error}", self.id);

@@ -2,6 +2,7 @@
 mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
+pub mod login_gate;
 mod packet_processor;
 mod pregen;
 /// The registry cache for the server.
@@ -85,7 +86,7 @@ use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
-    sync::{Arc, mpsc},
+    sync::{Arc, OnceLock, mpsc},
     time::{Duration, Instant},
 };
 use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
@@ -249,6 +250,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admissions: SyncMutex::new(FxHashMap::default()),
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
+        login_gate: OnceLock::new(),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,
@@ -484,6 +486,8 @@ pub struct Server {
     player_admission_changed: Notify,
     /// Wakes connection lifecycle work waiting for a specific server tick.
     server_tick_changed: Notify,
+    /// Holds verified logins in the configuration phase, see [`login_gate`].
+    login_gate: OnceLock<Arc<dyn login_gate::LoginGate>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
@@ -830,6 +834,7 @@ impl Server {
             player_admissions: SyncMutex::new(FxHashMap::default()),
             player_admission_changed: Notify::new(),
             server_tick_changed: Notify::new(),
+            login_gate: OnceLock::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             player_idle_timeout: AtomicI32::new(0),

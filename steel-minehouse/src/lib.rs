@@ -8,15 +8,19 @@ use std::sync::Arc;
 
 use steel_core::server::Server;
 
+pub mod auth;
 pub mod config;
 pub mod console;
 pub mod site;
 
+use auth::Auth;
 use console::Console;
 
 /// The running `MineHouse` modules of one server.
 pub struct Minehouse {
     console: Option<Arc<Console>>,
+    /// Kept for the commands and syncs that will use it.
+    _auth: Option<Arc<Auth>>,
 }
 
 impl Minehouse {
@@ -25,6 +29,7 @@ impl Minehouse {
     pub fn start(server: &Arc<Server>) -> Self {
         Self {
             console: Console::start(server),
+            _auth: Auth::start(server),
         }
     }
 

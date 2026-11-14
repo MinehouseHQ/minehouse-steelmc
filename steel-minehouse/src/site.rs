@@ -16,6 +16,8 @@ use sha2::{Digest, Sha256};
 pub enum SiteError {
     /// Network error, timeout or unreadable answer.
     Http(reqwest::Error),
+    /// The site answered 2xx with something the caller can't use.
+    Answer(String),
     /// The site answered with a non-2xx status.
     Status {
         /// HTTP status code.
@@ -29,6 +31,7 @@ impl fmt::Display for SiteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Http(error) => write!(f, "{error}"),
+            Self::Answer(problem) => write!(f, "{problem}"),
             Self::Status { code, body } => write!(f, "HTTP {code}: {body}"),
         }
     }
@@ -40,7 +43,8 @@ impl From<reqwest::Error> for SiteError {
     }
 }
 
-/// Client of the site for one secret and one server id.
+/// Client of the site for one secret and one server id. Clones share the connections.
+#[derive(Clone)]
 pub struct SiteClient {
     http: reqwest::Client,
     base_url: String,
@@ -74,24 +78,41 @@ impl SiteClient {
 
     /// `POST <path>` with a JSON body. Returns the answer body of a 2xx answer.
     pub async fn post_json(&self, path: &str, body: String) -> Result<String, SiteError> {
+        self.request("POST", path, body).await
+    }
+
+    /// `GET <path>`. Returns the answer body of a 2xx answer.
+    pub async fn get(&self, path: &str) -> Result<String, SiteError> {
+        self.request("GET", path, String::new()).await
+    }
+
+    async fn request(
+        &self,
+        method: &'static str,
+        path: &str,
+        body: String,
+    ) -> Result<String, SiteError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
             .to_string();
         let nonce = hex::encode(rand::random::<[u8; 16]>());
-        let signature = sign(&self.secret, &timestamp, &nonce, "POST", path, &body);
+        let signature = sign(&self.secret, &timestamp, &nonce, method, path, &body);
 
-        let response = self
-            .http
-            .post(format!("{}{path}", self.base_url))
+        let url = format!("{}{path}", self.base_url);
+        let request = if method == "GET" {
+            self.http.get(url)
+        } else {
+            self.http.post(url).body(body)
+        };
+        let response = request
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .header("X-MH-Server", &self.server_id)
             .header("X-MH-Timestamp", timestamp)
             .header("X-MH-Nonce", nonce)
             .header("X-MH-Signature", signature)
-            .body(body)
             .send()
             .await?;
 
