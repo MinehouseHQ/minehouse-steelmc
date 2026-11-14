@@ -42,7 +42,7 @@ use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot, SUseItem};
+use steel_protocol::packets::game::{EquipmentSlotItem, SEditBook, SSetCreativeModeSlot, SUseItem};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
@@ -2161,4 +2161,202 @@ fn riptide_trident_cannot_be_raised_on_dry_land() {
         x_rot: 0.0,
     });
     assert!(!player.is_using_item());
+}
+
+const OFFHAND_SLOT: usize = super::player_inventory::PlayerInventory::SLOT_OFFHAND;
+
+fn book_writer(name: &'static str) -> (TestWorld, Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world(name);
+    let world = Arc::clone(&world_fixture.world);
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let player = TestPlayerBuilder::new(world, "Writer", next_entity_id())
+        .connection(connection)
+        .build();
+    player.set_client_loaded(true);
+    (world_fixture, player, sent_packets)
+}
+
+fn sent_packet_ids(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<i32> {
+    packets
+        .lock()
+        .iter()
+        .filter_map(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            VarInt::read(&mut cursor).ok()?;
+            VarInt::read(&mut cursor).ok().map(|id| id.0)
+        })
+        .collect()
+}
+
+fn edit_book(player: &Player, slot: i32, pages: &[&str], title: Option<&str>) {
+    player.handle_edit_book(SEditBook {
+        slot,
+        pages: pages.iter().map(|page| (*page).to_owned()).collect(),
+        title: title.map(str::to_owned),
+    });
+}
+
+#[test]
+fn editing_a_writable_book_saves_its_pages() {
+    use steel_registry::data_components::vanilla_components::WRITABLE_BOOK_CONTENT;
+
+    let (_world, player, _packets) = book_writer("book_edit_pages");
+    player
+        .inventory
+        .lock()
+        .set_item(2, ItemStack::new(&vanilla_items::WRITABLE_BOOK));
+
+    edit_book(&player, 2, &["Привет", "page two"], None);
+
+    let inventory = player.inventory.lock();
+    let book = inventory.get_item(2);
+    assert!(book.is(&vanilla_items::WRITABLE_BOOK));
+    let Some(content) = book.get(WRITABLE_BOOK_CONTENT) else {
+        panic!("the book should keep its writable content");
+    };
+    let pages: Vec<&str> = content
+        .pages()
+        .iter()
+        .map(|page| page.raw().as_str())
+        .collect();
+    assert_eq!(pages, ["Привет", "page two"]);
+}
+
+#[test]
+fn signing_a_writable_book_makes_a_resolved_written_book() {
+    use steel_registry::data_components::vanilla_components::{
+        WRITABLE_BOOK_CONTENT, WRITTEN_BOOK_CONTENT,
+    };
+
+    let (_world, player, _packets) = book_writer("book_sign");
+    player
+        .inventory
+        .lock()
+        .set_item(OFFHAND_SLOT, ItemStack::new(&vanilla_items::WRITABLE_BOOK));
+
+    edit_book(
+        &player,
+        i32::try_from(OFFHAND_SLOT).expect("slot fits i32"),
+        &["Once upon a time"],
+        Some("Tale"),
+    );
+
+    let inventory = player.inventory.lock();
+    let book = inventory.get_item(OFFHAND_SLOT);
+    assert!(book.is(&vanilla_items::WRITTEN_BOOK));
+    assert!(!book.has(WRITABLE_BOOK_CONTENT));
+    let Some(content) = book.get(WRITTEN_BOOK_CONTENT) else {
+        panic!("the signed book should carry written content");
+    };
+    assert_eq!(content.title().raw(), "Tale");
+    assert_eq!(content.author(), "Writer");
+    assert_eq!(content.generation(), 0);
+    assert!(content.resolved());
+    assert_eq!(content.pages().len(), 1);
+    assert_eq!(
+        content.pages()[0].raw(),
+        &TextComponent::plain("Once upon a time")
+    );
+}
+
+#[test]
+fn books_outside_the_hotbar_and_offhand_are_not_edited() {
+    let (_world, player, _packets) = book_writer("book_edit_main_inventory");
+    player
+        .inventory
+        .lock()
+        .set_item(9, ItemStack::new(&vanilla_items::WRITABLE_BOOK));
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::BOOK));
+
+    edit_book(&player, 9, &["text"], Some("Title"));
+    edit_book(&player, 0, &["text"], Some("Title"));
+
+    let inventory = player.inventory.lock();
+    assert!(inventory.get_item(9).is(&vanilla_items::WRITABLE_BOOK));
+    assert!(inventory.get_item(0).is(&vanilla_items::BOOK));
+}
+
+#[test]
+fn using_a_written_book_resolves_it_and_opens_it() {
+    use steel_registry::data_components::components::{Filterable, WrittenBookContent};
+    use steel_registry::data_components::vanilla_components::WRITTEN_BOOK_CONTENT;
+    use steel_registry::packets::play::C_OPEN_BOOK;
+
+    let (_world, player, packets) = book_writer("book_open_written");
+    let mut book = ItemStack::new(&vanilla_items::WRITTEN_BOOK);
+    let Ok(content) = WrittenBookContent::new(
+        Filterable::pass_through("Tale".to_owned()),
+        "Writer".to_owned(),
+        1,
+        vec![Filterable::pass_through(TextComponent::plain("page"))],
+        false,
+    ) else {
+        panic!("the book content should be valid");
+    };
+    book.set(WRITTEN_BOOK_CONTENT, content);
+    player.inventory.lock().set_selected_item(book);
+    packets.lock().clear();
+
+    player.handle_use_item(SUseItem {
+        hand: InteractionHand::MainHand,
+        sequence: 1,
+        y_rot: 0.0,
+        x_rot: 0.0,
+    });
+
+    assert!(sent_packet_ids(&packets).contains(&C_OPEN_BOOK));
+    let inventory = player.inventory.lock();
+    let Some(content) = inventory
+        .get_item_in_hand(InteractionHand::MainHand)
+        .get(WRITTEN_BOOK_CONTENT)
+    else {
+        panic!("the book should keep its content");
+    };
+    assert!(content.resolved());
+    assert_eq!(content.pages()[0].raw(), &TextComponent::plain("page"));
+    drop(inventory);
+    assert_eq!(
+        player
+            .stats
+            .lock()
+            .get(&vanilla_stat_types::ITEM_USED.get(&vanilla_items::WRITTEN_BOOK)),
+        1
+    );
+}
+
+#[test]
+fn using_a_writable_book_does_not_send_the_open_book_packet() {
+    use steel_registry::packets::play::C_OPEN_BOOK;
+
+    let (_world, player, packets) = book_writer("book_open_writable");
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::WRITABLE_BOOK));
+    packets.lock().clear();
+
+    player.handle_use_item(SUseItem {
+        hand: InteractionHand::MainHand,
+        sequence: 1,
+        y_rot: 0.0,
+        x_rot: 0.0,
+    });
+
+    assert!(!sent_packet_ids(&packets).contains(&C_OPEN_BOOK));
+    assert_eq!(
+        player
+            .stats
+            .lock()
+            .get(&vanilla_stat_types::ITEM_USED.get(&vanilla_items::WRITABLE_BOOK)),
+        1
+    );
 }

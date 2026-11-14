@@ -109,7 +109,8 @@ impl LecternBook {
     /// Vanilla `LecternBlockEntity.setBook`.
     fn set_book(&mut self, book: ItemStack) {
         // TODO: Vanilla resolves written book components (`WrittenBookContent.resolveForItem`)
-        // here; Steel has no text component resolution yet.
+        // here with a gamemaster command source named "Lectern" at the lectern; Steel's
+        // command sources cannot yet be built for a block position.
         self.page_count = page_count(&book);
         self.book[0] = book;
         self.page = 0;

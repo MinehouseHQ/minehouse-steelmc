@@ -264,6 +264,36 @@ impl WrittenBookContent {
         self.resolved
     }
 
+    /// Vanilla `WrittenBookContent.markResolved`.
+    #[must_use]
+    pub fn mark_resolved(&self) -> Self {
+        Self {
+            resolved: true,
+            ..self.clone()
+        }
+    }
+
+    /// The content of a successful `WrittenBookContent.resolve`: the same book
+    /// with resolved pages, marked as resolved.
+    #[must_use]
+    pub fn with_resolved_pages(&self, pages: Vec<Filterable<TextComponent>>) -> Self {
+        Self {
+            title: self.title.clone(),
+            author: self.author.clone(),
+            generation: self.generation,
+            pages,
+            resolved: true,
+        }
+    }
+
+    /// Vanilla `WrittenBookContent.isPageTooLarge`: whether the page's JSON
+    /// form is longer than [`Self::PAGE_LENGTH`] characters.
+    #[must_use]
+    pub fn is_page_too_large(page: &TextComponent) -> bool {
+        serde_json::to_string(page)
+            .is_ok_and(|encoded| encoded.encode_utf16().count() > Self::PAGE_LENGTH)
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert(

@@ -15,11 +15,11 @@ use steel_protocol::packets::game::{
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
     SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
-    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat, SPickItemFromBlock,
-    SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch,
-    SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot,
-    SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SContainerSlotStateChanged, SEditBook, SInteract, SMovePlayer, SMovePlayerPos,
+    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
+    SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
+    SPunch, SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::{handle_client_request, sender::CommandSender};
@@ -113,6 +113,7 @@ enum ScheduledPlayPacketKind {
     PlayerAction(SPlayerAction),
     PickItemFromBlock(SPickItemFromBlock),
     SignUpdate(SSignUpdate),
+    EditBook(SEditBook),
     SpectatorAction(SSpectatorAction),
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
@@ -179,6 +180,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SetCarriedItem(_)
             | ScheduledPlayPacketKind::Punch(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
+            | ScheduledPlayPacketKind::EditBook(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
                 PlayerCommandAction::StartSprinting
@@ -347,6 +349,7 @@ impl ScheduledPlayPacket {
                 player.handle_pick_item_from_block(packet);
             }
             ScheduledPlayPacketKind::SignUpdate(packet) => player.handle_sign_update(packet),
+            ScheduledPlayPacketKind::EditBook(packet) => player.handle_edit_book(packet),
             ScheduledPlayPacketKind::SpectatorAction(packet) => {
                 player.handle_spectator_action(packet);
             }
@@ -816,6 +819,9 @@ impl JavaConnection {
             )),
             play::S_SIGN_UPDATE => scheduled(ScheduledPlayPacketKind::SignUpdate(
                 SSignUpdate::read_packet(data)?,
+            )),
+            play::S_EDIT_BOOK => scheduled(ScheduledPlayPacketKind::EditBook(
+                SEditBook::read_packet(data)?,
             )),
             play::S_SPECTATOR_ACTION => scheduled(ScheduledPlayPacketKind::SpectatorAction(
                 SSpectatorAction::read_packet(data)?,
@@ -1374,6 +1380,14 @@ mod tests {
                 slot: SignTextSlot::Front,
             })),
             ScheduledPacketExecution::Serialized
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::EditBook(SEditBook {
+                slot: 0,
+                pages: Vec::new(),
+                title: None,
+            })),
+            ScheduledPacketExecution::PlayerLocal
         );
         assert_eq!(
             execution(ScheduledPlayPacketKind::Punch(SPunch {})),

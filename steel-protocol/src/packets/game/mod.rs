@@ -31,6 +31,7 @@ mod c_merchant_offers;
 mod c_mount_screen_open;
 mod c_move_entity;
 mod c_move_vehicle;
+mod c_open_book;
 mod c_open_screen;
 mod c_open_sign_editor;
 mod c_player_abilities;
@@ -87,6 +88,7 @@ mod s_container_button_click;
 mod s_container_click;
 mod s_container_close;
 mod s_container_slot_state_changed;
+mod s_edit_book;
 mod s_interact;
 mod s_move_player;
 mod s_move_vehicle;
@@ -155,6 +157,7 @@ pub use c_move_entity::{
     calc_delta, to_angle_byte,
 };
 pub use c_move_vehicle::CMoveVehicle;
+pub use c_open_book::COpenBook;
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;
 pub use c_player_abilities::{CPlayerAbilities, ability_flags};
@@ -224,6 +227,7 @@ pub use s_container_button_click::SContainerButtonClick;
 pub use s_container_click::{ClickType, HashedPatchMap, HashedStack, SContainerClick};
 pub use s_container_close::SContainerClose;
 pub use s_container_slot_state_changed::SContainerSlotStateChanged;
+pub use s_edit_book::{MAX_BOOK_PAGE_LENGTH, MAX_BOOK_PAGES, MAX_BOOK_TITLE_LENGTH, SEditBook};
 pub use s_interact::SInteract;
 pub use s_move_player::{
     SMovePlayer, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly,
