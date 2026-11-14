@@ -40,6 +40,15 @@ pub(crate) struct CommandTextResolver<'a, S: ?Sized = CommandSource> {
 }
 
 impl<'a> CommandTextResolver<'a, CommandSource> {
+    /// Vanilla `ResolutionContext.builder().withSource(source)`: the
+    /// source's own entity stands in for `*` score holders.
+    pub(crate) fn for_source(source: &'a CommandSource) -> Self {
+        Self {
+            source,
+            default_scoreboard_name: source.entity().map(|entity| entity.scoreboard_name()),
+        }
+    }
+
     pub(crate) fn with_entity_override(source: &'a CommandSource, entity: &dyn Entity) -> Self {
         Self {
             source,
@@ -292,7 +301,7 @@ fn parse_resource_identifier(raw: &str) -> Result<Identifier, &'static str> {
     Ok(Identifier::new(namespace.to_owned(), path.to_owned()))
 }
 
-pub(super) fn join_components(
+pub(crate) fn join_components(
     values: impl IntoIterator<Item = TextComponent>,
     separator: &TextComponent,
 ) -> TextComponent {

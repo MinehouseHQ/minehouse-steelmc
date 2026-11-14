@@ -45,6 +45,7 @@ use crate::entity::{
 };
 use crate::player::chat::SignedArguments;
 
+use crate::boss_event::custom::DomainCustomBossEvents;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
@@ -155,6 +156,8 @@ pub struct CommandDataSaveResults {
     pub scoreboards: io::Result<usize>,
     /// Number of dirty domain command-storage values written, or the save error.
     pub storage: io::Result<usize>,
+    /// Number of changed domain `/bossbar` sets written, or the save error.
+    pub boss_events: io::Result<usize>,
 }
 
 mod known_players;
@@ -208,6 +211,9 @@ pub async fn test_server_with_worlds_and_config(
     let command_storage = DomainCommandStorage::load(&worlds)
         .await
         .map_err(|error| format!("test command storage should load: {error}"))?;
+    let custom_boss_events = DomainCustomBossEvents::load(&worlds)
+        .await
+        .map_err(|error| format!("test boss bars should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -255,6 +261,7 @@ pub async fn test_server_with_worlds_and_config(
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,
+        custom_boss_events,
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
@@ -500,6 +507,8 @@ pub struct Server {
     pub scoreboards: DomainScoreboards,
     /// Command NBT storage isolated by Steel domain.
     pub(crate) command_storage: DomainCommandStorage,
+    /// `/bossbar` boss bars isolated by Steel domain.
+    pub custom_boss_events: DomainCustomBossEvents,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -816,6 +825,9 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
+        let custom_boss_events = DomainCustomBossEvents::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain boss bars: {error}"))?;
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -847,6 +859,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
+            custom_boss_events,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
@@ -892,6 +905,7 @@ impl Server {
         CommandDataSaveResults {
             scoreboards: self.scoreboards.save(&self.worlds).await,
             storage: self.save_command_storage().await,
+            boss_events: self.custom_boss_events.save(&self.worlds).await,
         }
     }
 

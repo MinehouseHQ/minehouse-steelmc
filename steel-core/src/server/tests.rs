@@ -19,19 +19,22 @@ use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::{CRemovePlayerInfo, ClientCommandAction};
+use steel_protocol::packets::game::{
+    BossBarColor, BossBarOverlay, CRemovePlayerInfo, ClientCommandAction,
+};
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{
-    C_ADD_ENTITY, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT,
-    C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
+    C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT,
+    C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
+    C_UPDATE_ADVANCEMENTS,
 };
 use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
     vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS, vanilla_items,
 };
-use steel_utils::{BlockPos, ChunkPos, UuidExt as _, translations, types::UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, Identifier, UuidExt as _, translations, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
 use tokio::{
@@ -5205,5 +5208,82 @@ fn kick_disconnects_with_the_default_or_given_reason() {
             bob_reason.lock().clone(),
             Some(TextComponent::plain("griefing the spawn"))
         );
+    });
+}
+
+#[test]
+fn bossbar_commands_manage_a_domain_bar_and_execute_store_feeds_it() {
+    let world_fixture = fresh_test_world("bossbar");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) =
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 2).await
+        else {
+            panic!("test server should initialize");
+        };
+        let (alice, alice_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "Alice", 1);
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let Some(events) = server.custom_boss_events.get(world.domain()) else {
+            panic!("the world's domain should have boss bars");
+        };
+        let id = Identifier::new_static("test", "fight");
+
+        run_command(&server, console(), "bossbar add test:fight \"Fight\"");
+        let Some(bar) = events.get(&id) else {
+            panic!("bossbar add should create the bar");
+        };
+        assert_eq!(bar.event().name(), TextComponent::plain("Fight"));
+
+        alice_packets.lock().clear();
+        run_command(&server, console(), "bossbar set test:fight players Alice");
+        assert_eq!(bar.event().players().len(), 1);
+        assert!(
+            alice_packets
+                .lock()
+                .iter()
+                .any(|packet| packet_id(packet) == C_BOSS_EVENT),
+            "Alice should receive the bar"
+        );
+
+        run_command(&server, console(), "bossbar set test:fight max 10");
+        run_command(&server, console(), "bossbar set test:fight value 5");
+        run_command(&server, console(), "bossbar set test:fight color red");
+        run_command(
+            &server,
+            console(),
+            "bossbar set test:fight style notched_10",
+        );
+        run_command(&server, console(), "bossbar set test:fight visible false");
+        assert!((bar.event().progress() - 0.5).abs() < f32::EPSILON);
+        assert_eq!(bar.event().color(), BossBarColor::Red);
+        assert_eq!(bar.event().overlay(), BossBarOverlay::Notched10);
+        assert!(!bar.event().is_visible());
+
+        run_command(
+            &server,
+            console(),
+            "execute store result bossbar test:fight value run bossbar get test:fight max",
+        );
+        assert_eq!(bar.value(), 10);
+        assert!((bar.event().progress() - 1.0).abs() < f32::EPSILON);
+
+        // Leaving the domain hides the bar; coming back shows it again.
+        server.disconnect_player_from_boss_bars(world.domain(), &alice);
+        assert_eq!(bar.event().players().len(), 0);
+        server.connect_player_to_boss_bars(world.domain(), &alice);
+        assert_eq!(bar.event().players().len(), 1);
+
+        run_command(&server, console(), "bossbar set test:fight players");
+        assert_eq!(bar.event().players().len(), 0);
+        run_command(&server, console(), "bossbar remove test:fight");
+        assert!(events.get(&id).is_none());
+        assert_eq!(events.ids().len(), 0);
     });
 }

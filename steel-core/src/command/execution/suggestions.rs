@@ -45,7 +45,7 @@ pub(in crate::command::execution) fn identifier_matches(
 }
 
 /// Suggests the identifiers matching the remaining input.
-pub(in crate::command::execution) fn suggest_resources<'a>(
+pub(crate) fn suggest_resources<'a>(
     resources: impl Iterator<Item = &'a Identifier>,
     builder: &mut SuggestionsBuilder<'_>,
 ) {

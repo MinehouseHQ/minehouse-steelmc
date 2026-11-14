@@ -139,6 +139,10 @@ impl Server {
             Ok(saved) => log::info!("Saved {saved} domain command storages"),
             Err(error) => log::error!("Failed to save domain command storage: {error}"),
         }
+        match command_data.boss_events {
+            Ok(saved) => log::info!("Saved {saved} domain boss bar sets"),
+            Err(error) => log::error!("Failed to save domain boss bars: {error}"),
+        }
         match self.worlds.save_maps() {
             Ok(saved) => log::info!("Saved {saved} maps"),
             Err(error) => log::error!("Failed to save maps: {error}"),

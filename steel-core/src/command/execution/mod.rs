@@ -55,8 +55,8 @@ pub(crate) use source::{
     ExecutionCommandSource,
 };
 pub(crate) use structure::StructureOrTagKey;
-pub(crate) use suggestions::{FixedSuggestionProvider, suggest_list};
-pub(crate) use text::CommandTextResolver;
+pub(crate) use suggestions::{FixedSuggestionProvider, suggest_list, suggest_resources};
+pub(crate) use text::{CommandTextResolver, join_components};
 pub(crate) use world::WorldArgument;
 
 #[cfg(test)]

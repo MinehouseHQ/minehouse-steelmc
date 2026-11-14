@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 use crate::player::Player;
 
+pub mod custom;
+
 struct BossEventState {
     name: TextComponent,
     progress: f32,
@@ -79,6 +81,24 @@ impl ServerBossEvent {
     #[must_use]
     pub fn progress(&self) -> f32 {
         self.state.lock().progress
+    }
+
+    /// Returns the bar's color.
+    #[must_use]
+    pub fn color(&self) -> BossBarColor {
+        self.state.lock().color
+    }
+
+    /// Returns the bar's notch style.
+    #[must_use]
+    pub fn overlay(&self) -> BossBarOverlay {
+        self.state.lock().overlay
+    }
+
+    /// Returns the bar's darken-screen, boss-music and world-fog flags.
+    #[must_use]
+    pub fn flags(&self) -> BossBarFlags {
+        self.state.lock().flags
     }
 
     /// Returns whether the bar is shown to its players.

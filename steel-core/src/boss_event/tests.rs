@@ -15,9 +15,9 @@ use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection};
 use crate::test_support::{TestPlayerBuilder, test_runtime_config, test_world};
 
-const ADD: i32 = 0;
-const REMOVE: i32 = 1;
-const UPDATE_PROGRESS: i32 = 2;
+pub(super) const ADD: i32 = 0;
+pub(super) const REMOVE: i32 = 1;
+pub(super) const UPDATE_PROGRESS: i32 = 2;
 const UPDATE_NAME: i32 = 3;
 
 struct RecordingConnection {
@@ -52,7 +52,7 @@ impl NetworkConnection for RecordingConnection {
     }
 }
 
-fn recording_player(
+pub(super) fn recording_player(
     name: &str,
     entity_id: i32,
 ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
@@ -68,7 +68,7 @@ fn recording_player(
 }
 
 /// Drains the recorded boss event operation ids, checking they target `bar`.
-fn operations(packets: &SyncMutex<Vec<EncodedPacket>>, bar: Uuid) -> Vec<i32> {
+pub(super) fn operations(packets: &SyncMutex<Vec<EncodedPacket>>, bar: Uuid) -> Vec<i32> {
     packets
         .lock()
         .drain(..)
