@@ -1,4 +1,5 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
+mod autosave;
 mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
@@ -113,6 +114,7 @@ use steel_utils::{
 };
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
+use tokio::sync::oneshot;
 use tokio::{
     runtime::Runtime,
     sync::Notify,
@@ -120,15 +122,13 @@ use tokio::{
     time::sleep,
 };
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
-/// Wall-clock interval between saves of command-owned persistent server data.
-/// Matches vanilla's intended five-minute autosave cadence.
-const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Copy)]
 struct TabListTickStats {
@@ -261,6 +261,8 @@ pub async fn test_server_with_worlds_and_config(
         packet_processor: PacketProcessor::new(),
         chunk_encoding_pool: Arc::new(chunk_encoding_pool),
         jobs: ServerJobQueue::new(),
+        save_writes: TaskTracker::new(),
+        last_save_write: SyncMutex::new(None),
         player_data_storage,
         player_permission_states: SyncRwLock::new(player_permission_states),
         player_permission_updates: AsyncMutex::new(()),
@@ -510,6 +512,10 @@ pub struct Server {
     chunk_encoding_pool: Arc<ThreadPool>,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
+    /// Background writes of autosaves and `/save-all`, awaited before shutdown.
+    save_writes: TaskTracker,
+    /// Completes when the most recently queued save write finishes.
+    last_save_write: SyncMutex<Option<oneshot::Receiver<()>>>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Persisted permission state indexed by player UUID.
@@ -847,6 +853,8 @@ impl Server {
             packet_processor: PacketProcessor::new(),
             chunk_encoding_pool,
             jobs: ServerJobQueue::new(),
+            save_writes: TaskTracker::new(),
+            last_save_write: SyncMutex::new(None),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
             player_permission_updates: AsyncMutex::new(()),

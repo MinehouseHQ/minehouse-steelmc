@@ -9,9 +9,11 @@ mod stats;
 #[cfg(test)]
 mod tests;
 
-use std::{io::Cursor, path::PathBuf};
+use std::{io::Cursor, path::PathBuf, sync::Arc};
 
+use rustc_hash::FxHashMap;
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
+use steel_utils::locks::{AsyncMutex, SyncMutex};
 use tokio::io;
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
@@ -21,7 +23,7 @@ use self::permissions::set_permission_subject;
 use super::PlayerRespawnConfig;
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
-    PersistentRootVehicle, PersistentSlot,
+    PersistentRootVehicle, PersistentSlot, next_capture_order,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
@@ -52,9 +54,16 @@ pub struct GlobalPlayerData {
     pub last_active_domain: String,
 }
 
+/// A player in one domain: `(domain, uuid)`.
+type DomainPlayerKey = (Box<str>, Uuid);
+
 /// Manages player data persistence.
 pub struct PlayerDataStorage {
     backend: PlayerDataStorageBackend,
+    /// Per domain and player, the capture order of the newest domain data
+    /// written. Saves run concurrently (autosave, disconnect, domain switch),
+    /// so an older snapshot finishing late must not overwrite a newer one.
+    domain_save_order: SyncMutex<FxHashMap<DomainPlayerKey, Arc<AsyncMutex<u64>>>>,
 }
 
 enum PlayerDataStorageBackend {
@@ -174,14 +183,21 @@ impl PlayerDataStorage {
     /// Creates player data storage backed by files under `save_root`.
     pub async fn on_disk(save_root: PathBuf) -> io::Result<Self> {
         let backend = PlayerDataStorageBackend::File(FilePlayerDataStorage::new(save_root).await?);
-        Ok(Self { backend })
+        Ok(Self::with_backend(backend))
     }
 
     /// Creates player data storage that keeps everything in RAM.
     #[must_use]
     pub fn in_memory() -> Self {
+        Self::with_backend(PlayerDataStorageBackend::Memory(
+            MemoryPlayerDataStorage::default(),
+        ))
+    }
+
+    fn with_backend(backend: PlayerDataStorageBackend) -> Self {
         Self {
-            backend: PlayerDataStorageBackend::Memory(MemoryPlayerDataStorage::default()),
+            backend,
+            domain_save_order: SyncMutex::new(FxHashMap::default()),
         }
     }
 
@@ -200,17 +216,38 @@ impl PlayerDataStorage {
 
     /// Saves a player's data for a specific domain.
     pub async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
-        match &self.backend {
-            PlayerDataStorageBackend::File(storage) => storage.save_domain(domain, player).await,
-            PlayerDataStorageBackend::Memory(storage) => {
-                storage.save_domain(domain, player);
-                Ok(())
-            }
-        }
+        let data = PersistentPlayerData::from_player(player);
+        self.save_domain_data(domain, player.gameprofile.id(), &data)
+            .await
     }
 
     /// Saves an already captured player data snapshot for a specific domain.
+    ///
+    /// A snapshot older than one already written for this domain and player
+    /// is skipped.
     pub async fn save_domain_data(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
+        let order = Arc::clone(
+            self.domain_save_order
+                .lock()
+                .entry((domain.into(), uuid))
+                .or_default(),
+        );
+        let mut newest_written = order.lock().await;
+        if data.capture_order < *newest_written {
+            log::debug!("Skipping an outdated save of player {uuid} in domain {domain}");
+            return Ok(());
+        }
+        self.write_domain_data(domain, uuid, data).await?;
+        *newest_written = data.capture_order;
+        Ok(())
+    }
+
+    async fn write_domain_data(
         &self,
         domain: &str,
         uuid: Uuid,
@@ -502,6 +539,7 @@ impl PlayerDataFile {
                     WardenSpawnTracker::new(ticks_since_last_warning, warning_level, cooldown_ticks)
                 },
             ),
+            capture_order: next_capture_order(),
         })
     }
 }

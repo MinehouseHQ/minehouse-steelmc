@@ -1044,3 +1044,49 @@ fn warden_spawn_tracker_roundtrips() {
     let again = PlayerDataFile::from_persistent(&persistent).expect("player file should build");
     assert_eq!(again.warden_spawn_tracker, vec![[120, 3, 40]]);
 }
+
+#[tokio::test]
+async fn an_older_player_snapshot_never_overwrites_a_newer_one() {
+    init_vanilla_registry();
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(7);
+    let snapshot = |level| {
+        let mut data = sample_player_file(PLAYER_DATA_VERSION)
+            .into_persistent()
+            .expect("sample player file should convert");
+        data.experience_level = level;
+        data
+    };
+    // Taken first (an autosave), but written after the newer one (a
+    // disconnect save) because its write was slower.
+    let older = snapshot(1);
+    let newer = snapshot(2);
+    assert!(older.capture_order < newer.capture_order);
+
+    storage
+        .save_domain_data("survival", uuid, &newer)
+        .await
+        .expect("newer snapshot should save");
+    storage
+        .save_domain_data("survival", uuid, &older)
+        .await
+        .expect("an outdated snapshot is skipped, not an error");
+    let loaded = storage
+        .load_domain("survival", uuid)
+        .await
+        .expect("player data should load")
+        .expect("player data should exist");
+    assert_eq!(loaded.experience_level, 2);
+
+    // Each domain keeps its own order.
+    storage
+        .save_domain_data("lobby", uuid, &older)
+        .await
+        .expect("first snapshot in another domain should save");
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load")
+        .expect("player data should exist");
+    assert_eq!(loaded.experience_level, 1);
+}

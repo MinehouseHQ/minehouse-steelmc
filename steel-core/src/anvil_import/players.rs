@@ -34,7 +34,7 @@ use crate::player::PlayerRespawnConfig;
 use crate::player::advancement::progress::{AdvancementProgress, CriterionProgress};
 use crate::player::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
-    PersistentRootVehicle, PersistentSlot, PersistentStat,
+    PersistentRootVehicle, PersistentSlot, PersistentStat, next_capture_order,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::warden_spawn_tracker::WardenSpawnTracker;
@@ -362,6 +362,7 @@ fn convert_player_data(
                 _ => None,
             }),
         warden_spawn_tracker: warden_spawn_tracker(root),
+        capture_order: next_capture_order(),
     })
 }
 

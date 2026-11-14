@@ -25,6 +25,7 @@ mod perms;
 mod playsound;
 mod position;
 mod return_command;
+mod save;
 mod seed;
 mod setblock;
 mod setidletimeout;
@@ -99,6 +100,9 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(save::save_all_registration())?;
+    builder.register(save::save_off_registration())?;
+    builder.register(save::save_on_registration())?;
     builder.register(chat_commands::say_registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
@@ -191,6 +195,9 @@ mod tests {
                 "perms",
                 "playsound",
                 "return",
+                "save-all",
+                "save-off",
+                "save-on",
                 "say",
                 "seed",
                 "setblock",

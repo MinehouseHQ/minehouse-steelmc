@@ -44,6 +44,8 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
+use crate::chunk::Chunk;
+use crate::chunk::status::ChunkStatus;
 use crate::command::execution::{
     CommandArgumentSource, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
     CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
@@ -5067,5 +5069,91 @@ fn signed_chat_commands_queue_their_message_arguments() {
 
         drop(alice);
         drop(server);
+    });
+}
+
+#[test]
+fn autosave_writes_changed_chunks_and_save_off_stops_it() {
+    let world_fixture = fresh_test_world("autosave");
+    let world = &world_fixture.world;
+    init_behaviors();
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(world, pos);
+    let chunk_is_dirty = || {
+        holder
+            .try_chunk(ChunkStatus::Full)
+            .is_some_and(Chunk::is_dirty)
+    };
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await else {
+            panic!("test server should initialize");
+        };
+        assert!(world.set_block(
+            BlockPos::new(1, 64, 1),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        assert!(chunk_is_dirty());
+        assert!(
+            !world
+                .chunk_map
+                .storage
+                .chunk_exists(pos)
+                .await
+                .unwrap_or(true)
+        );
+
+        // `/save-off` keeps an autosave away from the world.
+        assert!(server.set_auto_save(false));
+        assert!(!server.set_auto_save(false), "saving is already off");
+        let skipped = server.write_save(server.prepare_save(false)).await;
+        assert_eq!(skipped.chunks, 0);
+        assert!(chunk_is_dirty());
+
+        // `/save-all` forces it anyway; the next save has nothing left.
+        let forced = server.write_save(server.prepare_save(true)).await;
+        assert!(forced.success);
+        assert_eq!(forced.chunks, 1);
+        assert!(!chunk_is_dirty());
+        assert!(
+            world
+                .chunk_map
+                .storage
+                .chunk_exists(pos)
+                .await
+                .unwrap_or(false)
+        );
+        assert_eq!(server.write_save(server.prepare_save(true)).await.chunks, 0);
+
+        // With saving back on, a later change goes out with the autosave.
+        assert!(server.set_auto_save(true));
+        assert!(world.set_block(
+            BlockPos::new(2, 64, 2),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        assert!(chunk_is_dirty());
+        let autosaved = server.write_save(server.prepare_save(false)).await;
+        assert_eq!(autosaved.chunks, 1);
+        assert!(!chunk_is_dirty());
+
+        // The commands drive the same switch and save.
+        let console = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        run_command(&server, console.clone(), "save-off");
+        assert!(world.no_save());
+        run_command(&server, console.clone(), "save-on");
+        assert!(!world.no_save());
+        assert!(world.set_block(
+            BlockPos::new(3, 64, 3),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        run_command(&server, console, "save-all");
+        assert!(!chunk_is_dirty(), "save-all captures the change right away");
+        server.finish_save_writes().await;
     });
 }

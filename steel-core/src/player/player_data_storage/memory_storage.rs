@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use super::GlobalPlayerData;
 use crate::permission::PermissionSubjectIndex;
+use crate::player::KnownPlayers;
 use crate::player::player_data::PersistentPlayerData;
-use crate::player::{KnownPlayers, Player};
 
 /// Player data storage that keeps everything in RAM and never touches disk.
 #[derive(Default)]
@@ -22,11 +22,6 @@ struct MemoryState {
 }
 
 impl MemoryPlayerDataStorage {
-    pub(crate) fn save_domain(&self, domain: &str, player: &Player) {
-        let data = PersistentPlayerData::from_player(player);
-        self.save_domain_data(domain, player.gameprofile.id(), &data);
-    }
-
     pub(crate) fn save_domain_data(&self, domain: &str, uuid: Uuid, data: &PersistentPlayerData) {
         self.state
             .lock()

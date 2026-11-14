@@ -1,16 +1,17 @@
+use super::autosave::AutosaveSchedule;
 use super::tick_overload::TickOverloadGuard;
 use super::tick_watchdog::{TickStep, TickWatchdog};
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
-    Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
-    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos,
-    ChunkSender, CommandExecutionContext, CommandExecutionOwner, CommandRequest,
-    CommandResultCallback, CommandSender, CommandSource, Duration, EncodedChunk,
-    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, GlobalPlayerData, Instant, JoinSet,
-    MenuRemovalStatus, NetworkConnection, PendingCommandExecutionQueue, PersistentPlayerData,
-    Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD, Server, StringReader,
-    SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
-    command_suggestions_packet, sleep, spawn_blocking,
+    Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_REQUESTS_PER_TICK,
+    COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos, ChunkSender,
+    CommandExecutionContext, CommandExecutionOwner, CommandRequest, CommandResultCallback,
+    CommandSender, CommandSource, Duration, EncodedChunk, ExecutionCommandSource, ExecutionStop,
+    GameTickTaskGuard, GlobalPlayerData, Instant, JoinSet, MenuRemovalStatus, NetworkConnection,
+    PendingCommandExecutionQueue, PersistentPlayerData, Player, SEND_PLAYER_INFO_INTERVAL,
+    SLOW_CHUNK_TICK_THRESHOLD, Server, StringReader, SuggestionError, Suggestions,
+    TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World, command_suggestions_packet,
+    sleep, spawn_blocking,
 };
 use crate::player::chat::SignedArguments;
 
@@ -92,6 +93,9 @@ impl Server {
     /// processed. Callers must stop packet processing before calling this; the standalone
     /// server does so by closing its task tracker and awaiting the drain.
     pub async fn save_and_shutdown(&self) {
+        // An autosave or `/save-all` still writing captured older state than
+        // this final save, so it has to land first.
+        self.finish_save_writes().await;
         if let Err(error) = self.flush_known_players().await {
             log::error!("Failed to flush known player cache during shutdown: {error}");
         }
@@ -197,11 +201,10 @@ impl Server {
         };
         let mut next_tick_time = Instant::now();
         let mut overload_guard = TickOverloadGuard::new();
-        let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
+        let mut autosave_schedule = AutosaveSchedule::new();
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
         let mut player_disconnect_saves = JoinSet::new();
-        let mut command_data_autosaves = JoinSet::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -291,10 +294,7 @@ impl Server {
             self.process_domain_switches();
 
             watchdog.enter(TickStep::Autosave);
-            self.tick_command_data_autosave(
-                &mut next_command_data_autosave,
-                &mut command_data_autosaves,
-            );
+            self.tick_autosave(&mut autosave_schedule).await;
 
             watchdog.enter(TickStep::TabList);
             let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
@@ -330,11 +330,7 @@ impl Server {
                 log::error!("Player disconnect save task failed during shutdown: {error}");
             }
         }
-        while let Some(result) = command_data_autosaves.join_next().await {
-            if let Err(error) = result {
-                log::error!("Command data autosave task failed during shutdown: {error}");
-            }
-        }
+        self.finish_save_writes().await;
     }
 
     fn record_tick_and_capture_tab_stats(
@@ -349,45 +345,33 @@ impl Server {
             .then(|| TabListTickStats::capture(&tick_manager))
     }
 
-    async fn autosave_command_data(&self) {
-        tracing::debug!("Command data autosave started");
-        let results = self.save_command_data().await;
-        match results.scoreboards {
-            Ok(saved) => tracing::debug!(saved, "Domain scoreboard autosave completed"),
-            Err(error) => tracing::error!(%error, "Domain scoreboard autosave failed"),
-        }
-        match results.storage {
-            Ok(saved) => tracing::debug!(saved, "Domain command-storage autosave completed"),
-            Err(error) => tracing::error!(%error, "Domain command-storage autosave failed"),
-        }
-        match self.worlds.save_maps() {
-            Ok(saved) => tracing::debug!(saved, "Map autosave completed"),
-            Err(error) => tracing::error!(%error, "Map autosave failed"),
-        }
-    }
-
-    fn tick_command_data_autosave(
-        self: &Arc<Self>,
-        next_autosave: &mut Instant,
-        saves: &mut JoinSet<()>,
-    ) {
-        while let Some(result) = saves.try_join_next() {
-            if let Err(error) = result {
-                log::error!("Command data autosave task failed: {error}");
-            }
-        }
-        if Instant::now() < *next_autosave {
+    /// Vanilla `tickServer`'s autosave: counts down and, when due, captures
+    /// a save between ticks and writes it in the background.
+    async fn tick_autosave(self: &Arc<Self>, schedule: &mut AutosaveSchedule) {
+        if !schedule.tick(&self.tick_rate_manager.read()) {
             return;
         }
-        if saves.is_empty() {
-            let server = Arc::clone(self);
-            saves.spawn(async move {
-                server.autosave_command_data().await;
-            });
-        } else {
-            tracing::warn!("Skipping command data autosave while the previous save runs");
+        if self.is_save_writing() {
+            tracing::warn!("Skipping autosave while the previous save is still writing");
+            return;
         }
-        *next_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
+        tracing::debug!("Autosave started");
+        let server = Arc::clone(self);
+        let save = match spawn_blocking(move || server.prepare_save(false)).await {
+            Ok(save) => save,
+            Err(error) => {
+                log::error!("Autosave capture failed: {error}");
+                return;
+            }
+        };
+        self.spawn_save_write(save, |result| {
+            tracing::debug!(
+                players = result.players,
+                chunks = result.chunks,
+                success = result.success,
+                "Autosave finished"
+            );
+        });
     }
 
     fn tick_pending_command_executions(
