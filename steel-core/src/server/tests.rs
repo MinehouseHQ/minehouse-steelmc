@@ -4359,6 +4359,72 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 }
 
 #[test]
+fn effect_command_gives_and_clears_mob_effects() {
+    use steel_registry::vanilla_mob_effects;
+
+    use crate::behavior::init_behaviors;
+    use crate::entity::LivingEntity as _;
+
+    let world_fixture = fresh_test_world("effect-command");
+    init_behaviors();
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (target, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(world),
+            Uuid::from_u128(1),
+            "Target",
+            1,
+        );
+        assert!(world.add_player(Arc::clone(&target), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&target)));
+        let _ = target.mark_joined_world();
+        target.set_client_loaded(true);
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+
+        run_command(
+            &server,
+            console(),
+            "effect give Target minecraft:speed 30 2 true",
+        );
+        let Some(speed) = target.mob_effect(vanilla_mob_effects::SPEED) else {
+            panic!("speed should be active");
+        };
+        assert_eq!(speed.duration(), 600);
+        assert_eq!(speed.amplifier(), 2);
+        assert!(!speed.is_visible());
+
+        run_command(
+            &server,
+            console(),
+            "effect give Target minecraft:haste infinite",
+        );
+        let Some(haste) = target.mob_effect(vanilla_mob_effects::HASTE) else {
+            panic!("haste should be active");
+        };
+        assert!(haste.is_infinite_duration());
+
+        run_command(&server, console(), "effect clear Target minecraft:speed");
+        assert!(!target.has_mob_effect(vanilla_mob_effects::SPEED));
+        assert!(target.has_mob_effect(vanilla_mob_effects::HASTE));
+
+        run_command(&server, console(), "effect clear Target");
+        assert_eq!(target.active_mob_effects().len(), 0);
+
+        drop(target);
+        drop(server);
+    });
+}
+
+#[test]
 fn sync_tab_list_sends_single_batched_update_to_joiner() {
     let world_fixture = fresh_test_world("sync-tab-list-batch");
     let world = &world_fixture.world;
