@@ -26,6 +26,7 @@ mod jukebox;
 mod lectern;
 mod piston_moving;
 mod potent_sulfur;
+mod sculk_catalyst;
 mod sculk_sensor;
 mod sculk_shrieker;
 mod shelf;
@@ -82,6 +83,7 @@ pub(crate) use lectern::{
 };
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
+pub use sculk_catalyst::SculkCatalystBlockEntity;
 pub use sculk_sensor::SculkSensorBlockEntity;
 pub use sculk_shrieker::SculkShriekerBlockEntity;
 pub(crate) use sculk_shrieker::try_get_player;

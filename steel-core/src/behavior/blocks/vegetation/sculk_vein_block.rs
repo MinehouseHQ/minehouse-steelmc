@@ -9,11 +9,9 @@ use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::BlockRef;
 
-/// Vanilla `SculkVeinBlock` survival.
-///
-/// Inherits `canSurvive` from `MultifaceBlock`. Sculk-specific spread is left
-/// as a TODO.
-// TODO: Implement sculk spread, and charge handling.
+/// Vanilla `SculkVeinBlock`: a multiface block. How it spreads and takes a
+/// sculk charge is part of the
+/// [spreader](crate::behavior::blocks::spreader).
 #[block_behavior]
 pub struct SculkVeinBlock {
     multiface: MultifaceBlock,

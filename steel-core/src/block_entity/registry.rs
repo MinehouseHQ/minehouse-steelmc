@@ -227,6 +227,11 @@ pub fn init_block_entities() {
         );
 
         registry.register(
+            &vanilla_block_entity_types::SCULK_CATALYST,
+            |level, pos, state| Arc::new(SculkCatalystBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
             &vanilla_block_entity_types::SCULK_SHRIEKER,
             |level, pos, state| Arc::new(SculkShriekerBlockEntity::new(level, pos, state)),
         );
