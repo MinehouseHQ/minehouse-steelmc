@@ -477,17 +477,19 @@ impl Player {
         }
     }
 
-    /// Handles a container slot state changed packet (e.g., crafter slot toggle).
+    /// Vanilla `handleContainerSlotStateChanged`: a player toggles a crafter
+    /// slot in the open crafter menu.
     pub fn handle_container_slot_state_changed(&self, packet: SContainerSlotStateChanged) {
-        log::debug!(
-            "Player {} changed slot {} state to {} in container {}",
-            self.gameprofile.name(),
-            packet.slot_id,
-            packet.new_state,
-            packet.container_id
-        );
-        // TODO: Implement slot state change handling
-        // This is used for the crafter block to enable/disable slots
+        if self.game_mode() == GameType::Spectator {
+            return;
+        }
+        let Ok(mut menu) = self.take_open_menu_for_callback(Some(packet.container_id)) else {
+            return;
+        };
+        if let Ok(slot) = usize::try_from(packet.slot_id) {
+            menu.set_crafter_slot_state(slot, packet.new_state);
+        }
+        self.finish_open_menu_callback(menu);
     }
 
     /// Handles a creative mode slot set packet.

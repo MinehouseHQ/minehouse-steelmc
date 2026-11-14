@@ -13,6 +13,7 @@ mod chest;
 mod chiseled_bookshelf;
 mod comparator;
 mod conduit;
+mod crafter;
 mod creaking_heart;
 mod daylight_detector;
 mod decorated_pot;
@@ -61,6 +62,10 @@ pub use chest::{CHEST_SLOTS, ChestBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use conduit::ConduitBlockEntity;
+pub use crafter::{
+    CRAFTER_DATA_TRIGGERED, CRAFTER_GRID_SIZE, CRAFTER_NUM_DATA, CRAFTER_SLOTS, CrafterBlockEntity,
+    CrafterContainer, CrafterData, crafter_container,
+};
 pub use creaking_heart::CreakingHeartBlockEntity;
 pub(crate) use creaking_heart::has_required_logs as creaking_heart_has_required_logs;
 pub use daylight_detector::DaylightDetectorBlockEntity;
