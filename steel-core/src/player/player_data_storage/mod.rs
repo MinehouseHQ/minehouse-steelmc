@@ -34,13 +34,14 @@ use crate::player::KnownPlayers;
 use crate::player::Player;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::memory_storage::MemoryPlayerDataStorage;
+use crate::player::warden_spawn_tracker::WardenSpawnTracker;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 13;
+const PLAYER_STORAGE_VERSION: u16 = 14;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -101,6 +102,9 @@ struct PlayerDataFile {
     active_effects: Vec<Vec<u8>>,
     /// Vanilla `raid_omen_position`; empty or one `[x, y, z]`.
     raid_omen_position: Vec<[i32; 3]>,
+    /// Vanilla `warden_spawn_tracker`; empty or one
+    /// `[ticks_since_last_warning, warning_level, cooldown_ticks]`.
+    warden_spawn_tracker: Vec<[i32; 3]>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -389,6 +393,11 @@ impl PlayerDataFile {
             raid_omen_position: data
                 .raid_omen_position
                 .map_or_else(Vec::new, |pos| vec![[pos.x(), pos.y(), pos.z()]]),
+            warden_spawn_tracker: vec![[
+                data.warden_spawn_tracker.ticks_since_last_warning(),
+                data.warden_spawn_tracker.warning_level(),
+                data.warden_spawn_tracker.cooldown_ticks(),
+            ]],
         })
     }
 
@@ -487,6 +496,12 @@ impl PlayerDataFile {
                 .raid_omen_position
                 .first()
                 .map(|&[x, y, z]| BlockPos::new(x, y, z)),
+            warden_spawn_tracker: self.warden_spawn_tracker.first().map_or_else(
+                WardenSpawnTracker::default,
+                |&[ticks_since_last_warning, warning_level, cooldown_ticks]| {
+                    WardenSpawnTracker::new(ticks_since_last_warning, warning_level, cooldown_ticks)
+                },
+            ),
         })
     }
 }
@@ -580,12 +595,16 @@ fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
     // Older layouts are the current one without its newest trailing fields, so the missing
     // fields are appended empty before decoding: (storage version, data version, missing).
     let legacy = match stored_version(bytes) {
-        // Before shoulder entities, active effects and the raid omen position.
-        Some(10) => Some((10, 7, 4)),
-        // Before active effects and the raid omen position.
-        Some(11) => Some((11, 8, 2)),
-        // Before the raid omen position.
-        Some(12) => Some((12, 9, 1)),
+        // Before shoulder entities, active effects, the raid omen position
+        // and the warden spawn tracker.
+        Some(10) => Some((10, 7, 5)),
+        // Before active effects, the raid omen position and the warden spawn
+        // tracker.
+        Some(11) => Some((11, 8, 3)),
+        // Before the raid omen position and the warden spawn tracker.
+        Some(12) => Some((12, 9, 2)),
+        // Before the warden spawn tracker.
+        Some(13) => Some((13, 10, 1)),
         _ => None,
     };
     let Some((storage_version, data_version, missing_fields)) = legacy else {

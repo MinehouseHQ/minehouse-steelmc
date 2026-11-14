@@ -21,6 +21,18 @@ use crate::world::World;
 /// with `above_state` over it.
 pub(crate) type SpawnStrategy = fn(&World, BlockPos, BlockStateId, BlockPos, BlockStateId) -> bool;
 
+/// Vanilla `Strategy.ON_TOP_OF_COLLIDER`: on a full top face with nothing
+/// solid above.
+pub(crate) fn on_top_of_collider(
+    world: &World,
+    pos: BlockPos,
+    state: BlockStateId,
+    above_pos: BlockPos,
+    above_state: BlockStateId,
+) -> bool {
+    collision_shape_is_empty(world, above_pos, above_state) && top_face_is_full(world, pos, state)
+}
+
 /// Vanilla `Strategy.ON_TOP_OF_COLLIDER_NO_LEAVES`: on a full top face with
 /// nothing solid above, never on leaves.
 pub(crate) fn on_top_of_collider_no_leaves(
@@ -32,13 +44,18 @@ pub(crate) fn on_top_of_collider_no_leaves(
 ) -> bool {
     collision_shape_is_empty(world, above_pos, above_state)
         && !state.get_block().has_tag(&BlockTag::LEAVES)
-        && merged_face_occludes(
-            BLOCK_BEHAVIORS
-                .get_behavior(state.get_block())
-                .get_collision_shape(state, world, pos, BlockCollisionContext::empty()),
-            VoxelShape::EMPTY,
-            Direction::Up,
-        )
+        && top_face_is_full(world, pos, state)
+}
+
+/// Vanilla `Block.isFaceFull(collisionShape, Direction.UP)`.
+fn top_face_is_full(world: &World, pos: BlockPos, state: BlockStateId) -> bool {
+    merged_face_occludes(
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .get_collision_shape(state, world, pos, BlockCollisionContext::empty()),
+        VoxelShape::EMPTY,
+        Direction::Up,
+    )
 }
 
 /// Vanilla `Strategy.LEGACY_IRON_GOLEM`: on a solid block (or powder snow)

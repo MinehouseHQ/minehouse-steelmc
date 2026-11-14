@@ -27,6 +27,7 @@ mod lectern;
 mod piston_moving;
 mod potent_sulfur;
 mod sculk_sensor;
+mod sculk_shrieker;
 mod shelf;
 mod shulker_box;
 mod sign;
@@ -82,6 +83,8 @@ pub(crate) use lectern::{
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use sculk_sensor::SculkSensorBlockEntity;
+pub use sculk_shrieker::SculkShriekerBlockEntity;
+pub(crate) use sculk_shrieker::try_get_player;
 pub use shelf::{SHELF_SLOTS, ShelfBlockEntity};
 pub use shulker_box::{AnimationStatus, SHULKER_BOX_SLOTS, ShulkerBoxBlockEntity};
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};

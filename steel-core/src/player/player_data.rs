@@ -12,6 +12,7 @@ use steel_utils::{BlockPos, Identifier};
 use super::advancement::PlayerAdvancement;
 use super::advancement::progress::AdvancementProgress;
 use super::shoulder::{shoulder_tag_from_bytes, shoulder_tag_to_bytes};
+use super::warden_spawn_tracker::WardenSpawnTracker;
 use super::{
     Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
     player_inventory::PlayerInventory,
@@ -28,7 +29,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 10;
+pub const PLAYER_DATA_VERSION: i32 = 11;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -149,6 +150,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla `raid_omen_position`: where Bad Omen turned into Raid Omen.
     pub raid_omen_position: Option<BlockPos>,
+
+    /// Vanilla `warden_spawn_tracker`.
+    pub warden_spawn_tracker: WardenSpawnTracker,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -314,6 +318,7 @@ impl PersistentPlayerData {
             shoulder_entity_left: shoulder_tag_to_bytes(&player.shoulder_entity_left()),
             shoulder_entity_right: shoulder_tag_to_bytes(&player.shoulder_entity_right()),
             raid_omen_position: player.raid_omen_position(),
+            warden_spawn_tracker: player.warden_spawn_tracker(),
         }
     }
 
@@ -396,6 +401,7 @@ impl Player {
 
         self.set_score(0);
         self.set_seen_credits(false);
+        self.set_warden_spawn_tracker(WardenSpawnTracker::default());
     }
 }
 
@@ -564,6 +570,7 @@ impl PersistentPlayerData {
         player.set_shoulder_entity_left(shoulder_tag_from_bytes(&self.shoulder_entity_left));
         player.set_shoulder_entity_right(shoulder_tag_from_bytes(&self.shoulder_entity_right));
         player.restore_raid_omen_position(self.raid_omen_position);
+        player.set_warden_spawn_tracker(self.warden_spawn_tracker);
 
         // Statistics
         {

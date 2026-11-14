@@ -29,6 +29,7 @@ mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
 mod title;
+pub mod warden_spawn_tracker;
 
 use crate::player::advancement::criteria;
 use crate::player::player_inventory::Prediction;
@@ -175,6 +176,7 @@ use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderCh
 use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
+use crate::player::warden_spawn_tracker::WardenSpawnTracker;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
@@ -297,6 +299,8 @@ pub struct Player {
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
     /// Vanilla `ServerPlayer.raidOmenPosition`: where Bad Omen turned into Raid Omen.
     raid_omen_position: SyncMutex<Option<BlockPos>>,
+    /// Vanilla `ServerPlayer.wardenSpawnTracker`.
+    warden_spawn_tracker: SyncMutex<WardenSpawnTracker>,
     /// Vanilla `shoulderEntityLeft`/`shoulderEntityRight`: perched parrots.
     shoulder_entities: SyncMutex<shoulder::ShoulderEntities>,
 
@@ -682,6 +686,7 @@ impl Player {
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
             raid_omen_position: SyncMutex::new(None),
+            warden_spawn_tracker: SyncMutex::new(WardenSpawnTracker::default()),
             shoulder_entities: SyncMutex::new(shoulder::ShoulderEntities::default()),
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
@@ -1306,6 +1311,7 @@ impl Player {
             "seenCredits",
             NbtTag::Byte(i8::from(self.has_seen_credits())),
         );
+        nbt.insert("warden_spawn_tracker", self.warden_spawn_tracker().save());
         nbt.insert("Dimension", self.get_world().key.to_string());
 
         if let Some(vehicle) = self.vehicle()
@@ -1943,6 +1949,7 @@ impl LivingEntity for Player {
         } else {
             let world = self.get_world();
             self.block_breaking.lock().tick(self, &world);
+            self.warden_spawn_tracker.lock().tick();
 
             // Vanilla `ServerPlayer.tick`: the tick trigger, then the attribute
             // update and the advancement flush.
@@ -2354,5 +2361,16 @@ impl Player {
     /// Restores the saved raid-omen position.
     pub(crate) fn restore_raid_omen_position(&self, pos: Option<BlockPos>) {
         *self.raid_omen_position.lock() = pos;
+    }
+
+    /// Vanilla `getWardenSpawnTracker`, as a copy.
+    #[must_use]
+    pub fn warden_spawn_tracker(&self) -> WardenSpawnTracker {
+        *self.warden_spawn_tracker.lock()
+    }
+
+    /// Replaces the warden spawn tracker.
+    pub fn set_warden_spawn_tracker(&self, tracker: WardenSpawnTracker) {
+        *self.warden_spawn_tracker.lock() = tracker;
     }
 }
