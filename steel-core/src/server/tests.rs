@@ -1,3 +1,4 @@
+use crate::command::rcon::RconCommand;
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use std::ptr;
@@ -1581,7 +1582,7 @@ fn command_world_scope_survives_entity_transforms() {
 
         let console_source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
         assert!(console_source.with_world(Arc::clone(beta)).is_ok());
-        let rcon_source = CommandSource::new(CommandSender::Rcon, Arc::clone(&server));
+        let rcon_source = CommandSource::new(RconCommand::new().1, Arc::clone(&server));
         assert!(rcon_source.with_world(Arc::clone(beta)).is_ok());
 
         drop((

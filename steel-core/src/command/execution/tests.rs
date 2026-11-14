@@ -3,6 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use crate::command::rcon::RconCommand;
 use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 
@@ -1304,7 +1305,7 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
         first
     ));
     assert!(queue.push_suspended(
-        CommandExecutionOwner::non_player_for_test(CommandSender::Rcon),
+        CommandExecutionOwner::non_player_for_test(RconCommand::new().1),
         second
     ));
     assert!(queue.blocks(CommandSenderKey::Console));

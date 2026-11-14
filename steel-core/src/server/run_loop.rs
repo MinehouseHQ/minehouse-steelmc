@@ -453,7 +453,8 @@ impl Server {
         owner: CommandExecutionOwner,
         command: &str,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
+        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self))
+            .with_callback(owner.sender().result_callback());
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
