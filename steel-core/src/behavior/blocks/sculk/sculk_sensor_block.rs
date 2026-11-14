@@ -139,7 +139,7 @@ fn active_ticks(block: BlockRef) -> i32 {
     }
 }
 
-/// Vanilla `updateNeighbours`: the sensor and the block under it.
+/// Vanilla `updateNeighbors`: the sensor and the block under it.
 fn update_neighbors(world: &Arc<World>, pos: BlockPos, block: BlockRef) {
     world.update_neighbors_at(pos, block);
     world.update_neighbors_at(pos.below(), block);
