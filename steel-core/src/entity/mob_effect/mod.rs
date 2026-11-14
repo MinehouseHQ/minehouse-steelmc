@@ -33,11 +33,49 @@ pub use wither::WitherBehavior;
 
 use std::sync::Arc;
 
+use glam::DVec3;
+use steel_utils::types::GameType;
+
 use crate::entity::LivingEntity;
 use crate::entity::RemovalReason;
 use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, MobEffectInstance};
+use crate::player::Player;
 use crate::world::World;
+
+/// Vanilla `MobEffectUtil.addEffectToPlayersAround`: gives `effect` to every
+/// survival or adventure player within `radius` of `position` who is not
+/// allied to `source`, unless they already have a stronger one that lasts
+/// longer than `display_effect_limit`. Returns the players it was given to.
+pub fn add_effect_to_players_around(
+    world: &World,
+    source: Option<&dyn Entity>,
+    position: DVec3,
+    radius: f64,
+    effect: &MobEffectInstance,
+    display_effect_limit: i32,
+) -> Vec<Arc<Player>> {
+    let mut players = Vec::new();
+    world.players.iter_players(|_, player| {
+        let refresh = player.mob_effect(effect.effect()).is_none_or(|current| {
+            current.amplifier() < effect.amplifier()
+                || current.ends_within(display_effect_limit - 1)
+        });
+        if matches!(player.game_mode(), GameType::Survival | GameType::Adventure)
+            && source.is_none_or(|source| !source.is_allied_to(player.as_ref()))
+            && position.distance_squared(player.position()) < radius * radius
+            && refresh
+        {
+            players.push(Arc::clone(player));
+        }
+        true
+    });
+    for player in &players {
+        player.add_mob_effect_with_source(effect.clone(), source);
+    }
+    players
+}
 
 /// One vanilla `MobEffect` subtype's runtime behavior. Default methods match
 /// vanilla's own `MobEffect` base-class defaults, so an effect with no

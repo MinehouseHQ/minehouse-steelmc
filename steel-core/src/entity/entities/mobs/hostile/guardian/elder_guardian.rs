@@ -13,7 +13,6 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::ElderGuardianEntityData;
 use steel_registry::{sound_events, vanilla_mob_effects};
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::GameType;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use super::{
@@ -21,13 +20,13 @@ use super::{
     init_guardian,
 };
 use crate::entity::damage::DamageSource;
+use crate::entity::mob_effect::add_effect_to_players_around;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
     EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectInstance, Monster,
     PathfinderMob, SharedEntity, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
-use crate::player::Player;
 use crate::world::{LevelReader, ServerLevelAccessor, World};
 
 /// Vanilla `ElderGuardian.getAttackDuration`.
@@ -101,35 +100,21 @@ impl ElderGuardianEntity {
     /// Vanilla `MobEffectUtil.addEffectToPlayersAround` with the elder's
     /// mining fatigue curse, plus the curse screen effect for each player hit.
     fn curse_players_around(&self, world: &World) {
-        let position = self.position();
-        let mut players: Vec<Arc<Player>> = Vec::new();
-        world.players.iter_players(|_, player| {
-            let refresh = player
-                .mob_effect(vanilla_mob_effects::MINING_FATIGUE)
-                .is_none_or(|effect| {
-                    effect.amplifier() < EFFECT_AMPLIFIER
-                        || effect.ends_within(EFFECT_DISPLAY_LIMIT - 1)
-                });
-            if matches!(player.game_mode(), GameType::Survival | GameType::Adventure)
-                && !self.is_allied_to(player.as_ref())
-                && position.distance_squared(player.position()) < EFFECT_RADIUS * EFFECT_RADIUS
-                && refresh
-            {
-                players.push(Arc::clone(player));
-            }
-            true
-        });
+        let players = add_effect_to_players_around(
+            world,
+            Some(self),
+            self.position(),
+            EFFECT_RADIUS,
+            &MobEffectInstance::with_duration(
+                vanilla_mob_effects::MINING_FATIGUE,
+                EFFECT_DURATION,
+                EFFECT_AMPLIFIER,
+            ),
+            EFFECT_DISPLAY_LIMIT,
+        );
 
         let data = if self.is_silent() { 0.0 } else { 1.0 };
         for player in players {
-            player.add_mob_effect_with_source(
-                MobEffectInstance::with_duration(
-                    vanilla_mob_effects::MINING_FATIGUE,
-                    EFFECT_DURATION,
-                    EFFECT_AMPLIFIER,
-                ),
-                Some(self),
-            );
             player.send_packet(CGameEvent {
                 event: GameEventType::GuardianElderEffect,
                 data,

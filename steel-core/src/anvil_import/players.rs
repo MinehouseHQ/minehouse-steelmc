@@ -37,6 +37,7 @@ use crate::player::player_data::{
     PersistentRootVehicle, PersistentSlot, PersistentStat,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
+use crate::player::warden_spawn_tracker::WardenSpawnTracker;
 
 /// Vanilla `EntityEquipment` keys and the player container slots Steel stores them in.
 const EQUIPMENT_SLOTS: [(&str, i8); 7] = [
@@ -247,6 +248,13 @@ fn shoulder_bytes(root: &NbtCompound, key: &str) -> Vec<u8> {
     root.compound(key).map_or_default(nbt::compound_bytes)
 }
 
+/// Vanilla `warden_spawn_tracker`, a fresh tracker when missing or invalid.
+fn warden_spawn_tracker(root: &NbtCompound) -> WardenSpawnTracker {
+    root.compound("warden_spawn_tracker")
+        .and_then(WardenSpawnTracker::load_owned)
+        .unwrap_or_default()
+}
+
 fn convert_player_data(
     root: &NbtCompound,
     report: &mut PlayerReport,
@@ -353,6 +361,7 @@ fn convert_player_data(
                 [x, y, z] => Some(BlockPos::new(x, y, z)),
                 _ => None,
             }),
+        warden_spawn_tracker: warden_spawn_tracker(root),
     })
 }
 

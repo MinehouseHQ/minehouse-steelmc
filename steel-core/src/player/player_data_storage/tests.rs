@@ -78,6 +78,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         shoulder_entity_left: vec![10, 0, 0, 0],
         shoulder_entity_right: Vec::new(),
         raid_omen_position: Vec::new(),
+        warden_spawn_tracker: Vec::new(),
     }
 }
 
@@ -540,7 +541,8 @@ fn player_files_with_shoulders_but_without_effects_still_load() {
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let effects = wincode::serialize(&file.active_effects).expect("effects should serialize");
     let omen = wincode::serialize(&file.raid_omen_position).expect("omen should serialize");
-    payload.truncate(payload.len() - effects.len() - omen.len());
+    let tracker = wincode::serialize(&file.warden_spawn_tracker).expect("tracker should serialize");
+    payload.truncate(payload.len() - effects.len() - omen.len() - tracker.len());
     let encoded = encode_file(PLAYER_MAGIC, 11, Ok(payload)).expect("v11 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 11 file should decode");
@@ -981,7 +983,8 @@ fn player_files_without_raid_omen_position_still_load() {
     let file = sample_player_file(9);
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let omen = wincode::serialize(&file.raid_omen_position).expect("omen should serialize");
-    payload.truncate(payload.len() - omen.len());
+    let tracker = wincode::serialize(&file.warden_spawn_tracker).expect("tracker should serialize");
+    payload.truncate(payload.len() - omen.len() - tracker.len());
     let encoded = encode_file(PLAYER_MAGIC, 12, Ok(payload)).expect("v12 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 12 file should decode");
@@ -1005,4 +1008,39 @@ fn raid_omen_position_roundtrips() {
     );
     let again = PlayerDataFile::from_persistent(&persistent).expect("player file should build");
     assert_eq!(again.raid_omen_position, vec![[12, 64, -7]]);
+}
+
+#[test]
+fn player_files_without_warden_spawn_tracker_still_load() {
+    // Storage version 13 is the current layout without the trailing warden
+    // spawn tracker.
+    let mut file = sample_player_file(10);
+    file.raid_omen_position = vec![[1, 2, 3]];
+    let mut payload = wincode::serialize(&file).expect("player file should serialize");
+    let tracker = wincode::serialize(&file.warden_spawn_tracker).expect("tracker should serialize");
+    payload.truncate(payload.len() - tracker.len());
+    let encoded = encode_file(PLAYER_MAGIC, 13, Ok(payload)).expect("v13 file should encode");
+
+    let decoded = decode_player_file(&encoded).expect("a storage version 13 file should decode");
+    assert_eq!(decoded.data_version, PLAYER_DATA_VERSION);
+    assert_eq!(decoded.raid_omen_position, vec![[1, 2, 3]]);
+    assert_eq!(decoded.warden_spawn_tracker, Vec::<[i32; 3]>::new());
+}
+
+#[test]
+fn warden_spawn_tracker_roundtrips() {
+    init_vanilla_registry();
+    let mut file = sample_player_file(PLAYER_DATA_VERSION);
+    file.warden_spawn_tracker = vec![[120, 3, 40]];
+    let encoded = encode_player_file(&file).expect("player file should encode");
+    let persistent = decode_player_file(&encoded)
+        .expect("player file should decode")
+        .into_persistent()
+        .expect("player file should convert");
+    assert_eq!(
+        persistent.warden_spawn_tracker,
+        WardenSpawnTracker::new(120, 3, 40)
+    );
+    let again = PlayerDataFile::from_persistent(&persistent).expect("player file should build");
+    assert_eq!(again.warden_spawn_tracker, vec![[120, 3, 40]]);
 }
