@@ -400,6 +400,24 @@ impl LevelData {
     }
 }
 
+/// Level data serialized by [`LevelDataManager::prepare_save`], ready to write.
+pub(crate) struct PreparedLevelData {
+    path: PathBuf,
+    content: String,
+}
+
+impl PreparedLevelData {
+    /// Writes the captured level data to its `level.toml`.
+    pub(crate) async fn write(self) -> io::Result<()> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::write(&self.path, self.content).await?;
+        log::debug!("Saved level data to {}", self.path.display());
+        Ok(())
+    }
+}
+
 /// Manages level data persistence for a world.
 pub struct LevelDataManager {
     /// Path to the level.toml file.
@@ -551,17 +569,28 @@ impl LevelDataManager {
 
     /// Saves the level data to disk if it has been modified.
     pub async fn save(&mut self) -> io::Result<()> {
-        if !self.dirty {
+        let Some(prepared) = self.prepare_save()? else {
             return Ok(());
+        };
+        if let Err(error) = prepared.write().await {
+            self.dirty = true;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Captures the modified level data for a later write, so it can be
+    /// written without holding this manager's lock. The data counts as saved
+    /// from here; a failed write must call [`Self::mark_dirty`].
+    pub(crate) fn prepare_save(&mut self) -> io::Result<Option<PreparedLevelData>> {
+        if !self.dirty {
+            return Ok(None);
         }
 
         let Some(world_path) = &self.path else {
             self.dirty = false;
-            return Ok(());
+            return Ok(None);
         };
-        if let Some(parent) = world_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
 
         self.data.game_time = self.primary_game_time.as_ref().map(|clock| clock.ticks());
 
@@ -570,11 +599,11 @@ impl LevelDataManager {
 
         let content = toml::to_string_pretty(&self.data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        fs::write(world_path, content).await?;
         self.dirty = false;
-
-        log::debug!("Saved level data to {}", world_path.display());
-        Ok(())
+        Ok(Some(PreparedLevelData {
+            path: world_path.clone(),
+            content,
+        }))
     }
 
     /// Gets the seed.

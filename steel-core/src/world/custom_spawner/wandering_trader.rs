@@ -124,6 +124,11 @@ impl WanderingTraderData {
         self.dirty
     }
 
+    /// Vanilla `SavedData.setDirty()`, used when a save fails.
+    pub(crate) const fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
     /// Vanilla `SavedData.setDirty(false)` after a save.
     pub(crate) const fn mark_saved(&mut self) {
         self.dirty = false;

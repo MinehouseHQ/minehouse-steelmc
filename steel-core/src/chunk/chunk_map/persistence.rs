@@ -3,7 +3,18 @@ use super::{
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
+use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use tokio::sync::oneshot;
+
+/// A Full chunk's save input captured by [`ChunkMap::prepare_autosave`].
+///
+/// Holding the chunk holder keeps the chunk from finishing its unload until
+/// the write lands, so an unload save cannot be overtaken by this older one.
+pub(crate) struct AutosaveChunk {
+    holder: Arc<ChunkHolder>,
+    prepared: PreparedChunkSave,
+    _save_dependency: ChunkSaveDependency,
+}
 
 impl ChunkMap {
     async fn prepare_chunk_save_on_pool(
@@ -338,6 +349,96 @@ impl ChunkMap {
             "Chunk save complete"
         );
 
+        Ok(saved_count)
+    }
+
+    /// The snapshot half of vanilla `ChunkMap.saveAllChunks(false)`: captures
+    /// every loaded Full chunk with unsaved changes. Vanilla's periodic save
+    /// only covers `LevelChunk`s too; lower statuses are saved on unload.
+    ///
+    /// Must run while this world is not ticking, so blocks and entities are
+    /// captured at one consistent point. The capture runs on the chunk
+    /// encoding pool.
+    pub(crate) fn prepare_autosave(self: &Arc<Self>) -> Vec<AutosaveChunk> {
+        let mut holders = Vec::new();
+        self.chunks.iter_sync(|_, holder| {
+            holders.push(Arc::clone(holder));
+            true
+        });
+        let world = self.world_gen_context.world();
+        let entity_manager = world.entity_manager();
+        self.chunk_encoding_pool.install(|| {
+            holders
+                .into_par_iter()
+                .filter_map(|holder| {
+                    let chunk = holder.try_chunk(ChunkStatus::Full)?;
+                    let chunk_pos = holder.get_pos();
+                    let force = entity_manager.has_save_pending_for_chunk(chunk_pos);
+                    let dirty = chunk.take_dirty();
+                    if !dirty && !force {
+                        return None;
+                    }
+                    let runtime_entities =
+                        entity_manager.get_saveable_entities_for_chunk(chunk_pos);
+                    let Some(prepared) = ChunkStorage::prepare_chunk_save(
+                        chunk,
+                        ChunkStatus::Full,
+                        &runtime_entities,
+                        true,
+                    ) else {
+                        if dirty {
+                            chunk.mark_dirty();
+                        }
+                        return None;
+                    };
+                    let save_dependency = holder.add_save_dependency();
+                    Some(AutosaveChunk {
+                        holder,
+                        prepared,
+                        _save_dependency: save_dependency,
+                    })
+                })
+                .collect()
+        })
+    }
+
+    /// The write half of vanilla `ChunkMap.saveAllChunks(false)`. A chunk
+    /// that fails to write is marked unsaved again. Region headers are
+    /// flushed afterwards, so the written chunks survive a crash. Returns how
+    /// many chunks were written.
+    pub(crate) async fn write_autosave(
+        self: &Arc<Self>,
+        chunks: Vec<AutosaveChunk>,
+    ) -> io::Result<usize> {
+        let world = self.world_gen_context.world();
+        let mut saved_count = 0;
+        for chunk in chunks {
+            let AutosaveChunk {
+                holder,
+                mut prepared,
+                _save_dependency,
+            } = chunk;
+            let chunk_pos = holder.get_pos();
+            let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
+            match self
+                .storage
+                .save_chunk_data(prepared, self.chunk_encoding_pool.as_ref())
+                .await
+            {
+                Ok(true) => {
+                    world
+                        .entity_manager()
+                        .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids);
+                    saved_count += 1;
+                }
+                Ok(false) => Self::mark_chunk_dirty_for_save_retry(&holder),
+                Err(error) => {
+                    tracing::error!(chunk = ?chunk_pos, "Failed to autosave chunk: {error}");
+                    Self::mark_chunk_dirty_for_save_retry(&holder);
+                }
+            }
+        }
+        self.storage.flush_all().await?;
         Ok(saved_count)
     }
 }

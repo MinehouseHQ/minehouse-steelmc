@@ -84,6 +84,7 @@ mod generation_readiness;
 mod light_update_state;
 mod light_updates;
 mod persistence;
+pub(crate) use persistence::AutosaveChunk;
 mod player_tracking;
 mod regions;
 mod scheduled_ticks;

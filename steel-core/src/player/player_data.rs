@@ -2,6 +2,8 @@
 //!
 //! This module defines the data format for saving and loading player state.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use rustc_hash::FxHashSet;
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
@@ -153,6 +155,20 @@ pub struct PersistentPlayerData {
 
     /// Vanilla `warden_spawn_tracker`.
     pub warden_spawn_tracker: WardenSpawnTracker,
+
+    /// When this snapshot was taken, from [`next_capture_order`]. Not saved:
+    /// storage uses it to never overwrite a newer snapshot with an older
+    /// one when saves of the same player finish out of order.
+    pub capture_order: u64,
+}
+
+/// The order of the next player data snapshot. Every snapshot built from a
+/// live player, loaded or imported takes one, so a later snapshot always
+/// orders after an earlier one.
+#[must_use]
+pub fn next_capture_order() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -319,6 +335,7 @@ impl PersistentPlayerData {
             shoulder_entity_right: shoulder_tag_to_bytes(&player.shoulder_entity_right()),
             raid_omen_position: player.raid_omen_position(),
             warden_spawn_tracker: player.warden_spawn_tracker(),
+            capture_order: next_capture_order(),
         }
     }
 

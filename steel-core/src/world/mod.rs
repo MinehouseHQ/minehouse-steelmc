@@ -110,6 +110,7 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+pub(crate) mod autosave;
 mod block_entity_ticker;
 mod block_event;
 mod block_region;
@@ -353,6 +354,8 @@ pub struct World {
     pub(crate) wandering_trader_data: SyncMutex<custom_spawner::WanderingTraderData>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Vanilla `ServerLevel.noSave`, set by `/save-off`.
+    no_save: AtomicBool,
 }
 
 impl World {
@@ -522,6 +525,7 @@ impl World {
                 exploration_loot: SyncMutex::new(maps::exploration::ExplorationLoot::default()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
                 wandering_trader_data: SyncMutex::new(wandering_trader_data),
+                no_save: AtomicBool::new(false),
             }
         }))
     }
