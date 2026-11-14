@@ -305,6 +305,38 @@ where
     pub(crate) fn child(&self) -> Option<&Self> {
         self.child.as_deref()
     }
+
+    /// Returns the UTF-16 input range a named argument consumed.
+    fn argument_range(&self, name: &str) -> Option<StringRange> {
+        self.arguments
+            .values
+            .iter()
+            .find(|(argument_name, _)| argument_name.as_ref() == name)
+            .map(|(_, argument)| argument.range)
+    }
+
+    /// Vanilla `SignableCommand.collectArguments`: the arguments of this
+    /// segment whose node `is_signed` accepts, by name with the raw input each
+    /// one consumed.
+    pub(super) fn collect_signable_arguments(
+        &self,
+        input: &str,
+        mut is_signed: impl FnMut(NodeId) -> Option<Box<str>>,
+        arguments: &mut Vec<(Box<str>, String)>,
+    ) {
+        for parsed in &self.nodes {
+            let Some(name) = is_signed(parsed.node) else {
+                continue;
+            };
+            let value = self
+                .argument_range(&name)
+                .and_then(|range| range.byte_range(input))
+                .and_then(|bytes| input.get(bytes));
+            if let Some(value) = value {
+                arguments.push((name, value.to_owned()));
+            }
+        }
+    }
 }
 
 impl<S, R> ParsedCommandContext<S, R>

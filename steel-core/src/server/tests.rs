@@ -4801,3 +4801,271 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 mod damage_history;
 mod game_time;
 mod projectile_owners;
+
+use steel_registry::chat_type::ChatType;
+
+/// Packet id and body of an uncompressed test packet.
+fn packet_body(packet: &EncodedPacket) -> (i32, Cursor<&[u8]>) {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    let Ok(_length) = VarInt::read(&mut cursor) else {
+        panic!("packet length should decode");
+    };
+    let Ok(packet_id) = VarInt::read(&mut cursor) else {
+        panic!("packet id should decode");
+    };
+    (packet_id.0, cursor)
+}
+
+/// Decodes a disguised chat packet into its plain content, chat type holder
+/// id and plain sender and target names.
+fn decode_disguised_chat(packet: &EncodedPacket) -> (String, i32, String, Option<String>) {
+    use steel_registry::packets::play::C_DISGUISED_CHAT;
+
+    let (packet_id, mut cursor) = packet_body(packet);
+    assert_eq!(
+        packet_id, C_DISGUISED_CHAT,
+        "packet should be disguised chat"
+    );
+    let read_component = |cursor: &mut Cursor<&[u8]>| {
+        let Ok(component) = TextComponent::read(cursor) else {
+            panic!("chat component should decode");
+        };
+        component.to_plain(&DisplayResolutor)
+    };
+    let content = read_component(&mut cursor);
+    let Ok(holder) = VarInt::read(&mut cursor) else {
+        panic!("chat type holder should decode");
+    };
+    let sender = read_component(&mut cursor);
+    let Ok(has_target) = bool::read(&mut cursor) else {
+        panic!("target flag should decode");
+    };
+    let target = has_target.then(|| read_component(&mut cursor));
+    (content, holder.0 - 1, sender, target)
+}
+
+fn chat_packets(packets: &SyncMutex<Vec<EncodedPacket>>, packet_id: i32) -> Vec<EncodedPacket> {
+    packets
+        .lock()
+        .iter()
+        .filter(|packet| packet_body(packet).0 == packet_id)
+        .cloned()
+        .collect()
+}
+
+fn chat_type_id(chat_type: &ChatType) -> i32 {
+    use steel_registry::RegistryEntry as _;
+
+    i32::try_from(chat_type.id()).unwrap_or(-1)
+}
+
+#[test]
+fn chat_commands_deliver_vanilla_chat_types() {
+    use steel_registry::packets::play::C_DISGUISED_CHAT;
+    use steel_registry::vanilla_chat_types;
+
+    let world_fixture = fresh_test_world("chat-commands");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let mut players = Vec::new();
+        for (index, name) in ["Alice", "Bob"].into_iter().enumerate() {
+            let id = i32::try_from(index).unwrap_or_default() + 1;
+            let (player, packets) = test_player_with_uuid_and_packets(
+                &server,
+                Arc::clone(world),
+                Uuid::from_u128(u128::try_from(id).unwrap_or_default()),
+                name,
+                id,
+            );
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            let _ = player.mark_joined_world();
+            player.set_client_loaded(true);
+            players.push((player, packets));
+        }
+        let [(alice, alice_packets), (_bob, bob_packets)] = players.as_slice() else {
+            panic!("both players should join");
+        };
+        let console = || CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let alice_source = || {
+            CommandSource::new(
+                CommandSender::Player(Arc::clone(alice)),
+                Arc::clone(&server),
+            )
+        };
+
+        // /say from the console: an unsigned system message, so disguised chat.
+        run_command(&server, console(), "say hi @a and a@b @");
+        let bob_chat = chat_packets(bob_packets, C_DISGUISED_CHAT);
+        assert_eq!(bob_chat.len(), 1);
+        assert_eq!(
+            decode_disguised_chat(&bob_chat[0]),
+            (
+                "hi Alice, Bob and a@b @".to_owned(),
+                chat_type_id(&vanilla_chat_types::SAY_COMMAND),
+                "Server".to_owned(),
+                None
+            )
+        );
+        bob_packets.lock().clear();
+        alice_packets.lock().clear();
+
+        // /tell redirects to /msg: the target gets the incoming line, the
+        // sender the outgoing one naming the target.
+        run_command(&server, alice_source(), "tell Bob psst");
+        let bob_chat = chat_packets(bob_packets, C_DISGUISED_CHAT);
+        assert_eq!(bob_chat.len(), 1);
+        assert_eq!(
+            decode_disguised_chat(&bob_chat[0]),
+            (
+                "psst".to_owned(),
+                chat_type_id(&vanilla_chat_types::MSG_COMMAND_INCOMING),
+                "Alice".to_owned(),
+                None
+            )
+        );
+        let alice_chat = chat_packets(alice_packets, C_DISGUISED_CHAT);
+        assert_eq!(alice_chat.len(), 1);
+        assert_eq!(
+            decode_disguised_chat(&alice_chat[0]),
+            (
+                "psst".to_owned(),
+                chat_type_id(&vanilla_chat_types::MSG_COMMAND_OUTGOING),
+                "Alice".to_owned(),
+                Some("Bob".to_owned())
+            )
+        );
+        bob_packets.lock().clear();
+
+        run_command(&server, alice_source(), "me waves");
+        let bob_chat = chat_packets(bob_packets, C_DISGUISED_CHAT);
+        assert_eq!(bob_chat.len(), 1);
+        assert_eq!(
+            decode_disguised_chat(&bob_chat[0]).1,
+            chat_type_id(&vanilla_chat_types::EMOTE_COMMAND)
+        );
+
+        drop(players);
+        drop(server);
+    });
+}
+
+#[test]
+fn signed_chat_commands_queue_their_message_arguments() {
+    use steel_protocol::packets::game::{
+        ArgumentSignature, LastSeenMessagesUpdate, SChatCommandSigned,
+    };
+    use steel_registry::packets::play::C_PLAYER_CHAT;
+
+    let world_fixture = fresh_test_world("signed-chat-commands");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (alice, alice_packets) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(world),
+            Uuid::from_u128(1),
+            "Alice",
+            1,
+        );
+        assert!(world.add_player(Arc::clone(&alice), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&alice)));
+        let _ = alice.mark_joined_world();
+        alice.set_client_loaded(true);
+
+        assert_eq!(
+            server.signable_command_arguments(&alice, "msg Alice hello there"),
+            vec![(Box::from("message"), "hello there".to_owned())]
+        );
+        assert_eq!(
+            server.signable_command_arguments(&alice, "w Alice hi"),
+            vec![(Box::from("message"), "hi".to_owned())]
+        );
+        assert!(
+            server
+                .signable_command_arguments(&alice, "execute run me hi")
+                .is_empty(),
+            "arguments behind a redirect to the root are not signed"
+        );
+        assert_eq!(server.signable_command_arguments(&alice, "list").len(), 0);
+
+        let packet = |command: &str, argument_signatures| SChatCommandSigned {
+            command: command.to_owned(),
+            timestamp: 0,
+            salt: 0,
+            argument_signatures,
+            last_seen: LastSeenMessagesUpdate {
+                offset: VarInt(0),
+                acknowledged: [0; 3],
+                checksum: 0,
+            },
+        };
+
+        // A client signing an argument the server did not parse is refused.
+        alice.handle_signed_chat_command(packet(
+            "me hi",
+            vec![ArgumentSignature {
+                name: "other".to_owned(),
+                signature: [0; 256],
+            }],
+        ));
+        assert!(
+            server
+                .command_requests
+                .pop_front_runnable(|_| true)
+                .is_none()
+        );
+        let refusals = chat_packets(&alice_packets, C_SYSTEM_CHAT);
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(
+            decode_system_chat(&refusals[0]).to_plain(&DisplayResolutor),
+            TextComponent::from(&translations::CHAT_DISABLED_INVALID_COMMAND_SIGNATURE)
+                .to_plain(&DisplayResolutor)
+        );
+
+        // Without a chat session the argument is Alice's unsigned message.
+        alice.handle_signed_chat_command(packet("me waves", Vec::new()));
+        let Some(CommandRequest::Execute {
+            command,
+            signed_arguments: Some(signed_arguments),
+            ..
+        }) = server.command_requests.pop_front_runnable(|_| true)
+        else {
+            panic!("the signed command should be queued with its arguments");
+        };
+        assert_eq!(command, "me waves");
+        let Some(message) = signed_arguments.get("action") else {
+            panic!("the action argument should be decoded");
+        };
+        assert_eq!(message.signed_content(), "waves");
+        assert_eq!(message.sender(), alice.gameprofile.id());
+
+        // The command then delivers Alice's own message as player chat.
+        alice_packets.lock().clear();
+        let source = CommandSource::new(
+            CommandSender::Player(Arc::clone(&alice)),
+            Arc::clone(&server),
+        )
+        .with_signing_context(signed_arguments);
+        run_command(&server, source, &command);
+        assert_eq!(chat_packets(&alice_packets, C_PLAYER_CHAT).len(), 1);
+
+        drop(alice);
+        drop(server);
+    });
+}

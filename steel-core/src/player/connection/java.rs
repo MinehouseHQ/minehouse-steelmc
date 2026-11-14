@@ -13,8 +13,8 @@ use steel_protocol::packets::common::{
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
-    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
-    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
+    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SEditBook, SInteract, SMovePlayer, SMovePlayerPos,
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
     SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
@@ -22,15 +22,15 @@ use steel_protocol::packets::game::{
     SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
-use crate::command::{handle_client_request, sender::CommandSender};
+use crate::command::handle_client_request;
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::translations;
+use text_components::TextComponent;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
-use text_components::{Modifier, TextComponent, format::Color};
 use tokio::io::{AsyncRead, AsyncWrite, BufReader, BufWriter};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
@@ -94,6 +94,7 @@ enum ScheduledPlayPacketKind {
     PaddleBoat(SPaddleBoat),
     PlayerLoaded,
     ChatCommand(SChatCommand),
+    ChatCommandSigned(Box<SChatCommandSigned>),
     CommandSuggestion(SCommandSuggestion),
     ContainerButtonClick(SContainerButtonClick),
     ContainerClick(SContainerClick),
@@ -212,6 +213,7 @@ impl ScheduledPlayPacket {
             // retain one global mutation order matching the packet submission order.
             ScheduledPlayPacketKind::AcceptTeleportation(_)
             | ScheduledPlayPacketKind::Chat(_)
+            | ScheduledPlayPacketKind::ChatCommandSigned(_)
             | ScheduledPlayPacketKind::ChatAck(_)
             | ScheduledPlayPacketKind::MovePlayer(_)
             | ScheduledPlayPacketKind::MoveVehicle(_)
@@ -252,10 +254,6 @@ impl ScheduledPlayPacket {
         )
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "flat dispatch over every scheduled packet kind"
-    )]
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
@@ -289,17 +287,9 @@ impl ScheduledPlayPacket {
                     player.send_inventory_to_remote();
                 }
             }
-            ScheduledPlayPacketKind::ChatCommand(packet) => {
-                player.reset_last_action_time();
-                if server
-                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
-                    .is_err()
-                {
-                    player.send_message(
-                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
-                    );
-                }
-                player.detect_command_rate_spam();
+            ScheduledPlayPacketKind::ChatCommand(packet) => player.handle_chat_command(packet),
+            ScheduledPlayPacketKind::ChatCommandSigned(packet) => {
+                player.handle_signed_chat_command(*packet);
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
@@ -758,6 +748,9 @@ impl JavaConnection {
             }
             play::S_CHAT_COMMAND => scheduled(ScheduledPlayPacketKind::ChatCommand(
                 SChatCommand::read_packet(data)?,
+            )),
+            play::S_CHAT_COMMAND_SIGNED => scheduled(ScheduledPlayPacketKind::ChatCommandSigned(
+                Box::new(SChatCommandSigned::read_packet(data)?),
             )),
             play::S_COMMAND_SUGGESTION => scheduled(ScheduledPlayPacketKind::CommandSuggestion(
                 SCommandSuggestion::read_packet(data)?,

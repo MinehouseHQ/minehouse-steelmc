@@ -25,6 +25,7 @@ use crate::command::brigadier::{
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
 use crate::command::execution::argument::{AdvancementValue, DamageTypeValue, MobEffectValue};
+use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -340,6 +341,11 @@ where
     pub(crate) fn mob_effect(&self, name: &str) -> Result<MobEffectRef, CommandSyntaxError> {
         self.typed_argument::<MobEffectValue>(name)
             .map(|value| value.0)
+    }
+
+    /// Returns a parsed vanilla message argument.
+    pub(crate) fn message(&self, name: &str) -> Result<&MessageArgument, CommandSyntaxError> {
+        self.typed_argument::<MessageArgument>(name)
     }
 
     pub(crate) fn item_stack(&self, name: &str) -> Result<&ItemStack, CommandSyntaxError> {

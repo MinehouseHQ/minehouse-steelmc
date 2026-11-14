@@ -386,6 +386,9 @@ enum SelectorParseErrorKind {
     NotAllowed,
     AdvancedNotAllowed,
     Invalid(Box<TextComponent>),
+    /// Vanilla `ERROR_MISSING_SELECTOR_TYPE` and `ERROR_UNKNOWN_SELECTOR_TYPE`,
+    /// which message arguments read as plain text.
+    SelectorType(Box<TextComponent>),
     Unsupported(String),
 }
 
@@ -418,6 +421,13 @@ impl SelectorParseError {
         }
     }
 
+    fn selector_type_at(message: impl Into<TextComponent>, cursor: usize) -> Self {
+        Self {
+            kind: SelectorParseErrorKind::SelectorType(Box::new(message.into())),
+            cursor,
+        }
+    }
+
     fn unsupported(option: impl Into<String>, cursor: usize) -> Self {
         Self {
             kind: SelectorParseErrorKind::Unsupported(option.into()),
@@ -433,7 +443,8 @@ impl SelectorParseError {
             SelectorParseErrorKind::AdvancedNotAllowed => {
                 TextComponent::from("Advanced entity selectors are not allowed")
             }
-            SelectorParseErrorKind::Invalid(message) => *message,
+            SelectorParseErrorKind::Invalid(message)
+            | SelectorParseErrorKind::SelectorType(message) => *message,
             SelectorParseErrorKind::Unsupported(option) => {
                 TextComponent::from(format!("Unsupported entity selector option: {option}"))
             }

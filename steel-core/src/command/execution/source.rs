@@ -11,7 +11,10 @@ use crate::{
         PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
         PermissionRuleExpression, PermissionSet, PermissionState,
     },
-    player::{DomainResidenceToken, KnownPlayer, Player},
+    player::{
+        DomainResidenceToken, KnownPlayer, Player,
+        chat::{BoundChatType, PlayerChatMessage, SignedArguments},
+    },
     scoreboard::Scoreboard,
     server::Server,
     world::World,
@@ -258,6 +261,7 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
+    signing_context: Option<Arc<SignedArguments>>,
 }
 
 impl CommandSource {
@@ -312,6 +316,41 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
+            signing_context: None,
+        }
+    }
+
+    /// Vanilla `CommandSourceStack.withSigningContext`.
+    pub(crate) fn with_signing_context(&self, signing_context: Arc<SignedArguments>) -> Self {
+        let mut source = self.clone();
+        source.signing_context = Some(signing_context);
+        source
+    }
+
+    /// Vanilla `CommandSigningContext.getArgument` on this source's context.
+    pub(crate) fn signed_argument(&self, name: &str) -> Option<&PlayerChatMessage> {
+        self.signing_context.as_deref()?.get(name)
+    }
+
+    /// Vanilla `CommandSourceStack.getDisplayName`.
+    pub(crate) fn display_name(&self) -> TextComponent {
+        self.entity.as_ref().map_or_else(
+            || TextComponent::plain(self.sender.to_string()),
+            |entity| entity.display_name(),
+        )
+    }
+
+    /// Vanilla `CommandSourceStack.sendChatMessage`: a player source gets the
+    /// chat message, any other output the chat type's decorated text.
+    pub(crate) fn send_chat_message(&self, message: &PlayerChatMessage, chat_type: &BoundChatType) {
+        if self.silent {
+            return;
+        }
+        match &self.player {
+            Some(player) => player.send_chat_message(message, chat_type),
+            None => self
+                .sender
+                .send_message(&chat_type.decorate(message.decorated_content())),
         }
     }
 

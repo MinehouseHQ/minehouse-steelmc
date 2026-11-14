@@ -155,6 +155,36 @@ where
             .ok_or_else(|| reader.error(CommandSyntaxErrorKind::UnknownCommand))
     }
 
+    /// Vanilla `SignableCommand.of`: the parsed arguments whose parser
+    /// `is_signed` accepts, by name with the raw input each one consumed.
+    ///
+    /// Redirects that restart at the dispatcher root, like `/execute run`,
+    /// end the walk, so their arguments are never signed.
+    pub(crate) fn signable_arguments(
+        &self,
+        parse: &ParseResults<'_, S, R>,
+        is_signed: impl Fn(&R::Argument) -> bool,
+    ) -> Vec<(Box<str>, String)> {
+        let input = parse.reader().input();
+        let root = parse.context().root();
+        let mut arguments = Vec::new();
+        let mut context = Some(parse.context());
+        while let Some(current) = context {
+            current.collect_signable_arguments(
+                input,
+                |node| {
+                    let node = self.node(node)?;
+                    node.argument_type()
+                        .is_some_and(&is_signed)
+                        .then(|| node.name().into())
+                },
+                &mut arguments,
+            );
+            context = current.child().filter(|child| child.root() != root);
+        }
+        arguments
+    }
+
     /// Returns a node if the ID belongs to this dispatcher.
     pub(crate) fn node(&self, id: NodeId) -> Option<&CommandNode<S, R>> {
         if id.dispatcher != self.id {

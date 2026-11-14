@@ -12,6 +12,7 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
+use crate::player::chat::SignedArguments;
 
 use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
@@ -419,11 +420,15 @@ impl Server {
             handled += 1;
 
             match request {
-                CommandRequest::Execute { owner, command } => {
+                CommandRequest::Execute {
+                    owner,
+                    command,
+                    signed_arguments,
+                } => {
                     if !owner.is_current(self) {
                         continue;
                     }
-                    self.execute_command_request(pending, owner, &command);
+                    self.execute_command_request(pending, owner, &command, signed_arguments);
                 }
                 CommandRequest::Suggestions {
                     owner,
@@ -452,9 +457,13 @@ impl Server {
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
         owner: CommandExecutionOwner,
         command: &str,
+        signed_arguments: Option<Arc<SignedArguments>>,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self))
+        let mut source = CommandSource::new(owner.sender().clone(), Arc::clone(self))
             .with_callback(owner.sender().result_callback());
+        if let Some(signed_arguments) = signed_arguments {
+            source = source.with_signing_context(signed_arguments);
+        }
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();

@@ -3,13 +3,16 @@
 //! Groups the fields related to secure chat: message counters, signature cache,
 //! message validator, chat session, and message chain.
 
+mod command;
 pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
+pub mod signed_message;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
+pub use signed_message::{BoundChatType, ChatDecodeError, PlayerChatMessage, SignedArguments};
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

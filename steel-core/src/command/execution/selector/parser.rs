@@ -189,9 +189,25 @@ fn parse_selector_type(
     reader: &mut SelectorReader<'_>,
     allow_advanced_selectors: bool,
 ) -> Result<EntitySelector, SelectorParseError> {
+    let selector = parse_selector_head(reader, allow_advanced_selectors)?;
+    if reader.can_read() {
+        return Err(SelectorParseError::invalid_at(
+            "unexpected trailing selector data",
+            reader.cursor(),
+        ));
+    }
+    Ok(selector)
+}
+
+/// Reads a selector type and its options after the `@`, leaving any text that
+/// follows them unread.
+fn parse_selector_head(
+    reader: &mut SelectorReader<'_>,
+    allow_advanced_selectors: bool,
+) -> Result<EntitySelector, SelectorParseError> {
     let selector_start = reader.cursor();
     let Some(selector_type) = reader.read() else {
-        return Err(SelectorParseError::invalid_at(
+        return Err(SelectorParseError::selector_type_at(
             "missing selector type",
             selector_start,
         ));
@@ -205,7 +221,7 @@ fn parse_selector_type(
         'r' => SelectorType::RandomPlayer,
         's' => SelectorType::SelfEntity,
         other => {
-            return Err(SelectorParseError::invalid_at(
+            return Err(SelectorParseError::selector_type_at(
                 format!("unknown selector type '@{other}'"),
                 selector_start,
             ));
@@ -217,13 +233,62 @@ fn parse_selector_type(
         reader.read();
         parse_options(reader, &mut selector, allow_advanced_selectors)?;
     }
-    if reader.can_read() {
-        return Err(SelectorParseError::invalid_at(
-            "unexpected trailing selector data",
-            reader.cursor(),
-        ));
-    }
     Ok(selector)
+}
+
+/// A selector inside message text, at UTF-8 byte offsets of that text.
+///
+/// Vanilla `MessageArgument.Part`.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MessageSelector {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) selector: EntitySelector,
+}
+
+/// Vanilla `MessageArgument.Message.parseText` with selectors allowed: reads
+/// the rest of `reader` as message text and returns the selectors in it.
+///
+/// An `@` that names no selector type stays plain text, while any other
+/// selector error fails the whole argument.
+pub(crate) fn parse_message_selectors(
+    reader: &mut StringReader<'_>,
+    allow_advanced_selectors: bool,
+) -> Result<Vec<MessageSelector>, CommandSyntaxError> {
+    let text = reader.remaining();
+    let mut selectors = Vec::new();
+    let mut offset = 0;
+    while let Some(character) = text[offset..].chars().next() {
+        if character != '@' {
+            offset += character.len_utf8();
+            continue;
+        }
+        let mut selector_reader = SelectorReader::new(&text[offset..]);
+        selector_reader.read();
+        match parse_selector_head(&mut selector_reader, allow_advanced_selectors) {
+            Ok(selector) => {
+                let end = offset + selector_reader.cursor();
+                selectors.push(MessageSelector {
+                    start: offset,
+                    end,
+                    selector,
+                });
+                offset = end;
+            }
+            Err(SelectorParseError {
+                kind: SelectorParseErrorKind::SelectorType(_),
+                ..
+            }) => offset += 1,
+            Err(error) => {
+                let raw = &text[offset..];
+                reader.advance_bytes(offset);
+                let start = reader.checkpoint();
+                return Err(selector_syntax_error(reader, start, raw, error));
+            }
+        }
+    }
+    reader.advance_bytes(text.len());
+    Ok(selectors)
 }
 
 fn parse_options(
@@ -373,6 +438,7 @@ fn parse_name_option(
                     SelectorParseErrorKind::Invalid(message) => *message,
                     SelectorParseErrorKind::NotAllowed
                     | SelectorParseErrorKind::AdvancedNotAllowed
+                    | SelectorParseErrorKind::SelectorType(_)
                     | SelectorParseErrorKind::Unsupported(_) => {
                         TextComponent::from("invalid name option")
                     }
