@@ -128,7 +128,7 @@ impl Couplings {
     }
 
     /// The carts `cart` is coupled to.
-    pub fn neighbours(&self, cart: Uuid) -> impl Iterator<Item = Uuid> + '_ {
+    pub fn neighbors(&self, cart: Uuid) -> impl Iterator<Item = Uuid> + '_ {
         self.slots(cart).iter().flatten().map(|link| link.to)
     }
 
@@ -216,7 +216,7 @@ impl Couplings {
             if train.len() >= limit {
                 break;
             }
-            for next in self.neighbours(at) {
+            for next in self.neighbors(at) {
                 if !train.contains(&next) && here(next) {
                     train.push(next);
                     queue.push_back(next);
@@ -231,7 +231,7 @@ impl Couplings {
     #[must_use]
     pub fn line(&self, train: &[Uuid]) -> Option<Vec<Uuid>> {
         let within = |cart: Uuid| {
-            self.neighbours(cart)
+            self.neighbors(cart)
                 .filter(|next| train.contains(next))
                 .collect::<Vec<_>>()
         };

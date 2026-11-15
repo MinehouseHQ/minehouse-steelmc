@@ -35,7 +35,7 @@ use uuid::Uuid;
 use super::{couplings::Couplings, metro};
 use crate::config;
 
-/// Centre to centre, in blocks. A cart is a bit under a block long.
+/// Center to center, in blocks. A cart is a bit under a block long.
 const SPACING: f64 = 1.5;
 /// A coupling stretched past this (a derailment, a teleport) breaks and drops its chain.
 const BREAK_DISTANCE: f64 = 6.0;
@@ -64,7 +64,7 @@ fn set_horizontal(cart: &dyn Entity, speed: DVec3) {
 struct Consist {
     /// Front (the driver) to back.
     carts: Vec<Uuid>,
-    /// Centre to centre along the trail, between each cart and the one behind it.
+    /// Center to center along the trail, between each cart and the one behind it.
     gaps: Vec<f64>,
     /// Where the driver went, newest first, the driver's own place not included.
     trail: VecDeque<DVec3>,
