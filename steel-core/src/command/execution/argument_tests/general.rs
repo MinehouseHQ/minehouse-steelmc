@@ -1,4 +1,6 @@
 use super::*;
+use crate::inventory::slot_range::SlotRange;
+use steel_utils::translations;
 
 #[test]
 fn score_holder_argument_retains_deferred_names_uuids_selectors_and_wildcards() {
@@ -425,4 +427,41 @@ fn swizzle_argument_retains_unique_axes_and_rejects_duplicates() {
             "{input} should reject an invalid swizzle"
         );
     }
+}
+
+fn parsed_slot_source(input: &str) -> Result<&'static str, CommandSyntaxError> {
+    let mut dispatcher = TestDispatcher::new();
+    let command = literal("slots").then(
+        argument("value", SteelArgumentType::slot_source())
+            .executes(|_| Ok(1))
+            .then(literal("next").executes(|_| Ok(1))),
+    );
+    assert!(dispatcher.register(command).is_ok());
+    let parse = dispatcher.parse(input, TestSource::new());
+    let chain = dispatcher.context_chain(parse)?;
+    chain
+        .top_context()
+        .slot_source("value")
+        .map(SlotRange::name)
+}
+
+#[test]
+fn slot_source_reads_a_range_name_up_to_the_next_space() {
+    assert_eq!(parsed_slot_source("slots container.5"), Ok("container.5"));
+    assert_eq!(parsed_slot_source("slots armor.* next"), Ok("armor.*"));
+    assert_eq!(
+        parsed_slot_source("slots weapon.mainhand"),
+        Ok("weapon.mainhand")
+    );
+    // An id names a data-driven slot source, and there are none.
+    let Err(error) = parsed_slot_source("slots minecraft:container.5") else {
+        panic!("an unknown slot source id must fail");
+    };
+    assert_eq!(
+        error.message_component(),
+        translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+            .message(["minecraft:container.5", "minecraft:slot_source"])
+            .component()
+    );
+    assert!(parsed_slot_source("slots container.99").is_err());
 }

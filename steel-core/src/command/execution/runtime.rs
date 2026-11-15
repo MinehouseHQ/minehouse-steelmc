@@ -17,7 +17,8 @@ use super::{
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
         EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, NbtTagValue,
-        ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        ObjectiveValue, SlotSourceValue, SteelArgumentValue, TimeValue, TimelineValue,
+        WorldClockValue,
     },
     selector::EntitySelector,
 };
@@ -28,6 +29,7 @@ use crate::command::brigadier::{
 use crate::command::execution::argument::{AdvancementValue, DamageTypeValue, MobEffectValue};
 use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
+use crate::inventory::slot_range::SlotRange;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -347,6 +349,12 @@ where
     /// Returns a parsed vanilla message argument.
     pub(crate) fn message(&self, name: &str) -> Result<&MessageArgument, CommandSyntaxError> {
         self.typed_argument::<MessageArgument>(name)
+    }
+
+    /// Vanilla `SlotSourceArgument.getSlotSource` for a slot range.
+    pub(crate) fn slot_source(&self, name: &str) -> Result<&'static SlotRange, CommandSyntaxError> {
+        self.typed_argument::<SlotSourceValue>(name)
+            .map(|value| value.0)
     }
 
     pub(crate) fn item_stack(&self, name: &str) -> Result<&ItemStack, CommandSyntaxError> {

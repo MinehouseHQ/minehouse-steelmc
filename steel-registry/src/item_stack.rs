@@ -22,14 +22,15 @@ use crate::{
     data_components::{
         Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
         DataComponentPatch, DataComponentType,
+        components::Rarity,
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
             CONTAINER, CUSTOM_DATA, CUSTOM_NAME, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE,
             ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ITEM_NAME, ItemAttributeModifiers,
             ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
             OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
-            REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool, UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT,
-            Weapon,
+            RARITY, REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool, UNBREAKABLE, WEAPON,
+            WRITTEN_BOOK_CONTENT, Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
@@ -648,6 +649,20 @@ impl ItemStack {
     #[must_use]
     pub fn is_enchanted(&self) -> bool {
         self.get_enchantments().is_some_and(|e| !e.is_empty())
+    }
+
+    /// Vanilla `getRarity`: enchantments raise common and uncommon items to
+    /// rare, and rare items to epic.
+    #[must_use]
+    pub fn rarity(&self) -> Rarity {
+        let base = self.get(RARITY).copied().unwrap_or_default();
+        if !self.is_enchanted() {
+            return base;
+        }
+        match base {
+            Rarity::Common | Rarity::Uncommon => Rarity::Rare,
+            Rarity::Rare | Rarity::Epic => Rarity::Epic,
+        }
     }
 
     #[must_use]

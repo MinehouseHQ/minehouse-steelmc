@@ -18,7 +18,7 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
-    suggestions::{matches_substring_ignore_case, suggest_resources},
+    suggestions::{matches_substring_ignore_case, suggest_list, suggest_resources},
     swing_animation::SwingAnimationParser,
     text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
@@ -32,6 +32,7 @@ use crate::command::brigadier::{
 use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
+use crate::inventory::slot_range::{SlotRange, all_slot_range_names, slot_range};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
@@ -379,6 +380,11 @@ impl SteelArgumentType {
         Self::new(NbtTagParser)
     }
 
+    /// Vanilla `SlotSourceArgument.slotSource`.
+    pub(crate) fn slot_source() -> Self {
+        Self::new(SlotSourceParser)
+    }
+
     /// Vanilla `CompoundTagArgument.compoundTag`.
     pub(crate) fn compound_tag() -> Self {
         Self::new(CompoundTagParser)
@@ -598,6 +604,10 @@ argument_value_wrapper!(
 );
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(NbtTagValue(NbtTag), "steel:command/value/nbt_tag");
+argument_value_wrapper!(
+    SlotSourceValue(&'static SlotRange),
+    "steel:command/value/slot_source"
+);
 argument_value_wrapper!(
     CompoundTagValue(NbtCompound),
     "steel:command/value/compound_tag"
@@ -1319,6 +1329,16 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::Nbt, None)
 );
 unit_argument_parser!(
+    SlotSourceParser,
+    "steel:command/parser/slot_source",
+    SlotSourceValue,
+    parse | reader,
+    _source | { parse_slot_source(reader).map(SlotSourceValue) },
+    suggest | _context,
+    builder | { suggest_list(builder, all_slot_range_names()) },
+    protocol(ProtocolArgumentType::SlotSource, None)
+);
+unit_argument_parser!(
     IdentifierParser,
     "steel:command/parser/identifier",
     IdentifierValue,
@@ -1705,7 +1725,7 @@ pub(super) fn parse_identifier(
     let start = reader.checkpoint();
     let start_byte = reader.read_so_far().len();
     while reader.peek().is_some_and(is_allowed_in_identifier) {
-        reader.skip();
+        let _ = reader.skip();
     }
     let raw = &reader.read_so_far()[start_byte..];
     let (namespace, path) =
@@ -1727,6 +1747,39 @@ pub(super) fn parse_identifier(
     reader.restore(start);
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
         TextComponent::from(&translations::ARGUMENT_ID_INVALID),
+    ))))
+}
+
+/// Vanilla `SlotSourceArgument.parse`: a slot range name, read up to the
+/// next space, or else a `slot_source` registry id or inline value.
+///
+/// Steel has no data-driven slot sources yet. An id is rejected the way
+/// vanilla rejects one its (by default empty) registry lacks, and an inline
+/// slot source fails to parse.
+fn parse_slot_source(
+    reader: &mut StringReader<'_>,
+) -> Result<&'static SlotRange, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    let start_byte = reader.read_so_far().len();
+    while reader.peek().is_some_and(|character| character != ' ') {
+        let _ = reader.skip();
+    }
+    if let Some(range) = slot_range(&reader.read_so_far()[start_byte..]) {
+        return Ok(range);
+    }
+    reader.restore(start);
+    if let Ok(id) = parse_identifier(reader) {
+        reader.restore(start);
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                .message([id.to_string(), "minecraft:slot_source".to_owned()])
+                .component(),
+        ))));
+    }
+    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+        translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
+            .message(["inline slot sources are not supported".to_owned()])
+            .component(),
     ))))
 }
 
