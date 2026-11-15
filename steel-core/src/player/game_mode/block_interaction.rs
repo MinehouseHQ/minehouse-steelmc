@@ -79,7 +79,7 @@ impl Player {
 
         if packet.hand == InteractionHand::MainHand
             && let Some(world_log) = self.world_log()
-            && world_log.block_clicked(self, &world, pos, false)
+            && world_log.block_clicked(self, &world, pos, direction, false)
         {
             self.send_block_updates(pos, direction);
             self.broadcast_inventory_changes_and_trigger();
@@ -106,7 +106,7 @@ impl Player {
         match packet.action {
             PlayerAction::StartDestroyBlock => {
                 if let Some(world_log) = self.world_log()
-                    && world_log.block_clicked(self, &world, packet.pos, true)
+                    && world_log.block_clicked(self, &world, packet.pos, packet.direction, true)
                 {
                     self.send_block_updates(packet.pos, packet.direction);
                     self.ack_block_changes_up_to(packet.sequence);

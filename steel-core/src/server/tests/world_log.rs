@@ -42,7 +42,14 @@ impl WorldLog for Recorder {
     ) {
     }
 
-    fn block_clicked(&self, _: &Arc<Player>, _: &Arc<World>, pos: BlockPos, hit: bool) -> bool {
+    fn block_clicked(
+        &self,
+        _: &Arc<Player>,
+        _: &Arc<World>,
+        pos: BlockPos,
+        _: Direction,
+        hit: bool,
+    ) -> bool {
         self.clicked.lock().push((pos, hit));
         pos.x() == 9
     }

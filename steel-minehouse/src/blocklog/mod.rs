@@ -16,22 +16,30 @@ use std::{
 use rustc_hash::FxHashMap;
 use simdnbt::owned::NbtTag;
 use steel_core::{
+    behavior::blocks::connected_direction,
     command::CommandRegistry,
-    inventory::menu::Menu,
+    inventory::{lock::ContainerRef, menu::Menu},
     player::Player,
     server::{Server, world_log::WorldLog},
     world::World,
 };
 use steel_registry::{
-    REGISTRY, blocks::block_state_ext::BlockStateExt as _, item_stack::ItemStack,
+    REGISTRY,
+    blocks::{
+        block_state_ext::BlockStateExt as _,
+        properties::{BlockStateProperties, ChestType},
+    },
+    item_stack::ItemStack,
+    vanilla_blocks,
 };
-use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex};
+use steel_utils::{BlockPos, BlockStateId, Direction, locks::SyncMutex, types::InteractionHand};
 use text_components::TextComponent;
 use uuid::Uuid;
 
 mod commands;
 mod format;
 pub mod import;
+mod magnifier;
 mod params;
 mod rollback;
 mod settings;
@@ -40,7 +48,9 @@ pub mod store;
 pub use settings::BlockLogConfig;
 use store::{Actions, Actor, BREAK, Event, PLACE, PUT, Query, Store, Subject, TAKE};
 
-use crate::config;
+use magnifier::Glance;
+
+use crate::{config, content::MAGNIFIER, moderation::format::render};
 
 /// What the log remembers about one asker between commands.
 #[derive(Default)]
@@ -49,6 +59,9 @@ struct Session {
     inspecting: bool,
     /// The last lookup, for `/co page`.
     last: Option<Lookup>,
+    /// What the magnifier showed last, and when it was last clicked.
+    glance: Option<Glance>,
+    clicked: i64,
     /// The block containers of the open menu, as they were when it opened.
     open: Vec<(BlockPos, Vec<ItemStack>)>,
 }
@@ -226,6 +239,70 @@ impl BlockLog {
     }
 }
 
+impl BlockLog {
+    /// A click with the magnifier: the history of the block, or of what a container held.
+    fn magnify(
+        &self,
+        player: &Arc<Player>,
+        world: &Arc<World>,
+        pos: BlockPos,
+        face: Direction,
+        hit: bool,
+    ) {
+        let now = now_ms();
+        let container = !hit
+            && world
+                .get_block_entity(pos)
+                .and_then(ContainerRef::from_block_entity)
+                .is_some();
+        // Using a block that holds nothing asks about the spot in front of the clicked face.
+        let pos = if hit || container {
+            pos
+        } else {
+            pos.relative(face)
+        };
+        let state = world.get_block_state(pos);
+        let partner = (container
+            && state.get_block() == &vanilla_blocks::CHEST
+            && state.get_value(&BlockStateProperties::CHEST_TYPE) != ChestType::Single)
+            .then(|| place(pos.relative(connected_direction(state))));
+        let glance = {
+            let mut sessions = self.sessions.lock();
+            let session = sessions.entry(player.gameprofile.id()).or_default();
+            if now - session.clicked < magnifier::COOLDOWN_MS {
+                return;
+            }
+            session.clicked = now;
+            let glance = Glance::next(
+                session.glance.as_ref(),
+                &world.key.to_string(),
+                place(pos),
+                container,
+                now,
+            );
+            session.glance = Some(glance.clone());
+            glance
+        };
+        let block = state.get_block().key.to_string();
+        let player = Arc::clone(player);
+        self.store
+            .lookup(glance.query(partner), move |answer| match answer {
+                Ok(page) => {
+                    for line in magnifier::lines(&glance, &block, &page.rows, now_ms()) {
+                        player.send_message(&line);
+                    }
+                }
+                Err(error) => {
+                    log::warn!("Magnifier lookup failed: {error}");
+                    player.send_message(&render(
+                        "&cЛупа: не удалось прочитать историю, попробуй ещё раз",
+                        &[],
+                    ));
+                }
+            });
+    }
+}
+
 impl WorldLog for BlockLog {
     fn block_broken(
         &self,
@@ -275,6 +352,7 @@ impl WorldLog for BlockLog {
         player: &Arc<Player>,
         world: &Arc<World>,
         pos: BlockPos,
+        face: Direction,
         hit: bool,
     ) -> bool {
         let asker = player.gameprofile.id();
@@ -284,7 +362,14 @@ impl WorldLog for BlockLog {
             .get(&asker)
             .is_some_and(|session| session.inspecting)
         {
-            return false;
+            let holds_magnifier = MAGNIFIER.is(player
+                .inventory
+                .lock()
+                .get_item_in_hand(InteractionHand::MainHand));
+            if holds_magnifier {
+                self.magnify(player, world, pos, face, hit);
+            }
+            return holds_magnifier;
         }
         let (x, y, z) = place(pos);
         let lookup = Lookup {
