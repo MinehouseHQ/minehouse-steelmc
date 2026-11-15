@@ -2,8 +2,8 @@ use std::fmt;
 use std::sync::{Arc, LazyLock};
 
 use super::{
-    BiomeOrTag, BlockInput, BlockPredicate, CommandArgumentSource, Coordinates, IntRange,
-    ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
+    BiomeOrTag, BlockInput, BlockPredicate, CommandArgumentSource, Coordinates, DoubleRange,
+    IntRange, ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
     coordinates::{
@@ -16,7 +16,7 @@ use super::{
     nbt::{parse_compound_tag, parse_nbt_path, parse_nbt_tag},
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
-    score::{parse_int_range, parse_score_holder, suggest_score_holders},
+    score::{parse_double_range, parse_int_range, parse_score_holder, suggest_score_holders},
     scoreboard_arguments::{
         ScoreOperation, parse_criteria, parse_display_slot, parse_operation, parse_style,
         parse_team_color, suggest_criteria, suggest_display_slots, suggest_operations,
@@ -356,6 +356,11 @@ impl SteelArgumentType {
         Self::new(IntRangeParser)
     }
 
+    /// Vanilla `RangeArgument.floatRange`, whose value is `MinMaxBounds.Doubles`.
+    pub(crate) fn float_range() -> Self {
+        Self::new(FloatRangeParser)
+    }
+
     /// Vanilla `ResourceArgument.resource(context, Registries.BIOME)`.
     pub(crate) fn biome() -> Self {
         Self::new(BiomeParser)
@@ -664,6 +669,7 @@ impl_downcast_type!(HeightmapType, "steel:command/value/heightmap");
 impl_downcast_type!(EntitySelector, "steel:command/value/entity_selector");
 impl_downcast_type!(ScoreHolderArgument, "steel:command/value/score_holder");
 impl_downcast_type!(IntRange, "steel:command/value/int_range");
+impl_downcast_type!(DoubleRange, "steel:command/value/float_range");
 impl_downcast_type!(BiomeOrTag, "steel:command/value/biome_or_tag");
 impl_downcast_type!(
     StructureOrTagKey,
@@ -1231,6 +1237,16 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::IntRange, None)
+);
+unit_argument_parser!(
+    FloatRangeParser,
+    "steel:command/parser/float_range",
+    DoubleRange,
+    parse | reader,
+    _source | { parse_double_range(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::FloatRange, None)
 );
 unit_argument_parser!(
     BiomeOrTagParser,

@@ -114,6 +114,10 @@ impl Server {
             log::error!("Failed to save domain scheduled events: {error}");
             result.success = false;
         }
+        if let Err(error) = command_data.stopwatches {
+            log::error!("Failed to save domain stopwatches: {error}");
+            result.success = false;
+        }
         if let Err(error) = self.worlds.save_maps() {
             log::error!("Failed to save maps: {error}");
             result.success = false;

@@ -153,6 +153,10 @@ impl Server {
             Ok(saved) => log::info!("Saved {saved} domain scheduled event queues"),
             Err(error) => log::error!("Failed to save domain scheduled events: {error}"),
         }
+        match command_data.stopwatches {
+            Ok(saved) => log::info!("Saved {saved} domain stopwatch sets"),
+            Err(error) => log::error!("Failed to save domain stopwatches: {error}"),
+        }
         match self.worlds.save_maps() {
             Ok(saved) => log::info!("Saved {saved} maps"),
             Err(error) => log::error!("Failed to save maps: {error}"),
