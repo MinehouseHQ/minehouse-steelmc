@@ -71,7 +71,7 @@ impl Structure for SwampHutStructure {
     ) -> Option<GenerationStub> {
         let center_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), false) - 1;
         let biome = ctx.biome_at(ctx.center_block_x(), center_y, ctx.center_block_z());
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

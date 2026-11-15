@@ -4,24 +4,42 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::thread;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{init_vanilla_registry, vanilla_blocks};
-use steel_utils::{BlockPos, ChunkPos};
+use steel_utils::threading::DEBUG_STACK_SIZE;
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use super::insert_ready_full_chunk;
 use super::scoreboard_command::{run, with_server_world};
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::entity::init_entities;
+use crate::server::Server;
 use crate::world::World;
+use crate::worldgen::generator::{ChunkGenerator as _, StructureStartLevel};
 
 fn init() {
     init_vanilla_registry();
     init_behaviors();
     init_entities();
     init_block_entities();
+}
+
+/// Runs `test` on a thread with the stack Steel's own threads get: structure
+/// generation overflows the default test stack in debug builds.
+fn with_structure_world(
+    name: &'static str,
+    test: impl FnOnce(&Arc<Server>, &Arc<World>) + Send + 'static,
+) {
+    thread::Builder::new()
+        .stack_size(DEBUG_STACK_SIZE)
+        .spawn(move || with_server_world(name, test))
+        .expect("test thread should spawn")
+        .join()
+        .expect("test thread panicked");
 }
 
 /// Loads the chunks around chunk `(0, 0)`.
@@ -228,5 +246,115 @@ fn bad_templates_and_unloaded_areas_fail() {
             None
         );
         assert!(is(world, BlockPos::new(30, 64, 0), &vanilla_blocks::AIR));
+    });
+}
+
+#[test]
+fn a_structure_generates_outside_its_biomes() {
+    init();
+    with_structure_world("place_structure", |server, world| {
+        load_around_origin(world);
+        assert_eq!(
+            run(server, "fill -16 63 -16 31 63 31 minecraft:stone"),
+            Some(48 * 48)
+        );
+
+        // The void world's biome is plains; vanilla's `/place structure` skips
+        // the biome check, so a swamp hut still starts here.
+        assert_eq!(
+            run(server, "place structure minecraft:swamp_hut 8 64 8"),
+            Some(1)
+        );
+        let planks = blocks_in(
+            world,
+            BlockPos::new(-16, 64, -16),
+            BlockPos::new(31, 80, 31),
+            &vanilla_blocks::SPRUCE_PLANKS,
+        );
+        assert!(!planks.is_empty());
+        let cauldrons = blocks_in(
+            world,
+            BlockPos::new(-16, 64, -16),
+            BlockPos::new(31, 80, 31),
+            &vanilla_blocks::CAULDRON,
+        );
+        assert_eq!(cauldrons.len(), 1);
+    });
+}
+
+#[test]
+fn bad_structures_and_unloaded_starts_fail() {
+    init();
+    with_structure_world("place_structure_failures", |server, world| {
+        load_around_origin(world);
+        assert_eq!(
+            run(server, "place structure minecraft:no_such_structure 8 64 8"),
+            None
+        );
+        // A mineshaft spreads far past the loaded chunks around its start, so
+        // vanilla refuses it before placing anything.
+        let start = world
+            .chunk_map
+            .world_gen_context
+            .generator
+            .generate_structure_start(
+                &Identifier::vanilla_static("mineshaft"),
+                ChunkPos::new(0, 0),
+                StructureStartLevel {
+                    seed: world.seed(),
+                    min_y: world.get_min_y(),
+                    height: world.get_height(),
+                    sea_level: world.sea_level,
+                },
+            )
+            .expect("a mineshaft starts in any chunk");
+        let bounds = start.bounding_box.expect("a valid start has a box");
+        assert!(bounds.min_x() < -16 || bounds.max_x() > 31);
+        assert_eq!(
+            run(server, "place structure minecraft:mineshaft 8 64 8"),
+            None
+        );
+        let min = BlockPos::new(-16, world.get_min_y(), -16);
+        let max = BlockPos::new(31, world.get_min_y() + world.get_height() - 1, 31);
+        assert!(blocks_in(world, min, max, &vanilla_blocks::OAK_PLANKS).is_empty());
+        assert!(blocks_in(world, min, max, &vanilla_blocks::RAIL).is_empty());
+    });
+}
+
+#[test]
+fn a_jigsaw_pool_places_from_its_named_jigsaw() {
+    init();
+    with_structure_world("place_jigsaw", |server, world| {
+        load_around_origin(world);
+        assert_eq!(
+            run(server, "fill -8 63 -8 23 63 23 minecraft:grass_block"),
+            Some(32 * 32)
+        );
+
+        // A feature element's only jigsaw is vanilla's synthetic `bottom` one, and
+        // its ground level delta of 1 sinks the start a block below the position.
+        assert_eq!(
+            run(
+                server,
+                "place jigsaw minecraft:abandoned_camp/trees/oak minecraft:bottom 1 8 65 8"
+            ),
+            Some(1)
+        );
+        assert!(is(world, BlockPos::new(8, 64, 8), &vanilla_blocks::OAK_LOG));
+
+        assert_eq!(
+            run(
+                server,
+                "place jigsaw minecraft:abandoned_camp/trees/oak minecraft:no_such_jigsaw 1 0 64 0"
+            ),
+            None
+        );
+        assert_eq!(
+            run(
+                server,
+                "place jigsaw minecraft:no_such_pool minecraft:bottom 1 0 64 0"
+            ),
+            None
+        );
     });
 }

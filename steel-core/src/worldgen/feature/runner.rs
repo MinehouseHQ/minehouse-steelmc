@@ -9,6 +9,7 @@ use super::sorter::{FeatureSorter, FeatureStepData};
 use crate::worldgen::structure::piece_placer::StructurePiecePlacer;
 #[cfg(test)]
 use steel_worldgen::structure::StructureReferenceMap;
+#[cfg(test)]
 use steel_worldgen::structure::StructureStart;
 
 /// Runs the structure-piece and placed-feature decoration pass for a generator.
@@ -311,30 +312,15 @@ impl FeatureDecorationRunner {
                 if start.chunk_pos != source_pos || start.pieces.is_empty() {
                     continue;
                 }
-                let Some(reference_pos) = start.placement_reference_pos() else {
-                    continue;
-                };
-                for piece in &mut start.pieces {
-                    if piece.bounding_box.intersects(writable_box) {
-                        StructurePiecePlacer::place_piece(
-                            region,
-                            registry,
-                            piece,
-                            reference_pos,
-                            writable_box,
-                            random,
-                            biome_zoom_seed,
-                        );
-                    }
-                }
-                StructurePiecePlacer::after_place_structure(
+                StructurePiecePlacer::place_start_in_chunk(
                     region,
+                    registry,
                     structure,
-                    &mut start.pieces,
+                    start,
                     writable_box,
+                    random,
+                    biome_zoom_seed,
                 );
-                start.bounding_box =
-                    StructureStart::compute_bounding_box(&start.pieces, start.bb_inflate);
             }
         }
     }

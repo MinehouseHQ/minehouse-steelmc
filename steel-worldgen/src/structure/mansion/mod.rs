@@ -61,7 +61,7 @@ impl Structure for WoodlandMansionStructure {
         }
 
         let biome = ctx.biome_at(bx, lowest, bz);
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

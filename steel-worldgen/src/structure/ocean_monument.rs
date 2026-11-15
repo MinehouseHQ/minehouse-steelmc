@@ -189,7 +189,7 @@ impl Structure for OceanMonumentStructure {
 
         let surface_y = ctx.surface_y();
         let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

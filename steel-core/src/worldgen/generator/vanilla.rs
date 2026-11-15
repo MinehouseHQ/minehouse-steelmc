@@ -33,7 +33,8 @@ use crate::worldgen::generator::surface_biomes::{
     FuzzedBiomeColumn, SurfaceBiomeClasses, SurfaceQuartBiomes,
 };
 use crate::worldgen::generator::{
-    ChunkGenerator, GenerationChunk, TerrainPhase, worldgen_region_random_from_splitter,
+    ChunkGenerator, GenerationChunk, StructureStartLevel, TerrainPhase,
+    worldgen_region_random_from_splitter,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
@@ -45,7 +46,10 @@ use steel_worldgen::noise::NoiseChunk;
 use steel_worldgen::noise::OreVeinifier;
 use steel_worldgen::noise::{Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level};
 use steel_worldgen::noise::{CornerColumnStore, PreliminarySurfaceStore};
-use steel_worldgen::structure::GenerationContext;
+use steel_worldgen::structure::{
+    AnyBiomeContext, GenerationContext, StructureGenerationContext, StructureStart,
+    generate_structure_start,
+};
 use steel_worldgen::surface_partial::PartialSurfaceOutcome;
 
 const CARVER_SOURCE_CHUNK_COUNT: usize = 17 * 17;
@@ -275,6 +279,54 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
 }
 
 impl<N: VanillaPostNoiseStateType> VanillaGenerator<N> {
+    /// Runs `f` with the structure generation context of one chunk.
+    fn with_structure_context<R>(
+        &self,
+        pos: ChunkPos,
+        f: impl FnOnce(&mut dyn StructureGenerationContext) -> R,
+    ) -> R {
+        let chunk_x = pos.0.x;
+        let chunk_z = pos.0.y;
+
+        let mut sampler = self.biome_source.chunk_sampler();
+        let chunk_min_x = chunk_x * 16;
+        let chunk_min_z = chunk_z * 16;
+
+        let mut height_cache = N::ColumnCache::default();
+        let sea_level = N::Settings::SEA_LEVEL;
+
+        // No eager `init_grid`: most chunks' structures (mineshaft, village)
+        // use their own caches, and the 1–4 column probes of the remainder
+        // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
+        // init cost ~36µs per chunk with no payoff.
+        let mut aquifer = LazyAquifer::new(
+            chunk_min_x,
+            chunk_min_z,
+            &self.splitter,
+            &*self.noises,
+            &self.preliminary_surface,
+        );
+        let mut surface_y_cache: Option<i32> = None;
+        let mut height_cache_grid_ready = false;
+        let mut ctx = GenerationContext::<'_, '_, N>::new(
+            self.seed,
+            chunk_x,
+            chunk_z,
+            sea_level,
+            &self.noises,
+            &self.splitter,
+            &self.preliminary_surface,
+            self.structure_generator.template_pools(),
+            self.structure_generator.templates(),
+            &mut sampler,
+            &mut height_cache,
+            &mut aquifer,
+            &mut surface_y_cache,
+            &mut height_cache_grid_ready,
+        );
+        f(&mut ctx)
+    }
+
     fn preliminary_surface_corners(
         &self,
         chunk: GenerationChunk<'_, TerrainPhase>,
@@ -334,47 +386,21 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
     fn create_structures(&self, chunk: &Chunk) {
         let pos = chunk.pos();
-        let chunk_x = pos.0.x;
-        let chunk_z = pos.0.y;
+        self.with_structure_context(pos, |ctx| {
+            create_structures(&self.structure_generator, chunk, ctx);
+        });
+    }
 
-        let mut sampler = self.biome_source.chunk_sampler();
-        let chunk_min_x = chunk_x * 16;
-        let chunk_min_z = chunk_z * 16;
-
-        let mut height_cache = N::ColumnCache::default();
-        let sea_level = N::Settings::SEA_LEVEL;
-
-        // No eager `init_grid`: most chunks' structures (mineshaft, village)
-        // use their own caches, and the 1–4 column probes of the remainder
-        // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
-        // init cost ~36µs per chunk with no payoff.
-        let mut aquifer = LazyAquifer::new(
-            chunk_min_x,
-            chunk_min_z,
-            &self.splitter,
-            &*self.noises,
-            &self.preliminary_surface,
-        );
-        let mut surface_y_cache: Option<i32> = None;
-        let mut height_cache_grid_ready = false;
-        let mut ctx = GenerationContext::<'_, '_, N>::new(
-            self.seed,
-            chunk_x,
-            chunk_z,
-            sea_level,
-            &self.noises,
-            &self.splitter,
-            &self.preliminary_surface,
-            self.structure_generator.template_pools(),
-            self.structure_generator.templates(),
-            &mut sampler,
-            &mut height_cache,
-            &mut aquifer,
-            &mut surface_y_cache,
-            &mut height_cache_grid_ready,
-        );
-
-        create_structures(&self.structure_generator, chunk, &mut ctx);
+    fn generate_structure_start(
+        &self,
+        structure: &Identifier,
+        chunk_pos: ChunkPos,
+        _level: StructureStartLevel,
+    ) -> Option<StructureStart> {
+        // The generator's own seed and height limits are the level's.
+        self.with_structure_context(chunk_pos, |ctx| {
+            generate_structure_start(structure, &mut AnyBiomeContext(ctx))
+        })
     }
 
     fn create_biomes(&self, chunk: &Chunk) {

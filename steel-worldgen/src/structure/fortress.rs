@@ -690,7 +690,7 @@ impl Structure for NetherFortressStructure {
         // Biome check at (chunkMinX, 64, chunkMinZ) per vanilla.
         let (biome_x, biome_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
         let biome = ctx.biome_at(biome_x, 64, biome_z);
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

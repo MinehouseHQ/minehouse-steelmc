@@ -2,7 +2,7 @@
 
 pub mod context;
 mod empty;
-mod flat;
+pub(crate) mod flat;
 mod generation_chunk;
 pub mod registry;
 mod surface_biomes;
@@ -22,13 +22,28 @@ use steel_utils::random::{
     PositionalRandom as _, Random as _, RandomSource, RandomSplitter, name_hash::NameHash,
     xoroshiro::Xoroshiro,
 };
-use steel_utils::{BlockPos, ChunkPos};
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use self::context::{ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator};
 use crate::chunk::Chunk;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::StructureStart;
+
+/// The level values vanilla `Structure.generate` reads when `/place structure`
+/// runs it outside chunk generation.
+#[derive(Debug, Clone, Copy)]
+pub struct StructureStartLevel {
+    /// The level seed.
+    pub seed: i64,
+    /// The lowest buildable Y.
+    pub min_y: i32,
+    /// The build height.
+    pub height: i32,
+    /// The level's sea level, for generators without one of their own.
+    pub sea_level: i32,
+}
 
 /// A trait for generating chunks.
 #[enum_dispatch]
@@ -60,6 +75,17 @@ pub trait ChunkGenerator: Send + Sync {
 
     /// Creates the structures in a chunk.
     fn create_structures(&self, chunk: &Chunk);
+
+    /// Vanilla `Structure.generate` as `/place structure` calls it: one start of
+    /// `structure` anchored in `chunk_pos`, in any biome, ignoring structure sets.
+    ///
+    /// Returns `None` for an unknown structure or when it finds no valid start.
+    fn generate_structure_start(
+        &self,
+        structure: &Identifier,
+        chunk_pos: ChunkPos,
+        level: StructureStartLevel,
+    ) -> Option<StructureStart>;
 
     /// Creates the biomes in a chunk.
     fn create_biomes(&self, chunk: &Chunk);

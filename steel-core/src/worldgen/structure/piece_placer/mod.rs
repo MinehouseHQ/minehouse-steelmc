@@ -40,7 +40,7 @@ use crate::entity::{ENTITIES, SharedEntity, next_entity_id};
 use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::{
-    ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
+    ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload, StructureStart,
 };
 
 pub(crate) struct StructurePiecePlacer;
@@ -212,6 +212,37 @@ impl StructurePiecePlacer {
         };
         piece.bounding_box = piece_bounding_box;
         placed
+    }
+
+    /// Vanilla `StructureStart.placeInChunk`: places every piece reaching `clip`,
+    /// then runs the structure's after-place pass, and refits the start's box.
+    pub(crate) fn place_start_in_chunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        structure: StructureRef,
+        start: &mut StructureStart,
+        clip: BoundingBox,
+        random: &mut WorldgenRandom,
+        biome_zoom_seed: i64,
+    ) {
+        let Some(reference_pos) = start.placement_reference_pos() else {
+            return;
+        };
+        for piece in &mut start.pieces {
+            if piece.bounding_box.intersects(clip) {
+                Self::place_piece(
+                    region,
+                    registry,
+                    piece,
+                    reference_pos,
+                    clip,
+                    random,
+                    biome_zoom_seed,
+                );
+            }
+        }
+        Self::after_place_structure(region, structure, &mut start.pieces, clip);
+        start.bounding_box = StructureStart::compute_bounding_box(&start.pieces, start.bb_inflate);
     }
 
     pub(crate) fn after_place_structure(

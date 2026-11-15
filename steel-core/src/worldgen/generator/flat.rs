@@ -9,12 +9,16 @@ use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::Chunk;
 use crate::worldgen::generator::{
-    ChunkGenerator, GenerationChunk, TerrainPhase, xoroshiro_worldgen_region_random,
+    ChunkGenerator, GenerationChunk, StructureStartLevel, TerrainPhase,
+    xoroshiro_worldgen_region_random,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
 use steel_worldgen::noise::Beardifier;
-use steel_worldgen::structure::{ColumnBlock, StructureGenerationContext};
+use steel_worldgen::structure::{
+    AnyBiomeContext, ColumnBlock, StructureGenerationContext, StructureStart,
+    generate_structure_start, vanilla_template_assets,
+};
 
 /// A chunk generator that generates a flat world.
 ///
@@ -73,7 +77,7 @@ impl FlatChunkGenerator {
     }
 }
 
-struct FlatGenerationContext<'a> {
+pub(super) struct FlatGenerationContext<'a> {
     seed: i64,
     chunk_x: i32,
     chunk_z: i32,
@@ -91,7 +95,36 @@ struct FlatGenerationContext<'a> {
     surface_y_cache: Option<i32>,
 }
 
-impl FlatGenerationContext<'_> {
+impl<'a> FlatGenerationContext<'a> {
+    /// The structure generation context of the chunk at `pos` over `layers`.
+    pub(super) fn new(
+        layers: &'a [BlockStateId],
+        pos: ChunkPos,
+        level: StructureStartLevel,
+        template_pools: &'a FxHashMap<Identifier, TemplatePoolData>,
+        templates: &'a FxHashMap<Identifier, TemplateData>,
+    ) -> Self {
+        let chunk_min_x = pos.0.x * 16;
+        let chunk_min_z = pos.0.y * 16;
+        Self {
+            seed: level.seed,
+            chunk_x: pos.0.x,
+            chunk_z: pos.0.y,
+            chunk_min_x,
+            chunk_min_z,
+            center_block_x: chunk_min_x + 8,
+            center_block_z: chunk_min_z + 8,
+            sea_level: level.sea_level,
+            min_y: level.min_y,
+            height: level.height,
+            layers,
+            biome: &vanilla_biomes::PLAINS,
+            template_pools,
+            templates,
+            surface_y_cache: None,
+        }
+    }
+
     fn state_at_y(&self, y: i32) -> Option<BlockStateId> {
         let relative_y = y.checked_sub(self.min_y)? as usize;
         self.layers.get(relative_y).copied()
@@ -235,30 +268,40 @@ impl ChunkGenerator for FlatChunkGenerator {
         let Some(structure_generator) = &self.structure_generator else {
             return;
         };
-
-        let pos = chunk.pos();
-        let chunk_x = pos.0.x;
-        let chunk_z = pos.0.y;
-        let chunk_min_x = chunk_x * 16;
-        let chunk_min_z = chunk_z * 16;
-        let mut ctx = FlatGenerationContext {
+        let level = StructureStartLevel {
             seed: self.seed,
-            chunk_x,
-            chunk_z,
-            chunk_min_x,
-            chunk_min_z,
-            center_block_x: chunk_min_x + 8,
-            center_block_z: chunk_min_z + 8,
-            sea_level: self.sea_level,
             min_y: chunk.min_y(),
             height: (chunk.sections().sections.len() * 16) as i32,
-            layers: &self.layers,
-            biome: &vanilla_biomes::PLAINS,
-            template_pools: structure_generator.template_pools(),
-            templates: structure_generator.templates(),
-            surface_y_cache: None,
+            sea_level: self.sea_level,
         };
+        let mut ctx = FlatGenerationContext::new(
+            &self.layers,
+            chunk.pos(),
+            level,
+            structure_generator.template_pools(),
+            structure_generator.templates(),
+        );
         create_structures(structure_generator, chunk, &mut ctx);
+    }
+
+    fn generate_structure_start(
+        &self,
+        structure: &Identifier,
+        chunk_pos: ChunkPos,
+        level: StructureStartLevel,
+    ) -> Option<StructureStart> {
+        let (template_pools, templates) = match &self.structure_generator {
+            Some(generator) => (generator.template_pools(), generator.templates()),
+            None => vanilla_template_assets(),
+        };
+        // The generator's own sea level, as vanilla reads `getSeaLevel()` from it.
+        let level = StructureStartLevel {
+            sea_level: self.sea_level,
+            ..level
+        };
+        let mut ctx =
+            FlatGenerationContext::new(&self.layers, chunk_pos, level, template_pools, templates);
+        generate_structure_start(structure, &mut AnyBiomeContext(&mut ctx))
     }
 
     fn create_biomes(&self, chunk: &Chunk) {

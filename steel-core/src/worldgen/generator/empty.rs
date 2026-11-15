@@ -1,13 +1,18 @@
 use crate::chunk::Chunk;
+use crate::worldgen::generator::flat::FlatGenerationContext;
 use crate::worldgen::generator::{
-    ChunkGenerator, GenerationChunk, TerrainPhase, xoroshiro_worldgen_region_random,
+    ChunkGenerator, GenerationChunk, StructureStartLevel, TerrainPhase,
+    xoroshiro_worldgen_region_random,
 };
 use crate::worldgen::region::WorldGenRegion;
 use glam::IVec3;
 use steel_registry::{biome::BiomeRef, vanilla_biomes};
-use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
+use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::{
+    AnyBiomeContext, StructureStart, generate_structure_start, vanilla_template_assets,
+};
 
 /// A chunk generator that generates an empty world.
 #[derive(Default)]
@@ -38,6 +43,18 @@ impl ChunkGenerator for EmptyChunkGenerator {
     }
 
     fn create_structures(&self, _chunk: &Chunk) {}
+
+    fn generate_structure_start(
+        &self,
+        structure: &Identifier,
+        chunk_pos: ChunkPos,
+        level: StructureStartLevel,
+    ) -> Option<StructureStart> {
+        // Reads as vanilla's `the_void` flat preset: a flat world without layers.
+        let (template_pools, templates) = vanilla_template_assets();
+        let mut ctx = FlatGenerationContext::new(&[], chunk_pos, level, template_pools, templates);
+        generate_structure_start(structure, &mut AnyBiomeContext(&mut ctx))
+    }
 
     fn create_biomes(&self, _chunk: &Chunk) {}
 
