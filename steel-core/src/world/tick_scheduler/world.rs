@@ -1,4 +1,5 @@
 use super::super::*;
+use steel_utils::BoundingBox;
 
 impl World {
     /// Schedules a block tick at the given position.
@@ -177,6 +178,69 @@ impl World {
     ) -> super::ScheduledTickBatch<FluidRef> {
         self.scheduled_ticks
             .collect_fluid_ticks(current_tick, max_ticks)
+    }
+
+    /// Vanilla `LevelTicks.copyAreaFrom` for block ticks: every block tick inside
+    /// `area` of `source` (this tick's selected batch, already run or not, then
+    /// each loaded chunk's live queue) is scheduled here shifted by `offset`,
+    /// keeping its deadline and priority. Sub-tick orders are moved past the
+    /// copied range's maximum so the copies keep their relative order.
+    pub(crate) fn copy_block_ticks_from(
+        &self,
+        source: &Self,
+        area: BoundingBox,
+        (dx, dy, dz): (i32, i32, i32),
+    ) {
+        let mut ticks: Vec<super::BlockTick> = source
+            .scheduled_block_ticks_this_tick
+            .lock()
+            .as_ref()
+            .map_or_else(Vec::new, |batch| {
+                batch
+                    .ticks()
+                    .iter()
+                    .filter(|tick| area.contains_blockpos(tick.pos))
+                    .copied()
+                    .collect()
+            });
+        for chunk_x in SectionPos::block_to_section_coord(area.min_x())
+            ..=SectionPos::block_to_section_coord(area.max_x())
+        {
+            for chunk_z in SectionPos::block_to_section_coord(area.min_z())
+                ..=SectionPos::block_to_section_coord(area.max_z())
+            {
+                let in_chunk = source
+                    .chunk_map
+                    .with_full_chunk(ChunkPos::new(chunk_x, chunk_z), |chunk| {
+                        chunk.scheduled_tick_container().live_block_ticks_in(area)
+                    })
+                    .flatten();
+                ticks.extend(in_chunk.into_iter().flatten());
+            }
+        }
+        let (Some(min), Some(max)) = (
+            ticks.iter().map(|tick| tick.sub_tick_order).min(),
+            ticks.iter().map(|tick| tick.sub_tick_order).max(),
+        ) else {
+            return;
+        };
+        for tick in ticks {
+            let pos = tick.pos.offset(dx, dy, dz);
+            self.chunk_map
+                .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
+                    chunk.schedule_block_tick(
+                        pos,
+                        tick.tick_type,
+                        tick.trigger_tick,
+                        tick.priority,
+                        // Java long arithmetic.
+                        tick.sub_tick_order
+                            .wrapping_sub(min)
+                            .wrapping_add(max)
+                            .wrapping_add(1),
+                    );
+                });
+        }
     }
 
     /// Returns whether a selected block tick at `(pos, block)` has not started yet.

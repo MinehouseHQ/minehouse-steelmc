@@ -308,6 +308,12 @@ impl<T: TickKey> TickList<T> {
         });
     }
 
+    /// Vanilla `LevelChunkTicks.getAll`: the live queue in no particular order,
+    /// without the saved entries that are not yet anchored to game time.
+    pub(super) fn live_ticks(&self) -> impl Iterator<Item = ScheduledTick<T>> + '_ {
+        self.ticks.iter().map(|queued| queued.tick)
+    }
+
     pub(super) fn peek(&self) -> Option<ScheduledTick<T>> {
         Some(self.ticks.peek()?.tick)
     }
