@@ -30,7 +30,7 @@ use steel_core::{
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
     REGISTRY, RegistryExt as _, item_stack::ItemStack, sound_event::SoundEventRef, sound_events,
-    vanilla_items,
+    vanilla_entities, vanilla_items,
 };
 use steel_utils::{BlockPos, Identifier, locks::SyncMutex, types::InteractionHand};
 use uuid::Uuid;
@@ -483,10 +483,38 @@ type Placed = (Arc<dyn Entity>, DVec3, DVec3);
 /// End of a cart's tick. After the driver moved everyone else goes onto its trail.
 pub(super) fn moved(cart: &dyn Entity, world: &World) -> Moved {
     let (result, placed) = with(|trains| place(trains, cart, world));
+    let mut steps = Vec::with_capacity(placed.len());
     for (follower, spot, speed) in placed {
+        steps.push((Arc::clone(&follower), spot - follower.position()));
         put(&*follower, spot, speed);
     }
+    if !steps.is_empty() && carries_player(cart) {
+        for (follower, step) in steps {
+            smash_empty(&*follower, world, step);
+        }
+    }
     result
+}
+
+/// A cart with a player, or of a train with one, knocks empty carts off the line: every
+/// empty rideable cart it went through this tick (the whole `step`, a fast cart moves
+/// blocks a tick) breaks and drops as an item. Chest, hopper, furnace and TNT carts are
+/// not broken; they are passed through.
+pub(super) fn smash_empty(cart: &dyn Entity, world: &World, step: DVec3) {
+    let swept = cart.bounding_box().expand_towards(-step);
+    for other in world.get_entities_in_aabb(&swept) {
+        if other.entity_type() != &vanilla_entities::MINECART
+            || other.uuid() == cart.uuid()
+            || other.is_removed()
+            || other.is_vehicle()
+            || with(|trains| trains.same_train(world, cart.uuid(), other.uuid()))
+        {
+            continue;
+        }
+        if let Some(minecart) = other.as_abstract_minecart() {
+            minecart.default_destroy(world);
+        }
+    }
 }
 
 fn place(trains: &mut Trains, cart: &dyn Entity, world: &World) -> (Moved, Vec<Placed>) {

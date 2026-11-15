@@ -404,8 +404,43 @@ clicks; nothing is added to the world. `steel-core` has `PlayerInputObserver`
 (`player/input_observer.rs`) for this: `interact` and `attack` for entity ids the server
 does not know, and `carried_item` for the wheel.
 
-Not ported yet: a train with a player knocking empty carts
-off the line, and the lines on the web map.
+A cart with a player in it, or any cart of a train that carries one, knocks empty plain
+minecarts off the line as it passes (`trains::smash_empty`, the Fabric `Trains.smashEmpty`):
+the cart left on the rails breaks into its item instead of stopping the ride. Carts of the
+same train, carts with a passenger and chest, hopper and other carts are left alone.
+
+`content/map_markers.rs` puts the metro on the web map and the site (the Fabric
+`BlueMapMarkers`). It writes the stations, the lines between them and the transfers as the
+`BlueMap` marker set `minehouse-metro`, in the files `BlueMap` serves:
+`maps/<map>/live/markers.json` (`world`, `world_the_nether`, `world_the_end`) and, if the
+directory has none of its own, a `settings.json` that lists the maps. The directory is
+`MINEHOUSE_METRO_MAP_DIR`, or `metro-map` in the data directory; point the site's
+`BLUEMAP_URL` at a web server that gives it out. Other marker sets in a `markers.json` are
+kept. The files are written by a thread of their own, at most every two seconds after a
+station or the track changed. A line is the track the rail graph knows between two
+stations, through the forks on the way (the Fabric mod draws the trips its trains
+recorded).
+
+Silent name tags (`content/silent_tags.rs`, the Fabric `SilentTags`): a name tag whose name
+has one of the words «тихо», «тихий», «тихая», `silent`, `shh`, «шшш» as a whole word
+("Бобик [тихо]") makes the mob silent with the vanilla Silent flag; any other tag gives its
+voice back. Only what a tag did is undone (the entity tag `minehouse_silenced`). `steel-core`
+has `NameTagObserver` (`behavior/items/name_tag.rs`) for this. The words are fixed here; the
+Fabric mod reads them from its config.
+
+Name tags on minecarts (`content/minecart_names.rs`, the Fabric `MinecartNames`): a named
+name tag names any minecart with a right click, and the tag is used up (not in creative, and
+not when the cart already has that name). The name shows while a player points at the cart.
+A silent word in it makes the cart silent. Not ported: a cart placed from a minecart item
+renamed "Тихо" on an anvil is not made silent.
+
+Waxed and invisible item frames (`content/waxed_frames.rs`, the Fabric `WaxedFrames`):
+honeycomb waxes an item frame (sneak to put the honeycomb in instead) and a sneaking axe
+scrapes the wax off. A waxed frame is vanilla's fixed frame: its item cannot be turned or
+taken and the frame cannot be broken; a right click on it goes to the block it hangs on, so
+a frame on a chest opens the chest. Sneaking shears hide or show a frame that holds an
+item, and a hidden frame shows again once its item is out. `steel-core` has
+`ItemFrameObserver` (`display_ui/item_frame.rs`) and `player::game_mode::use_block` for this.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four

@@ -43,7 +43,7 @@ use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
 use super::{
-    metro,
+    metro, minecart_names,
     rail_graph::{self, Nav, Plan},
     speed, station_menu, stations,
     trains::{self, Decision, Moved},
@@ -178,10 +178,14 @@ impl MinecartObserver for Ride {
             state.last_step = cart.position() - start;
         }
         after_move(state, cart, world, rail);
+        let step = state.last_step;
         if now % FORGET_AFTER == 0 {
             carts.retain(|_, state| (now - state.seen).abs() < FORGET_AFTER);
         }
         drop(carts_guard);
+        if trains::carries_player(cart) {
+            trains::smash_empty(cart, world, step);
+        }
         station_menu::tick(cart, world);
     }
 
@@ -191,7 +195,8 @@ impl MinecartObserver for Ride {
         player: &Player,
         hand: InteractionHand,
     ) -> Option<InteractionResult> {
-        trains::interact(cart, player, hand)
+        minecart_names::interact(cart, player, hand)
+            .or_else(|| trains::interact(cart, player, hand))
     }
 
     fn passes_through(&self, cart: &dyn Entity, other: &dyn Entity) -> bool {
