@@ -16,9 +16,10 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
-        EntityTypeValue, GameModeValue, IdentifierValue, ItemSlotValue, ItemStackValue,
-        LootTableValue, NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        EntityTypeValue, FeatureValue, GameModeValue, IdentifierValue, ItemSlotValue,
+        ItemStackValue, LootTableValue, NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue,
+        SteelArgumentValue, TemplateMirrorValue, TemplateRotationValue, TimeValue, TimelineValue,
+        WorldClockValue,
     },
     argument::{
         CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
@@ -52,6 +53,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
+use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::recipe::UntypedRecipeRef;
@@ -59,7 +61,10 @@ use steel_registry::{
     REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
+use steel_utils::{
+    DowncastType, Identifier, Rotation, nbt::NbtPath, translations, types::GameType,
+};
+use steel_worldgen::structure::StructureMirror;
 use text_components::TextComponent;
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
@@ -428,6 +433,30 @@ where
     /// Vanilla `ResourceOrIdArgument.getLootTable`.
     pub(crate) fn loot_table(&self, name: &str) -> Result<LootTableRef, CommandSyntaxError> {
         self.typed_argument::<LootTableValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getFeature`.
+    pub(crate) fn feature(
+        &self,
+        name: &str,
+    ) -> Result<ConfiguredFeatureEntryRef, CommandSyntaxError> {
+        self.typed_argument::<FeatureValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `TemplateRotationArgument.getRotation`.
+    pub(crate) fn template_rotation(&self, name: &str) -> Result<Rotation, CommandSyntaxError> {
+        self.typed_argument::<TemplateRotationValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `TemplateMirrorArgument.getMirror`.
+    pub(crate) fn template_mirror(
+        &self,
+        name: &str,
+    ) -> Result<StructureMirror, CommandSyntaxError> {
+        self.typed_argument::<TemplateMirrorValue>(name)
             .map(|value| value.0)
     }
 

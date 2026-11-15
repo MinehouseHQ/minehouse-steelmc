@@ -6,6 +6,7 @@ use crate::worldgen::template::{
 use glam::IVec3;
 use steel_registry::structure::LiquidSettingsData;
 use steel_utils::BoundingBox;
+use steel_worldgen::biomes::obfuscate_biome_seed;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 struct ConfiguredFeaturePlaceContext<'a, 'region> {
@@ -58,6 +59,18 @@ impl FeatureDecorationRunner {
             biome_zoom_seed,
         };
         placer(&mut context, kind)
+    }
+
+    /// Vanilla `ConfiguredFeature.place(level, generator, random, origin)` as
+    /// `/place feature` calls it, on a live region over the loaded world.
+    pub(crate) fn place_feature_in_world(
+        region: &mut WorldGenRegion<'_>,
+        feature: &ConfiguredFeatureRef,
+        random: &mut WorldgenRandom,
+        origin: BlockPos,
+    ) -> bool {
+        let biome_zoom_seed = obfuscate_biome_seed(region.seed());
+        Self::place_configured_feature(region, &REGISTRY, random, feature, origin, biome_zoom_seed)
     }
 
     pub(super) fn configured_feature_kind(

@@ -32,6 +32,7 @@ mod locate;
 mod loot;
 mod operator;
 mod perms;
+mod place;
 mod playsound;
 mod position;
 mod random;
@@ -126,6 +127,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(chat_commands::msg_registration())?;
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
+    builder.register(place::registration())?;
     builder.register(playsound::registration())?;
     builder.register(random::registration())?;
     builder.register(recipe::registration())?;
@@ -240,6 +242,7 @@ mod tests {
                 "w",
                 "op",
                 "perms",
+                "place",
                 "playsound",
                 "random",
                 "recipe",

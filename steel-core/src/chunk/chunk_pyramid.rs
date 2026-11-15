@@ -244,6 +244,16 @@ impl ChunkStep {
     }
 }
 
+/// The step a live `WorldGenRegion` reports: it reads the world instead of
+/// generation dependencies, so it declares none.
+pub(crate) static LIVE_STEP: ChunkStep = ChunkStep {
+    target_status: ChunkStatus::Full,
+    direct_dependencies: ChunkDependencies::EMPTY,
+    accumulated_dependencies: ChunkDependencies::EMPTY,
+    block_state_write_radius: -1,
+    task: noop_task,
+};
+
 fn noop_task(
     _context: Arc<WorldGenContext>,
     _step: &ChunkStep,

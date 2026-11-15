@@ -4,6 +4,7 @@ use super::*;
 use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::vanilla_entities;
+use steel_utils::random::worldgen_random::WorldgenRandom;
 
 fn test_registry() -> Registry {
     init_vanilla_registry();
