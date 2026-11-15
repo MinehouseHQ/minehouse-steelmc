@@ -23,7 +23,8 @@ use std::{
 
 use steel_protocol::packets::game::{CResetScore, CSetScore, NumberFormat, ObjectiveRenderType};
 use steel_utils::locks::{AsyncMutex, SyncMutex, SyncRwLock};
-use text_components::TextComponent;
+use steel_utils::translations;
+use text_components::{Modifier as _, TextComponent, interactivity::HoverEvent};
 use thiserror::Error;
 
 use crate::{
@@ -79,6 +80,22 @@ impl ScoreHolder {
     pub const fn display_name(&self) -> Option<&TextComponent> {
         self.display_name.as_ref()
     }
+
+    /// Vanilla `getFeedbackDisplayName`: the display name showing the
+    /// scoreboard name on hover, or the plain scoreboard name.
+    #[must_use]
+    pub fn feedback_display_name(&self) -> TextComponent {
+        self.display_name.as_ref().map_or_else(
+            || TextComponent::plain(self.name.clone()),
+            |display_name| {
+                display_name
+                    .clone()
+                    .hover_event(HoverEvent::show_text(TextComponent::plain(
+                        self.name.clone(),
+                    )))
+            },
+        )
+    }
 }
 
 /// Vanilla `Objective`, as a snapshot of the scoreboard's state.
@@ -115,6 +132,19 @@ impl ScoreboardObjective {
     #[must_use]
     pub const fn display_name(&self) -> &TextComponent {
         &self.display_name
+    }
+
+    /// Vanilla `getFormattedDisplayName`: the display name in square
+    /// brackets, showing the objective name on hover.
+    #[must_use]
+    pub fn formatted_display_name(&self) -> TextComponent {
+        translations::CHAT_SQUARE_BRACKETS
+            .message(
+                [self.display_name.clone().hover_event(HoverEvent::show_text(
+                    TextComponent::plain(self.name.clone()),
+                ))],
+            )
+            .component()
     }
 
     /// The render type.
@@ -617,6 +647,46 @@ impl Scoreboard {
     ) -> Result<(), ScoreboardError> {
         self.update_score(holder, objective.name(), false, |_| value)
             .map(|_| ())
+    }
+
+    /// Vanilla `ScoreAccess.get` on `getOrCreatePlayerScore`, which creates
+    /// a zero score without telling clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the objective does not exist.
+    pub fn get_or_create_score(
+        &self,
+        holder: &ScoreHolder,
+        objective: &ScoreboardObjective,
+    ) -> Result<i32, ScoreboardError> {
+        self.mutate(|state, _| {
+            if let Err(error) = state.objective(objective.name()) {
+                return (Err(error), false);
+            }
+            let scores = state.scores.entry(holder.name().to_owned()).or_default();
+            let created = !scores.contains_key(objective.name());
+            let value = scores.entry(objective.name().to_owned()).or_default().value;
+            (Ok(value), created)
+        })
+    }
+
+    /// `score.set(score.get() + amount)` on `getOrCreatePlayerScore`;
+    /// returns the new value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the objective does not exist or its criteria is
+    /// read-only.
+    pub fn add_score(
+        &self,
+        holder: &ScoreHolder,
+        objective: &ScoreboardObjective,
+        amount: i32,
+    ) -> Result<i32, ScoreboardError> {
+        self.update_score(holder, objective.name(), false, |old| {
+            old.wrapping_add(amount)
+        })
     }
 
     /// Vanilla `ScoreAccess.add` on a forced-writable score, as criteria

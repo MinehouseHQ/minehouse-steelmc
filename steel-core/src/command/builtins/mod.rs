@@ -35,6 +35,7 @@ mod return_command;
 mod ride;
 mod rotate;
 mod save;
+mod scoreboard;
 mod seed;
 mod setblock;
 mod setidletimeout;
@@ -118,6 +119,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(return_command::registration())?;
     builder.register(ride::registration())?;
     builder.register(rotate::registration())?;
+    builder.register(scoreboard::registration())?;
     builder.register(save::save_all_registration())?;
     builder.register(save::save_off_registration())?;
     builder.register(save::save_on_registration())?;
@@ -222,6 +224,7 @@ mod tests {
                 "return",
                 "ride",
                 "rotate",
+                "scoreboard",
                 "save-all",
                 "save-off",
                 "save-on",

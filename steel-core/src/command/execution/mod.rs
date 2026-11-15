@@ -11,8 +11,10 @@ mod nbt;
 mod permission;
 mod profile;
 mod queue;
+mod response_tracker;
 mod runtime;
 mod score;
+mod scoreboard_arguments;
 mod selector;
 mod source;
 mod structure;
@@ -42,12 +44,14 @@ pub(crate) use queue::{
     )
 )]
 pub(crate) use queue::{CommandSuspension, CommandSuspensionPoll, EntryAction, Frame};
+pub(crate) use response_tracker::{ElementType, ResponseTracker};
 pub(crate) use runtime::{CustomCommandExecutor, CustomModifierExecutor};
 pub(crate) use runtime::{
     SteelCommandContext, SteelCommandRuntime, SteelContextChain, SteelExecutor, SteelModifier,
     SteelSuggestionContext, argument, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
+pub(crate) use scoreboard_arguments::ScoreOperation;
 #[cfg(test)]
 pub(crate) use selector::parse_entity_selector_text;
 pub(crate) use source::{

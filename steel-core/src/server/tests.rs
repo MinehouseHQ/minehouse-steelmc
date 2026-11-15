@@ -4876,6 +4876,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 mod damage_history;
 mod game_time;
 mod projectile_owners;
+mod scoreboard_command;
 mod world_log;
 
 use steel_registry::chat_type::ChatType;
