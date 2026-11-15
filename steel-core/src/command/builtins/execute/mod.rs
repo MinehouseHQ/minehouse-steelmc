@@ -5,7 +5,8 @@ mod source;
 mod store;
 
 pub(super) use condition::{
-    ensure_region_chunks_block_ticking, loaded_block_position, loaded_block_position_in,
+    ensure_region_chunks_block_ticking, invalid_block_data_source, loaded_block_position,
+    loaded_block_position_in,
 };
 
 use steel_utils::{Identifier, translations};
@@ -61,7 +62,7 @@ fn source_scoreboard(
         })
 }
 
-fn source_command_storage(
+pub(super) fn source_command_storage(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<&CommandStorage, CommandSyntaxError> {
     let source = context.source();

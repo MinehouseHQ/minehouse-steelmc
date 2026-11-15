@@ -12,7 +12,7 @@ use super::{
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     message::MessageArgument,
-    nbt::parse_nbt_path,
+    nbt::{parse_compound_tag, parse_nbt_path, parse_nbt_tag},
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
@@ -33,6 +33,7 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
@@ -373,6 +374,16 @@ impl SteelArgumentType {
         Self::new(NbtPathParser)
     }
 
+    /// Vanilla `NbtTagArgument.nbtTag`.
+    pub(crate) fn nbt_tag() -> Self {
+        Self::new(NbtTagParser)
+    }
+
+    /// Vanilla `CompoundTagArgument.compoundTag`.
+    pub(crate) fn compound_tag() -> Self {
+        Self::new(CompoundTagParser)
+    }
+
     /// Vanilla `IdentifierArgument.id`.
     pub(crate) fn identifier() -> Self {
         Self::new(IdentifierParser)
@@ -586,6 +597,11 @@ argument_value_wrapper!(
     "steel:command/value/component"
 );
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
+argument_value_wrapper!(NbtTagValue(NbtTag), "steel:command/value/nbt_tag");
+argument_value_wrapper!(
+    CompoundTagValue(NbtCompound),
+    "steel:command/value/compound_tag"
+);
 argument_value_wrapper!(
     IdentifierValue(Identifier),
     "steel:command/value/identifier"
@@ -1281,6 +1297,26 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::NbtPath, None)
+);
+unit_argument_parser!(
+    NbtTagParser,
+    "steel:command/parser/nbt_tag",
+    NbtTagValue,
+    parse | reader,
+    _source | { parse_nbt_tag(reader).map(NbtTagValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::NbtTag, None)
+);
+unit_argument_parser!(
+    CompoundTagParser,
+    "steel:command/parser/compound_tag",
+    CompoundTagValue,
+    parse | reader,
+    _source | { parse_compound_tag(reader).map(CompoundTagValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Nbt, None)
 );
 unit_argument_parser!(
     IdentifierParser,

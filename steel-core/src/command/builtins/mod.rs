@@ -6,6 +6,7 @@ mod chat_commands;
 mod clear;
 mod clone;
 mod damage;
+mod data;
 mod defaultgamemode;
 mod difficulty;
 mod domain;
@@ -86,6 +87,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(bossbar::registration())?;
     builder.register(clear::registration())?;
     builder.register(clone::registration())?;
+    builder.register(data::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
     builder.register(defaultgamemode::registration())?;
@@ -185,6 +187,7 @@ mod tests {
                 "bossbar",
                 "clear",
                 "clone",
+                "data",
                 "deop",
                 "damage",
                 "defaultgamemode",

@@ -11,7 +11,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 pub use codec::NbtNumeric;
 pub use json::json_to_nbt;
 pub use path::{
-    NbtPath, NbtPathError, NbtPathErrorKind, NbtPathMutationError, parse_nbt_path,
+    NbtPath, NbtPathError, NbtPathErrorKind, NbtPathMutationError, is_too_deep, parse_nbt_path,
     parse_nbt_path_argument,
 };
 pub use snbt::{
