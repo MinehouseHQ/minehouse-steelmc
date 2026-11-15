@@ -22,6 +22,7 @@ pub(crate) enum LoginPhase {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConfigurationPhase {
     SynchronizeRegistries,
+    ResourcePack,
     JoinWorld,
 }
 
@@ -49,6 +50,9 @@ impl Display for PrePlayPhase {
             Self::Configuration(ConfigurationPhase::SynchronizeRegistries) => {
                 formatter.write_str("known-pack negotiation")
             }
+            Self::Configuration(ConfigurationPhase::ResourcePack) => {
+                formatter.write_str("resource pack negotiation")
+            }
             Self::Configuration(ConfigurationPhase::JoinWorld) => {
                 formatter.write_str("configuration finish")
             }
@@ -65,6 +69,7 @@ pub(crate) enum PrePlayPacket {
     CustomQueryAnswer,
     LoginAcknowledged,
     SelectKnownPacks,
+    ResourcePack,
     FinishConfiguration,
 }
 
@@ -77,6 +82,7 @@ impl Display for PrePlayPacket {
             Self::CustomQueryAnswer => formatter.write_str("custom query answer"),
             Self::LoginAcknowledged => formatter.write_str("login acknowledgement"),
             Self::SelectKnownPacks => formatter.write_str("known-pack selection"),
+            Self::ResourcePack => formatter.write_str("resource pack answer"),
             Self::FinishConfiguration => formatter.write_str("configuration acknowledgement"),
         }
     }
@@ -190,6 +196,13 @@ impl PrePlayState {
                 )
                 | (
                     State::Configuration {
+                        phase: ConfigurationPhase::ResourcePack,
+                        ..
+                    },
+                    PrePlayPacket::ResourcePack
+                )
+                | (
+                    State::Configuration {
                         phase: ConfigurationPhase::JoinWorld,
                         ..
                     },
@@ -284,10 +297,29 @@ impl PrePlayState {
         }
     }
 
-    pub(crate) fn select_known_packs(&mut self) -> Result<(), PacketSequenceError> {
+    /// Ends the registry task. With `resource_pack` the client next has to answer the
+    /// offered pack; otherwise it may finish the configuration.
+    pub(crate) fn select_known_packs(
+        &mut self,
+        resource_pack: bool,
+    ) -> Result<(), PacketSequenceError> {
         self.expect(PrePlayPacket::SelectKnownPacks)?;
         let State::Configuration { phase, .. } = &mut self.state else {
             return Err(self.unexpected(PrePlayPacket::SelectKnownPacks));
+        };
+        *phase = if resource_pack {
+            ConfigurationPhase::ResourcePack
+        } else {
+            ConfigurationPhase::JoinWorld
+        };
+        Ok(())
+    }
+
+    /// Ends the resource pack task: the client gave its last word about the pack.
+    pub(crate) fn resource_pack_answered(&mut self) -> Result<(), PacketSequenceError> {
+        self.expect(PrePlayPacket::ResourcePack)?;
+        let State::Configuration { phase, .. } = &mut self.state else {
+            return Err(self.unexpected(PrePlayPacket::ResourcePack));
         };
         *phase = ConfigurationPhase::JoinWorld;
         Ok(())
@@ -386,7 +418,7 @@ mod tests {
             .acknowledge_login()
             .expect("client should acknowledge login");
         state
-            .select_known_packs()
+            .select_known_packs(false)
             .expect("client should select known packs");
         let accepted = state
             .finish_configuration()
@@ -408,7 +440,7 @@ mod tests {
             .acknowledge_login()
             .expect("client should acknowledge login");
         state
-            .select_known_packs()
+            .select_known_packs(false)
             .expect("client should select known packs");
         let accepted = state
             .finish_configuration()
@@ -453,6 +485,55 @@ mod tests {
     }
 
     #[test]
+    fn an_offered_resource_pack_is_answered_before_the_configuration_finishes() {
+        let mut state = login_state();
+        state
+            .complete_login(profile(offline_uuid("Steve"), "Steve"))
+            .expect("offline profile should complete login");
+        state
+            .acknowledge_login()
+            .expect("client should acknowledge login");
+        assert!(state.resource_pack_answered().is_err());
+
+        state
+            .select_known_packs(true)
+            .expect("client should select known packs");
+        assert_eq!(
+            state.phase(),
+            PrePlayPhase::Configuration(ConfigurationPhase::ResourcePack)
+        );
+        assert!(state.finish_configuration().is_err());
+
+        state
+            .resource_pack_answered()
+            .expect("client should answer the pack");
+        assert!(state.resource_pack_answered().is_err());
+        state
+            .finish_configuration()
+            .expect("client should finish configuration");
+    }
+
+    #[test]
+    fn a_pack_answer_is_unexpected_when_no_pack_was_offered() {
+        let mut state = login_state();
+        state
+            .complete_login(profile(offline_uuid("Steve"), "Steve"))
+            .expect("offline profile should complete login");
+        state
+            .acknowledge_login()
+            .expect("client should acknowledge login");
+        state
+            .select_known_packs(false)
+            .expect("client should select known packs");
+
+        assert!(state.resource_pack_answered().is_err());
+        assert_eq!(
+            state.phase(),
+            PrePlayPhase::Configuration(ConfigurationPhase::JoinWorld)
+        );
+    }
+
+    #[test]
     fn repeated_packets_do_not_advance_the_sequence() {
         let mut state = login_state();
         state
@@ -486,9 +567,9 @@ mod tests {
         );
 
         state
-            .select_known_packs()
+            .select_known_packs(false)
             .expect("client should select known packs");
-        assert!(state.select_known_packs().is_err());
+        assert!(state.select_known_packs(false).is_err());
         assert_eq!(
             state.phase(),
             PrePlayPhase::Configuration(ConfigurationPhase::JoinWorld)

@@ -87,6 +87,18 @@ url = "https://discord.com/channels/1428487339759370322/1428487584966774795"
 label = { text = "Visit the SteelMC Discord", color = "blue", bold = true }
 url = "https://discord.gg/suSXXNdVSf"
 
+# Resource pack offered to every client, as resource-pack* in vanilla server.properties
+# [server.resource_pack]
+# url = "https://example.com/pack.zip"
+# SHA-1 of the pack, 40 hex digits; without it clients refetch only when the url changes
+# sha1 = ""
+# Disconnect clients that decline the pack
+# required = false
+# Shown on the client's prompt: a string or a TextComponent object
+# prompt = "This server uses its own textures"
+# Names the pack to the client; derived from the url when unset
+# id = "00000000-0000-0000-0000-000000000000"
+
 # Logging configuration
 [log]
 # Path where store the log files and history

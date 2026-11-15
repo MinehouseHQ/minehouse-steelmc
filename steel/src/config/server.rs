@@ -6,7 +6,7 @@ use steel_core::{
     chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE,
     config::{
         CompressionInfo, DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES, DEFAULT_SPAM_THRESHOLD_SECONDS,
-        RuntimeConfig, ServerLinks, validate_login_security,
+        ResourcePack, RuntimeConfig, ServerLinks, validate_login_security,
     },
 };
 
@@ -82,6 +82,8 @@ pub struct ServerConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// The resource pack offered to every client.
+    pub resource_pack: Option<ResourcePack>,
     /// Thread counts for server thread pools.
     #[serde(default)]
     pub threads: ThreadConfig,
@@ -115,6 +117,7 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
+            resource_pack: self.resource_pack,
             packet_workers: self.threads.packet_workers,
             chunk_generation_threads: self.threads.chunk_generation,
             chunk_encoding_threads: self.threads.chunk_encoding,
@@ -201,6 +204,11 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         && !(1..=MAX_SUPPORTED_VIEW_DISTANCE).contains(&config.view_distance)
     {
         return Err("View distance must in range 1..128");
+    }
+    if let Some(pack) = &config.resource_pack
+        && !pack.sha1_is_valid()
+    {
+        return Err("resource_pack.sha1 must be 40 hex digits");
     }
     if let Some(auth_server) = &config.auth_server {
         let Ok(url) = Url::parse(auth_server) else {
