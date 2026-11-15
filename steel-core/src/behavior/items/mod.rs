@@ -98,7 +98,7 @@ pub use map_item::{
     render_biome_preview_map,
 };
 pub use minecart::MinecartItem;
-pub use name_tag::NameTagItem;
+pub use name_tag::{NameTagItem, NameTagObserver, set_name_tag_observer};
 pub use place_on_water_block_item::PlaceOnWaterBlockItem;
 pub use player_head::PlayerHeadItem;
 pub use potion::PotionItem;

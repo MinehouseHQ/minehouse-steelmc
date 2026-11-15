@@ -421,6 +421,13 @@ station or the track changed. A line is the track the rail graph knows between t
 stations, through the forks on the way (the Fabric mod draws the trips its trains
 recorded).
 
+Silent name tags (`content/silent_tags.rs`, the Fabric `SilentTags`): a name tag whose name
+has one of the words «тихо», «тихий», «тихая», `silent`, `shh`, «шшш» as a whole word
+("Бобик [тихо]") makes the mob silent with the vanilla Silent flag; any other tag gives its
+voice back. Only what a tag did is undone (the entity tag `minehouse_silenced`). `steel-core`
+has `NameTagObserver` (`behavior/items/name_tag.rs`) for this. The words are fixed here; the
+Fabric mod reads them from its config.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

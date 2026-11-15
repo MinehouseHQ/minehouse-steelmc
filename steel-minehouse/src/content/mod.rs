@@ -18,6 +18,7 @@ mod papirosa;
 mod rail_graph;
 mod recipes;
 mod ride;
+mod silent_tags;
 mod speed;
 mod station_menu;
 mod stations;
@@ -28,7 +29,10 @@ use std::{str::FromStr as _, sync::LazyLock};
 
 use simdnbt::owned::NbtCompound;
 use steel_core::{
-    behavior::{ItemBehavior, extend_block_behaviors, set_item_behavior_override},
+    behavior::{
+        ItemBehavior, extend_block_behaviors, items::set_name_tag_observer,
+        set_item_behavior_override,
+    },
     command::{CommandRegistrationError, CommandRegistry},
     entity::entities::objects::vehicles::set_minecart_observer,
     player::input_observer::set_player_input_observer,
@@ -381,6 +385,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_name_tag_observer(&silent_tags::SILENT_TAGS) {
+        log::warn!("MineHouse: name tags are already observed, silent name tags are off");
+    }
 }
 
 #[cfg(test)]
