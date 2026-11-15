@@ -95,11 +95,11 @@ impl Entry {
         }
     }
 
-    /// Items `player` gets on next join.
+    /// Items `player` gets on next join, as [`encode`] gives them.
     #[must_use]
-    pub fn owed(player: Uuid, items: &[ItemStack]) -> Self {
+    pub fn owed(player: Uuid, items: Vec<String>) -> Self {
         Self {
-            items: items.iter().filter_map(encode).collect(),
+            items,
             ..Self::new(OWED, player)
         }
     }
@@ -315,12 +315,13 @@ mod tests {
         fs::remove_file(&file).ok();
         let (owner, other) = (Uuid::from_u128(1), Uuid::from_u128(2));
         let journal = Journal::empty(file.clone());
+        let items = [
+            ItemStack::with_count(&vanilla_items::DIAMOND, 5),
+            ItemStack::empty(),
+        ];
         journal.add(Entry::owed(
             owner,
-            &[
-                ItemStack::with_count(&vanilla_items::DIAMOND, 5),
-                ItemStack::empty(),
-            ],
+            items.iter().filter_map(encode).collect(),
         ));
         journal.add(Entry {
             items: vec!["not hex".to_owned()],

@@ -261,7 +261,7 @@ The Fabric `MineHouse Bank`, piece by piece. One diamond ore (plain or deepslate
 money lives on the site: every operation is a signed `POST /api/mc/bank/<action>` (the contract is
 in minehouse-landing `bank-mod/README.md`), the server only moves ores in and out of inventories.
 
-What is here so far is the base the ATM, the cards, the terminals and the spawn zones stand on:
+The base the ATM, the cards, the terminals and the spawn zones stand on:
 
 - **Calls to the site** never block the tick: the answer comes back on a later tick. A call that
   fails (no secret, timeout, HTTP error) answers `{ok: false, error: "offline"}`.
@@ -271,7 +271,33 @@ What is here so far is the base the ATM, the cards, the terminals and the spawn 
 - **On join** a player gets the items the bank owes them (`owed`), the ores of withdrawals that
   were paid but not handed out (`pending`, then `delivered`), and one line about what their
   terminals sold while they were away (`sales`). On leave the sales are marked seen.
-- **Every 30 seconds** and on start, a `delivered` the site has not heard yet is sent again.
+- **Every 30 seconds** and on start, a `delivered` the site has not heard yet is sent again, and
+  so is a `deposit` whose answer was lost.
+
+**The ATM** (`minehouse-bank:atm`, given by admins) is a block of ours: the client sees a barrier
+with an item display in it that carries the model, turned to face the player who placed it. The
+display is put back on use if it is missing and removed with the block. A right click asks the
+site for the account and opens a chest window:
+
+- Without an account the window has one button, «Открыть счёт». It opens the personal account
+  and hands out the card.
+- With an account: the balance, five slots that take diamond ores and «Внести», «Снять АР» with
+  an amount picker (up to `max_withdraw` and the balance), «Выдать карту», «Перевыпустить»,
+  «Открыть ещё счёт» (the name is typed in an anvil window) and «Сменить счёт» when the player
+  has more than one.
+- A deposit takes the ores first and writes them to the journal as `deposit`; a refusal gives
+  them back (or owes them if the player has left), no answer keeps them for the retry. Ores left
+  in the slots when the window closes go back to the player.
+- A withdrawal hands the ores out when the site has charged the account; if the player has left
+  by then, they get them on the next join.
+- The window closes when the player walks further than `use_distance` or the block is gone.
+
+**The card** (`minehouse-bank:card`) is paper with the card id, its number and the owner in
+`custom_data` (`minehouse_bank_card`). An ATM opened with a card in the hand opens that card's
+account.
+
+Not here yet: the terminals (so the ATM has no «Купить терминал» button), transfers, the banker
+and the spawn zones.
 
 `config/minehouse/bank.toml`:
 
@@ -288,7 +314,8 @@ What is here so far is the base the ATM, the cards, the terminals and the spawn 
 Differences from the Fabric mod: the journal is in the data directory instead of the world
 folder, and its items are hex of their NBT, not SNBT, so a Fabric journal with items in it is not
 read. Move a server with an empty journal. An entry whose items can't be read stays in the file
-and is logged instead of being dropped.
+and is logged instead of being dropped. Cards and ATMs of the Fabric server are not carried over:
+the ATM there had no display entity, the card was a registry item.
 
 ## Our items
 

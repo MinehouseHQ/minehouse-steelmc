@@ -27,6 +27,8 @@ use steel_registry::{
 };
 use steel_utils::{BlockStateId, Identifier};
 
+use crate::bank::atm_block::{self, ATM_BLOCK};
+
 use super::{
     CustomItem, LEAF_BLOCK as LEAF_BLOCK_ITEM,
     cauldron::{self, BROTH_CAULDRON, MILK_CAULDRON},
@@ -143,7 +145,7 @@ pub(super) fn show_block(
 
 /// Has clients see every state of `block` as the vanilla state `shown` gives for it, and
 /// its break as what `broken` gives: for a block that needs no state of the pack.
-pub(super) fn show_as(
+pub(crate) fn show_as(
     blocks: &mut BlockRegistry,
     block: &'static Block,
     shown: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
@@ -188,7 +190,7 @@ impl BlockBehavior for OwnBlock {
 }
 
 /// An item of ours that places a block of ours, the way a vanilla block item does.
-pub(super) struct PlacesBlock(pub &'static Block);
+pub(crate) struct PlacesBlock(pub &'static Block);
 
 impl ItemBehavior for PlacesBlock {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
@@ -243,6 +245,8 @@ pub(super) fn register(registry: &mut Registry) {
     blocks.register(&WILD_BLOCK);
     blocks.register(&MILK_CAULDRON);
     blocks.register(&BROTH_CAULDRON);
+    blocks.register(&ATM_BLOCK);
+    atm_block::show_to_clients(blocks);
     cauldron::show_to_clients(blocks);
     herbs::show_to_clients(blocks);
     tag(blocks, "mineable/pickaxe", PICKAXE);
@@ -265,6 +269,7 @@ pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     behaviors.set_behavior(&WILD_BLOCK, Box::new(herbs::WildHerb));
     behaviors.set_behavior(&MILK_CAULDRON, Box::new(cauldron::MilkCauldron));
     behaviors.set_behavior(&BROTH_CAULDRON, Box::new(cauldron::BrothCauldron));
+    behaviors.set_behavior(&ATM_BLOCK, Box::new(atm_block::Atm));
 }
 
 #[cfg(test)]
