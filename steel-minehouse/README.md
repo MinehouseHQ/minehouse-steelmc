@@ -318,6 +318,11 @@ for a block of ours. `pack/client_blocks.json` says which state is whose. The se
 `build_pack.py` both read it: the script writes `blockstates/note_block.json` from it, and
 a test checks that the file lists the note block properties of the game.
 
+Plants borrow sugar cane states the same way: a sugar cane has no collision, is drawn with
+cutouts and looks alike at each of its 16 ages, so a real one goes out at age 0 and the
+other 15 are free. A carrier in `pack/client_blocks.json` is such a vanilla block; another
+shape of block gets another carrier, added to the file and to `blocks::carriers`.
+
 To add a full block: define the `Block` and its behavior in `src/content/`, register both
 in `content/blocks.rs`, and give it a state in `pack/client_blocks.json`. A block whose own
 states look different takes a note block state for each: the entry names the state of ours
@@ -334,8 +339,14 @@ items that behave differently.
 The blocks so far, each with its recipe: the cloud («Облачко»), the metro station («Станция
 метро»), the metro junction («Стрелка метро») and the block of magic leaves («Блок магических
 листьев», nine magic leaves and back). The two metro blocks are only blocks for now: naming
-a station, its line and the trains are not ported yet. Nor is the magic herb the leaves
-come from.
+a station, its line and the trains are not ported yet.
+
+The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
+(«Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
+stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
+is a `steel_core` `CropLike`, so light, farmland, trampling and bone meal are the vanilla
+ones. The wild plant is not generated in the world yet, and the cauldron brew, the broth
+and the papirosa are not ported.
 
 To a recipe an item of ours is not the vanilla item it is made of: `content::recipe_id`
 tells them apart (`steel_registry::recipe::set_extension_item_id`), so vanilla ingredients

@@ -1,297 +1,374 @@
 {
-  "note_block_properties": {
-    "instrument": [
-      "harp",
-      "basedrum",
-      "snare",
-      "hat",
-      "bass",
-      "flute",
-      "bell",
-      "guitar",
-      "chime",
-      "xylophone",
-      "iron_xylophone",
-      "cow_bell",
-      "didgeridoo",
-      "bit",
-      "banjo",
-      "pling",
-      "trumpet",
-      "trumpet_exposed",
-      "trumpet_oxidized",
-      "trumpet_weathered",
-      "zombie",
-      "skeleton",
-      "creeper",
-      "dragon",
-      "wither_skeleton",
-      "piglin",
-      "custom_head"
-    ],
-    "note": [
-      "0",
-      "1",
-      "2",
-      "3",
-      "4",
-      "5",
-      "6",
-      "7",
-      "8",
-      "9",
-      "10",
-      "11",
-      "12",
-      "13",
-      "14",
-      "15",
-      "16",
-      "17",
-      "18",
-      "19",
-      "20",
-      "21",
-      "22",
-      "23",
-      "24"
-    ],
-    "powered": [
-      "true",
-      "false"
-    ]
-  },
-  "note_block": [
-    {
-      "block": "minehouse-tweaks:cloud",
-      "state": {
-        "instrument": "banjo",
-        "note": "0",
-        "powered": "false"
+  "carriers": {
+    "note_block": {
+      "vanilla_model": "minecraft:block/note_block",
+      "properties": {
+        "instrument": [
+          "harp",
+          "basedrum",
+          "snare",
+          "hat",
+          "bass",
+          "flute",
+          "bell",
+          "guitar",
+          "chime",
+          "xylophone",
+          "iron_xylophone",
+          "cow_bell",
+          "didgeridoo",
+          "bit",
+          "banjo",
+          "pling",
+          "trumpet",
+          "trumpet_exposed",
+          "trumpet_oxidized",
+          "trumpet_weathered",
+          "zombie",
+          "skeleton",
+          "creeper",
+          "dragon",
+          "wither_skeleton",
+          "piglin",
+          "custom_head"
+        ],
+        "note": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24"
+        ],
+        "powered": [
+          "true",
+          "false"
+        ]
       },
-      "model": "minehouse-tweaks:block/cloud"
+      "slots": [
+        {
+          "block": "minehouse-tweaks:cloud",
+          "state": {
+            "instrument": "banjo",
+            "note": "0",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/cloud"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "0"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "1",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_none"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "1"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "2",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_white"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "2"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "3",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_orange"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "3"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "4",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_magenta"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "4"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "5",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_light_blue"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "5"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "6",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_yellow"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "6"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "7",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_lime"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "7"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "8",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_pink"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "8"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "9",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_gray"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "9"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "10",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_light_gray"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "10"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "11",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_cyan"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "11"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "12",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_purple"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "12"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "13",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_blue"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "13"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "14",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_brown"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "14"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "15",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_green"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "15"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "16",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_red"
+        },
+        {
+          "block": "minehouse-tweaks:metro_station",
+          "when": {
+            "line": "16"
+          },
+          "state": {
+            "instrument": "banjo",
+            "note": "17",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_station_black"
+        },
+        {
+          "block": "minehouse-tweaks:metro_junction",
+          "state": {
+            "instrument": "banjo",
+            "note": "18",
+            "powered": "false"
+          },
+          "model": "minehouse-tweaks:block/metro_junction"
+        },
+        {
+          "block": "minehouse-herbs:magic_leaf_block",
+          "state": {
+            "instrument": "banjo",
+            "note": "19",
+            "powered": "false"
+          },
+          "model": "minehouse-herbs:block/magic_leaf_block"
+        }
+      ]
     },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "0"
+    "sugar_cane": {
+      "vanilla_model": "minecraft:block/sugar_cane",
+      "properties": {
+        "age": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
       },
-      "state": {
-        "instrument": "banjo",
-        "note": "1",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_none"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "1"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "2",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_white"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "2"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "3",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_orange"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "3"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "4",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_magenta"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "4"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "5",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_light_blue"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "5"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "6",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_yellow"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "6"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "7",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_lime"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "7"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "8",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_pink"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "8"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "9",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_gray"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "9"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "10",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_light_gray"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "10"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "11",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_cyan"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "11"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "12",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_purple"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "12"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "13",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_blue"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "13"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "14",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_brown"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "14"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "15",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_green"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "15"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "16",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_red"
-    },
-    {
-      "block": "minehouse-tweaks:metro_station",
-      "when": {
-        "line": "16"
-      },
-      "state": {
-        "instrument": "banjo",
-        "note": "17",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_station_black"
-    },
-    {
-      "block": "minehouse-tweaks:metro_junction",
-      "state": {
-        "instrument": "banjo",
-        "note": "18",
-        "powered": "false"
-      },
-      "model": "minehouse-tweaks:block/metro_junction"
-    },
-    {
-      "block": "minehouse-herbs:magic_leaf_block",
-      "state": {
-        "instrument": "banjo",
-        "note": "19",
-        "powered": "false"
-      },
-      "model": "minehouse-herbs:block/magic_leaf_block"
+      "slots": [
+        {
+          "block": "minehouse-herbs:magic_herb",
+          "when": {
+            "age": "0"
+          },
+          "state": {
+            "age": "1"
+          },
+          "model": "minehouse-herbs:block/magic_herb_stage0"
+        },
+        {
+          "block": "minehouse-herbs:magic_herb",
+          "when": {
+            "age": "1"
+          },
+          "state": {
+            "age": "2"
+          },
+          "model": "minehouse-herbs:block/magic_herb_stage1"
+        },
+        {
+          "block": "minehouse-herbs:magic_herb",
+          "when": {
+            "age": "2"
+          },
+          "state": {
+            "age": "3"
+          },
+          "model": "minehouse-herbs:block/magic_herb_stage2"
+        },
+        {
+          "block": "minehouse-herbs:magic_herb",
+          "when": {
+            "age": "3"
+          },
+          "state": {
+            "age": "4"
+          },
+          "model": "minehouse-herbs:block/magic_herb_stage3"
+        },
+        {
+          "block": "minehouse-herbs:wild_magic_herb",
+          "state": {
+            "age": "5"
+          },
+          "model": "minehouse-herbs:block/wild_magic_herb"
+        }
+      ]
     }
-  ]
+  }
 }
