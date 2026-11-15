@@ -1,7 +1,8 @@
 //! Riding the metro: a cart that reaches a rail on a station block stops there, and a cart
 //! sent to a station goes there without stopping, with the junctions on the way switched
-//! for it. A port of the Fabric `Stations` and `Routes` for a cart on its own: trains of
-//! coupled carts are not ported yet.
+//! for it. A port of the Fabric `Stations` and `Routes`. A train of coupled carts (see
+//! [`trains`](super::trains)) rides as one: its front cart notices the stations, and what
+//! the metro remembers of the train is kept with that cart.
 //!
 //! A cart stopped at a station is docked there: it is pulled to the middle of the station
 //! rail and pushes do nothing, until it is sent on: `/metro <station>`, the countdown of a
@@ -13,11 +14,12 @@ use std::sync::Arc;
 use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_core::{
+    behavior::InteractionResult,
     command::{
         CommandArgument, CommandContext, CommandError, CommandNode, CommandRegistration,
         CommandRegistrationError, CommandRegistry, argument, literal,
     },
-    entity::{Entity, entities::objects::vehicles::MinecartObserver},
+    entity::{Entity, RemovalReason, entities::objects::vehicles::MinecartObserver},
     player::Player,
     world::World,
 };
@@ -33,7 +35,9 @@ use steel_registry::{
     vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, Direction, Identifier, locks::SyncMutex, types::UpdateFlags,
+    BlockPos, BlockStateId, Direction, Identifier,
+    locks::SyncMutex,
+    types::{InteractionHand, UpdateFlags},
 };
 use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
@@ -42,6 +46,7 @@ use super::{
     metro,
     rail_graph::{self, Nav, Plan},
     stations,
+    trains::{self, Decision, Moved},
 };
 use crate::moderation::format::render;
 
@@ -112,6 +117,8 @@ struct Cart {
     last_station: Option<BlockPos>,
     /// The station rail it is docked at.
     dock: Option<BlockPos>,
+    /// The cart of its train that is pulled to the middle of that rail.
+    dock_anchor: Option<Uuid>,
     /// Whether its rider let go of forward since it docked.
     dock_armed: bool,
     route: Option<Route>,
@@ -128,17 +135,39 @@ pub static RIDE: Ride = Ride;
 
 impl MinecartObserver for Ride {
     fn before_tick(&self, cart: &dyn Entity, world: &Arc<World>) {
-        let mut carts = CARTS.lock();
-        let state = carts
-            .get_or_insert_default()
-            .entry(cart.uuid())
-            .or_default();
-        state.seen = world.game_time();
-        state.start = Some(cart.position());
-        before_move(state, cart, world);
+        let driver = match trains::decide(cart, world) {
+            Decision::Lone => None,
+            Decision::Decided => return,
+            Decision::Train(driver) => Some(driver),
+        };
+        let cart = driver.as_deref().unwrap_or(cart);
+        {
+            let mut carts = CARTS.lock();
+            let state = carts
+                .get_or_insert_default()
+                .entry(cart.uuid())
+                .or_default();
+            state.seen = world.game_time();
+            state.start = Some(cart.position());
+            before_move(state, cart, world);
+        }
+        if driver.is_some()
+            && let Some(turned) = trains::settle(cart, world)
+        {
+            hand_over(cart.uuid(), &*turned);
+        }
     }
 
     fn ticked(&self, cart: &dyn Entity, world: &Arc<World>, rail: Option<BlockPos>) {
+        match trains::moved(cart, world) {
+            Moved::Lone | Moved::Driver => {}
+            // A cart in the back of a train: the front one notices the stations.
+            Moved::Follower => return,
+            Moved::Turned(driver) => {
+                hand_over(cart.uuid(), &*driver);
+                return;
+            }
+        }
         let now = world.game_time();
         let mut carts = CARTS.lock();
         let carts = carts.get_or_insert_default();
@@ -151,6 +180,44 @@ impl MinecartObserver for Ride {
             carts.retain(|_, state| (now - state.seen).abs() < FORGET_AFTER);
         }
     }
+
+    fn interact(
+        &self,
+        cart: &dyn Entity,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> Option<InteractionResult> {
+        trains::interact(cart, player, hand)
+    }
+
+    fn passes_through(&self, cart: &dyn Entity, other: &dyn Entity) -> bool {
+        trains::passes_through(cart, other)
+    }
+
+    fn follows(&self, cart: &dyn Entity) -> bool {
+        trains::follows(cart)
+    }
+
+    fn rolls_freely(&self, cart: &dyn Entity) -> bool {
+        trains::is_linked(cart)
+    }
+
+    fn removed(&self, cart: &dyn Entity, reason: RemovalReason) {
+        trains::removed(cart, reason);
+    }
+}
+
+/// A train turned around: what the metro remembers of it goes to the cart that drives it
+/// now. That cart is on another rail, so its place on the track is found again.
+fn hand_over(from: Uuid, driver: &dyn Entity) {
+    let mut carts = CARTS.lock();
+    let carts = carts.get_or_insert_default();
+    let Some(mut state) = carts.remove(&from) else {
+        return;
+    };
+    state.nav.reset();
+    state.start = Some(driver.position());
+    carts.insert(driver.uuid(), state);
 }
 
 const fn horizontal(vector: DVec3) -> DVec3 {
@@ -173,12 +240,18 @@ fn set_horizontal(cart: &dyn Entity, speed: DVec3) {
     cart.set_velocity(DVec3::new(speed.x, cart.velocity().y, speed.z));
 }
 
-/// Runs `action` for every player riding the cart.
+/// Runs `action` for every player riding the cart or another cart of its train.
 fn riders(cart: &dyn Entity, mut action: impl FnMut(&Player)) {
-    for passenger in cart.passengers() {
-        if let Some(player) = passenger.as_player() {
-            action(player);
+    let mut aboard = |cart: &dyn Entity| {
+        for passenger in cart.passengers() {
+            if let Some(player) = passenger.as_player() {
+                action(player);
+            }
         }
+    };
+    aboard(cart);
+    for other in trains::others(cart) {
+        aboard(&*other);
     }
 }
 
@@ -265,11 +338,18 @@ fn before_move(state: &mut Cart, cart: &dyn Entity, world: &Arc<World>) {
         }
     }
     if let Some(rail) = state.dock {
-        if still_docked(state, cart, world, rail) {
-            set_horizontal(cart, pull(cart, rail));
+        let anchor = state
+            .dock_anchor
+            .filter(|&anchor| anchor != cart.uuid())
+            .and_then(|anchor| world.get_entity_by_uuid(&anchor));
+        let drives = anchor.is_none();
+        let anchor = anchor.as_deref().unwrap_or(cart);
+        if still_docked(state, cart, anchor, world, rail) {
+            set_horizontal(cart, pull(anchor, rail, drives));
             return;
         }
         state.dock = None;
+        state.dock_anchor = None;
     }
     if state.hold.is_some() {
         set_horizontal(cart, DVec3::ZERO);
@@ -279,11 +359,17 @@ fn before_move(state: &mut Cart, cart: &dyn Entity, world: &Arc<World>) {
 /// Whether the dock of the cart is still there. A rider pressing forward after the cart
 /// stopped sends it on by hand, the way a line not known yet gets explored; holding it
 /// from before does not.
-fn still_docked(state: &mut Cart, cart: &dyn Entity, world: &World, rail: BlockPos) -> bool {
+fn still_docked(
+    state: &mut Cart,
+    cart: &dyn Entity,
+    anchor: &dyn Entity,
+    world: &World,
+    rail: BlockPos,
+) -> bool {
     let there = state.route.is_none()
         && is_rail(world.get_block_state(rail))
         && rail_graph::is_station(world, rail)
-        && horizontal(bottom_center(rail) - cart.position()).length() < DOCK_RANGE;
+        && horizontal(bottom_center(rail) - anchor.position()).length() < DOCK_RANGE;
     if !there {
         return false;
     }
@@ -297,14 +383,15 @@ fn still_docked(state: &mut Cart, cart: &dyn Entity, world: &World, rail: BlockP
     !(forward && state.dock_armed)
 }
 
-/// Towards the middle of the station rail, slowing down near it. Close to it the cart is
-/// put right there: a powered rail would rock it back and forth.
-fn pull(cart: &dyn Entity, rail: BlockPos) -> DVec3 {
+/// Towards the middle of the station rail, slowing down near it. Close to it a cart that
+/// moves by itself (`drives`) is put right there: a powered rail would rock it back and
+/// forth.
+fn pull(cart: &dyn Entity, rail: BlockPos, drives: bool) -> DVec3 {
     let position = cart.position();
     let to = horizontal(bottom_center(rail) - position);
     let distance = to.length();
     if distance < DOCK_SNAP {
-        if distance > 1.0e-3 {
+        if drives && distance > 1.0e-3 {
             let middle = bottom_center(rail);
             drop(cart.teleport_to(DVec3::new(middle.x, position.y, middle.z)));
         }
@@ -315,6 +402,7 @@ fn pull(cart: &dyn Entity, rail: BlockPos) -> DVec3 {
 
 fn dock(state: &mut Cart, cart: &dyn Entity, rail: BlockPos) {
     state.dock = Some(rail);
+    state.dock_anchor = Some(cart.uuid());
     state.dock_armed = false;
     state.last_station = Some(rail.below());
     set_horizontal(cart, DVec3::ZERO);
@@ -581,6 +669,7 @@ fn depart(cart: &dyn Entity, world: &Arc<World>, from: BlockPos, destination: Bl
     state.route = Some(Route::new(plan));
     // Let go of the station first, or the speed would be taken for a push and ignored.
     state.dock = None;
+    state.dock_anchor = None;
     state.hold = None;
     state.last_station = Some(from.below());
     set_horizontal(
@@ -627,15 +716,23 @@ fn standing(context: CommandContext<'_>) -> Result<Standing, CommandError> {
     let cart = player
         .vehicle()
         .ok_or_else(|| error("Сядь в вагонетку на станции метро."))?;
+    // In a train the cart in front is the one that stands at the station.
+    let cart = trains::driver_of(&*cart).unwrap_or(cart);
     let world = cart
         .level()
         .ok_or_else(|| error("Вагонетка не в мире."))?
         .into_arc();
+    let docked = CARTS
+        .lock()
+        .as_ref()
+        .and_then(|carts| carts.get(&cart.uuid()))
+        .and_then(|state| state.dock);
     let position = cart.position();
     let mut rail = BlockPos::containing(position.x, position.y, position.z);
     if is_rail(world.get_block_state(rail.below())) {
         rail = rail.below();
     }
+    let rail = docked.unwrap_or(rail);
     if !is_rail(world.get_block_state(rail)) || !rail_graph::is_station(&world, rail) {
         return Err(error("Вагонетка должна стоять на станции метро."));
     }

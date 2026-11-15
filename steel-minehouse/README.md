@@ -354,7 +354,7 @@ between two nodes it drives, both ways, through the `MinecartObserver` hook of `
 kept in `metro-rail-graph.json` of the data directory and written at most every five
 seconds; breaking a station or junction block forgets the runs through its rail.
 
-`content/ride.rs` is riding (the Fabric `Stations` and `Routes`, for a cart on its own). A
+`content/ride.rs` is riding (the Fabric `Stations` and `Routes`). A
 cart that reaches a station rail stops there, with the bell and the name of the station as
 a title for its rider. Where the network knows another station from there, the cart is
 docked: pulled to the middle of the rail, deaf to pushes, until its rider sends it on with
@@ -367,8 +367,24 @@ was going, or back at the end of the track, so that the line gets learned; an un
 powered rail on the station keeps it there. An empty cart never leaves by itself. The
 observer also gets `before_tick` from `steel-core` for this.
 
-Not ported yet: trains of coupled carts and their speed, the station map in the cart
-(`/metro` stands in for it), transfers, and the lines on the web map.
+`content/trains.rs` is trains (the Fabric `Trains` and `Consist`). Sneak and use a chain on
+one cart, then on another within four blocks: they are coupled, up to twelve in a line,
+never a ring. Sneak and use shears to uncouple a cart; the chains drop, as they do when a
+cart is destroyed or a coupling is stretched past six blocks. Only the cart in front has
+physics. The others are put on the way it went, a block and a half apart, so a train does
+not stretch or derail cart by cart. A push on any cart goes to the whole train, and a train
+pushed or sent backwards turns around: its rear cart drives. At a station the front cart
+is the one that stops on the rail, everyone aboard sees the title, and `/metro` works from
+any cart. Carts of one train go through each other, and so do carts on rails that drive at
+each other or of which one carries a player; a cart or train with a player also goes
+through mobs and players. Coupled carts roll like ridden ones. The couplings are kept in
+`metro-couplings.json` of the data directory by the id of the cart (`content/couplings.rs`,
+the Fabric `CartLinks`). `steel-core` asks the observer for all of this: `interact`,
+`passes_through`, `follows`, `rolls_freely` and `removed`.
+
+Not ported yet: the faster speed on straights, a train with a player knocking empty carts
+off the line, the station map in the cart (`/metro` stands in for it), transfers, and the
+lines on the web map.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
