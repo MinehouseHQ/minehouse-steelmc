@@ -64,7 +64,15 @@ impl TargetGoalBase {
             return false;
         };
 
-        if !Mob::can_attack(mob, target_living) || mob.is_allied_to(target_living) {
+        if !Mob::can_attack(mob, target_living) {
+            return false;
+        }
+        // Vanilla compares the teams themselves here, not `isAlliedTo`.
+        if mob.team().is_some_and(|team| {
+            target_living
+                .team()
+                .is_some_and(|other| team.is_same_team(&other))
+        }) {
             return false;
         }
 

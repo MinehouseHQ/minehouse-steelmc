@@ -14,6 +14,7 @@ use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
+use crate::scoreboard::TeamRules;
 use crate::world::game_event::DynamicListenerAction;
 use crate::world::game_event::vibrations::VibrationSystem;
 use crate::world::ticking_world::LevelRef;
@@ -623,16 +624,54 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
+    /// Vanilla `getTeam`: the team of this entity's scoreboard name on its
+    /// domain's scoreboard. A tame animal without a team of its own takes
+    /// its root owner's, after vanilla `TamableAnimal.getTeam`.
+    fn team(&self) -> Option<TeamRules> {
+        let own = self.level().and_then(|world| {
+            let scoreboard = world.scoreboard()?;
+            if !scoreboard.has_team_members() {
+                return None;
+            }
+            scoreboard.holder_team_rules(&self.scoreboard_name())
+        });
+        if own.is_some() {
+            return own;
+        }
+        let tamable = self.as_tamable_animal()?;
+        if !tamable.is_tame() {
+            return None;
+        }
+        tamable.root_owner()?.team()
+    }
+
     /// Returns whether this entity is allied to `other`: vanilla
     /// `Entity.isAlliedTo`, where either side may count the other as an ally.
     fn is_allied_to(&self, other: &dyn Entity) -> bool {
-        self.considers_entity_as_ally(other)
+        self.id() == other.id()
+            || self.considers_entity_as_ally(other)
             || other.considers_entity_as_ally(self.as_entity_event_source())
     }
 
     /// Vanilla `considersEntityAsAlly`, such as a tame animal and its owner.
-    fn considers_entity_as_ally(&self, _other: &dyn Entity) -> bool {
-        false
+    /// Overrides that call vanilla's `super` call
+    /// [`Self::is_allied_to_team`] with `other.team()`.
+    fn considers_entity_as_ally(&self, other: &dyn Entity) -> bool {
+        self.is_allied_to_team(other.team().as_ref())
+    }
+
+    /// Vanilla `isAlliedTo(Team)`: this entity is on that team.
+    fn is_allied_to_team(&self, other: Option<&TeamRules>) -> bool {
+        self.team().is_some_and(|team| team.is_allied_to(other))
+    }
+
+    /// Vanilla `doTeamsAllowDamage`: a team member may hurt a teammate only
+    /// with friendly fire on.
+    fn do_teams_allow_damage(&self, other: &dyn Entity) -> bool {
+        let Some(team) = self.team() else {
+            return true;
+        };
+        !team.is_allied_to(other.team().as_ref()) || team.allows_friendly_fire()
     }
 
     /// Returns whether this entity is a marker armor stand.

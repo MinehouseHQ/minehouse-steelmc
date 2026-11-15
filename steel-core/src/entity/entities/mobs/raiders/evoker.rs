@@ -252,15 +252,15 @@ impl Entity for EvokerEntity {
 
     /// Vanilla `Evoker.considersEntityAsAlly`: also sides with vexes summoned by
     /// itself or by a fellow illager.
-    fn is_allied_to(&self, other: &dyn Entity) -> bool {
-        if other.uuid() == self.uuid() || self.illager_is_allied_to(other) {
+    fn considers_entity_as_ally(&self, other: &dyn Entity) -> bool {
+        if other.id() == self.id() || self.illager_is_allied_to(other) {
             return true;
         }
         other
             .downcast_ref::<VexEntity>()
             .and_then(VexEntity::root_owner)
             .is_some_and(|root_owner| {
-                root_owner.uuid() == self.uuid() || self.illager_is_allied_to(root_owner.as_ref())
+                root_owner.id() == self.id() || self.illager_is_allied_to(root_owner.as_ref())
             })
     }
 

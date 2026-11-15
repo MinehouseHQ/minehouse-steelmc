@@ -44,7 +44,9 @@ mod goals;
 #[cfg(test)]
 mod tests;
 
-use goals::{ShulkerAttackGoal, ShulkerNearestAttackGoal, ShulkerPeekGoal};
+use goals::{
+    ShulkerAttackGoal, ShulkerDefenseAttackGoal, ShulkerNearestAttackGoal, ShulkerPeekGoal,
+};
 
 /// Vanilla `NO_COLOR` / `DEFAULT_COLOR`.
 const NO_COLOR: i8 = 16;
@@ -153,8 +155,7 @@ impl ShulkerEntity {
                     .set_alert_others([]),
             );
             target_selector.add_goal(2, ShulkerNearestAttackGoal::new());
-            // Vanilla `ShulkerDefenseAttackGoal` (priority 3) only runs for a
-            // shulker on a scoreboard team; Steel has no teams yet.
+            target_selector.add_goal(3, ShulkerDefenseAttackGoal::new());
         }
 
         let shulker = Self {

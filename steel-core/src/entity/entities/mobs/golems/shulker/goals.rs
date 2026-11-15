@@ -5,6 +5,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::sound_events;
 use steel_utils::Downcast as _;
+use steel_utils::WorldAabb;
+use steel_utils::axis::Axis;
 use steel_utils::types::Difficulty;
 
 use super::ShulkerEntity;
@@ -186,6 +188,57 @@ impl Goal for ShulkerNearestAttackGoal {
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
         !is_peaceful(mob) && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.inner.tick(mob, entity);
+    }
+}
+
+/// Vanilla `ShulkerDefenseAttackGoal`: a shulker on a team targets nearby
+/// enemies, searching only 4 blocks out along its attach axis.
+pub(super) struct ShulkerDefenseAttackGoal {
+    inner: NearestAttackableTargetGoal,
+}
+
+impl ShulkerDefenseAttackGoal {
+    pub(super) fn new() -> Self {
+        Self {
+            inner: NearestAttackableTargetGoal::new(true, |target, _| target.is_enemy())
+                .with_search_area(defense_search_area),
+        }
+    }
+}
+
+/// Vanilla `ShulkerDefenseAttackGoal.getTargetSearchArea`.
+fn defense_search_area(mob: &dyn PathfinderMob, follow_distance: f64) -> WorldAabb {
+    let bounds = mob.bounding_box();
+    match shulker(mob).map(|shulker| shulker.attach_face().axis()) {
+        Some(Axis::X) => bounds.inflate_xyz(4.0, follow_distance, follow_distance),
+        Some(Axis::Z) => bounds.inflate_xyz(follow_distance, follow_distance, 4.0),
+        _ => bounds.inflate_xyz(follow_distance, 4.0, follow_distance),
+    }
+}
+
+impl Goal for ShulkerDefenseAttackGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        mob.team().is_some() && self.inner.can_use(mob)
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {

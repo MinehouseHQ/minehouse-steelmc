@@ -159,15 +159,15 @@ pub trait TamableAnimal: Animal {
     }
 
     /// Vanilla `TamableAnimal.considersEntityAsAlly`: a tame animal is allied to
-    /// its owner and to everything its owner counts as an ally.
+    /// its owner and to everything its owner counts as an ally, and otherwise
+    /// to its team.
     fn considers_entity_as_ally_tamable(&self, other: &dyn Entity) -> bool {
-        if !self.is_tame() {
-            return false;
+        if self.is_tame()
+            && let Some(owner) = self.root_owner()
+        {
+            return owner.id() == other.id() || owner.considers_entity_as_ally(other);
         }
-        let Some(owner) = self.root_owner() else {
-            return false;
-        };
-        owner.uuid() == other.uuid() || owner.considers_entity_as_ally(other)
+        self.is_allied_to_team(other.team().as_ref())
     }
 
     /// Vanilla `unableToMoveToOwner`.

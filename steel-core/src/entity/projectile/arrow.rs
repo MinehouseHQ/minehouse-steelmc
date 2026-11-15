@@ -532,11 +532,18 @@ pub trait AbstractArrow: Projectile {
         )
     }
 
-    /// Vanilla `AbstractArrow.canHitEntity`: also skips already pierced
-    /// entities.
-    // TODO: vanilla `Player.canHarmPlayer` rejects friendly fire between team
-    // members; Steel has no scoreboard teams yet, so every player is harmable.
+    /// Vanilla `AbstractArrow.canHitEntity`: skips players the shooting
+    /// player can't harm and already pierced entities.
     fn arrow_can_hit_entity(&self, entity: &dyn Entity) -> bool {
+        if let Some(target) = entity.as_player()
+            && self.projectile_owner().is_some_and(|owner| {
+                owner
+                    .as_player()
+                    .is_some_and(|shooter| !shooter.can_harm_player(target))
+            })
+        {
+            return false;
+        }
         self.base_can_hit_entity(entity)
             && self
                 .arrow_base()

@@ -288,6 +288,9 @@ impl Player {
             && !target.is_invulnerable()
             && target.is_alive()
             && target.can_be_hit_by_projectile()
+            && target
+                .as_player()
+                .is_none_or(|target| self.can_harm_player(target))
             && !self.is_passenger_of_same_vehicle(target)
     }
 

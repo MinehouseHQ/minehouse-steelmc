@@ -14,9 +14,10 @@ use crate::command::execution::{
 };
 use crate::command::sender::CommandSender;
 use crate::entity::damage::DamageSource;
+use crate::entity::selector::EntitySelector;
 use crate::entity::{Entity as _, LivingEntity as _};
 use crate::permission::PermissionSubjectIndex;
-use crate::player::ResetReason;
+use crate::player::{Player, ResetReason};
 use crate::scoreboard::{
     DisplaySlot, ScoreHolder, Scoreboard, ScoreboardObjective, TeamColor, TeamProperty,
 };
@@ -483,5 +484,73 @@ fn trigger_needs_an_enabled_trigger_objective() {
                 .score_entry(&ScoreHolder::new("Voter"), &objective(board, "vote"))
                 .is_some_and(|score| score.is_locked())
         );
+    });
+}
+
+#[test]
+fn teams_decide_allies_friendly_fire_and_pushing() {
+    with_server_world("team_effects", |server, world| {
+        let (alex, _) = test_player_with_packets(server, Arc::clone(world), "Alex", 1);
+        let (steve, _) = test_player_with_packets(server, Arc::clone(world), "Steve", 2);
+        let (noor, _) = test_player_with_packets(server, Arc::clone(world), "Noor", 3);
+        let pushable_by =
+            |pusher: &Player, target: &Player| EntitySelector::pushable_by(pusher)(target);
+
+        // Without teams nobody is allied and everyone pushes.
+        assert!(!alex.is_allied_to(steve.as_ref()));
+        assert!(alex.is_allied_to(alex.as_ref()));
+        assert!(alex.can_harm_player(&steve));
+        assert!(pushable_by(&alex, &steve));
+
+        assert_eq!(run(server, "team add reds"), Some(1));
+        assert_eq!(run(server, "team add blues"), Some(2));
+        assert_eq!(run(server, "team join reds Alex"), Some(1));
+        assert_eq!(run(server, "team join reds Steve"), Some(1));
+        assert_eq!(run(server, "team join blues Noor"), Some(1));
+        assert!(alex.is_allied_to(steve.as_ref()));
+        assert!(!alex.is_allied_to(noor.as_ref()));
+
+        // Friendly fire is on by default; turning it off spares teammates only.
+        assert!(alex.can_harm_player(&steve));
+        assert_eq!(run(server, "team modify reds friendlyFire false"), Some(0));
+        assert!(!alex.can_harm_player(&steve));
+        assert!(alex.can_harm_player(&noor));
+        let attack = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+            .with_causing_entity(Arc::<Player>::clone(&alex));
+        assert!(!steve.hurt(world, &attack, 1.0));
+        // A team removed and added again under the same name is a new team.
+        let old_team = alex.team().expect("Alex is on a team");
+        assert_eq!(run(server, "team remove reds"), Some(1));
+        assert_eq!(run(server, "team add reds"), Some(2));
+        assert_eq!(run(server, "team join reds Alex"), Some(1));
+        let new_team = alex.team().expect("Alex is on a team");
+        assert!(!old_team.is_same_team(&new_team));
+        assert_eq!(run(server, "team join reds Steve"), Some(1));
+        assert_eq!(run(server, "team modify reds friendlyFire false"), Some(0));
+
+        // The pvp game rule stops every player attack.
+        assert!(run(server, "gamerule pvp false").is_some());
+        assert!(!alex.can_harm_player(&noor));
+        assert!(run(server, "gamerule pvp true").is_some());
+
+        // Collision rules, as vanilla `EntitySelector.pushableBy` reads them.
+        assert!(pushable_by(&alex, &steve));
+        assert_eq!(
+            run(server, "team modify reds collisionRule pushOwnTeam"),
+            Some(0)
+        );
+        assert!(!pushable_by(&alex, &steve));
+        // Vanilla's pushOwnTeam stops pushing inside the team only.
+        assert!(pushable_by(&alex, &noor));
+        assert!(pushable_by(&noor, &alex));
+        assert_eq!(
+            run(server, "team modify reds collisionRule pushOtherTeams"),
+            Some(0)
+        );
+        assert!(pushable_by(&alex, &steve));
+        assert!(!pushable_by(&alex, &noor));
+        assert_eq!(run(server, "team modify reds collisionRule never"), Some(0));
+        assert!(!pushable_by(&alex, &steve));
+        assert!(!pushable_by(&noor, &alex));
     });
 }
