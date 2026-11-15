@@ -11,14 +11,17 @@ mod cloud;
 mod commands;
 mod couplings;
 mod herbs;
+mod map_view;
 mod metro;
 mod papirosa;
 mod rail_graph;
 mod recipes;
 mod ride;
 mod speed;
+mod station_menu;
 mod stations;
 mod trains;
+mod transfers;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -27,6 +30,7 @@ use steel_core::{
     behavior::{ItemBehavior, extend_block_behaviors, set_item_behavior_override},
     command::{CommandRegistrationError, CommandRegistry},
     entity::entities::objects::vehicles::set_minecart_observer,
+    player::input_observer::set_player_input_observer,
 };
 use steel_registry::{
     data_components::{
@@ -365,6 +369,9 @@ pub fn start() {
     );
     if !set_minecart_observer(&ride::RIDE) {
         log::warn!("MineHouse metro: minecarts are already observed, the track is not learned");
+    }
+    if !set_player_input_observer(&station_menu::INPUT) {
+        log::warn!("MineHouse metro: player input is already observed, the map takes no clicks");
     }
     log::info!(
         "MineHouse metro on: {} stations, {} runs of track, {} coupled carts",

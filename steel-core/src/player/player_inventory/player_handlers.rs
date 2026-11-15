@@ -12,7 +12,7 @@ use crate::{
         },
         slots::CraftingHandler,
     },
-    player::{Player, connection::NetworkConnection as _},
+    player::{Player, connection::NetworkConnection as _, input_observer::player_input_observer},
 };
 use glam::DVec3;
 use steel_math::trig;
@@ -535,6 +535,13 @@ impl Player {
 
     /// Sets selected slot
     pub fn handle_set_carried_item(&self, packet: SSetCarriedItem) {
+        if let Some(observer) = player_input_observer()
+            && let Ok(to) = u8::try_from(packet.slot)
+            && to < 9
+        {
+            let from = self.inventory.lock().get_selected_slot();
+            observer.carried_item(self, from, to);
+        }
         if self
             .inventory
             .lock()

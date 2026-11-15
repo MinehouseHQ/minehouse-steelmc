@@ -14,6 +14,7 @@ pub mod food_data;
 /// Game mode specific logic for player interactions.
 pub mod game_mode;
 mod health_sync;
+pub mod input_observer;
 mod item_cooldowns;
 mod lifecycle;
 pub mod movement;
