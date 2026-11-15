@@ -17,7 +17,7 @@ use std::str::FromStr as _;
 use serde_json::Value;
 use steel_core::behavior::{
     BlockBehavior, BlockBehaviorRegistry, BlockItem, BlockLootContext, BlockPlaceContext,
-    InteractionResult, ItemBehavior, UseOnContext,
+    InteractionResult, ItemBehavior, UseItemContext, UseOnContext,
 };
 use steel_registry::{
     Registry, TaggedRegistryExt as _,
@@ -31,6 +31,7 @@ use crate::bank::{
     atm_block::{self, ATM_BLOCK},
     terminal_block::{self, TERMINAL_BLOCK},
 };
+use crate::guides;
 
 use super::{
     CustomItem, LEAF_BLOCK as LEAF_BLOCK_ITEM,
@@ -198,6 +199,10 @@ pub(crate) struct PlacesBlock(pub &'static Block);
 impl ItemBehavior for PlacesBlock {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         BlockItem::new(self.0).place(context.build_place_context())
+    }
+
+    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        guides::use_item(context)
     }
 }
 

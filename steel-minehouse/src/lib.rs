@@ -27,6 +27,7 @@ pub mod config;
 pub mod console;
 pub mod content;
 pub mod downtime;
+pub mod guides;
 pub mod moderation;
 pub mod roles;
 pub mod site;

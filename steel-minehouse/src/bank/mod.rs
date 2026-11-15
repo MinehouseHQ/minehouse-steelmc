@@ -12,6 +12,7 @@ pub mod atm_block;
 pub mod banker;
 pub mod card;
 pub mod gui;
+pub mod guides;
 pub mod journal;
 pub mod ores;
 mod settings;

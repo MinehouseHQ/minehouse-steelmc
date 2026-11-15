@@ -43,7 +43,10 @@ use super::{
     ride, stations, trains,
     transfers::{self, Track},
 };
-use crate::bank::{banker, zones::markup};
+use crate::{
+    bank::{banker, zones::markup},
+    guides,
+};
 
 /// The size of the map on the panel, blocks.
 const WIDTH: f32 = 2.6;
@@ -905,7 +908,7 @@ pub static INPUT: Input = Input;
 
 impl PlayerInputObserver for Input {
     fn interact(&self, player: &Player, entity_id: i32, hand: InteractionHand) -> bool {
-        if banker::interact(player, entity_id, hand) {
+        if banker::interact(player, entity_id, hand) || guides::clicked(player, entity_id) {
             return true;
         }
         let mut menus = MENUS.lock();
@@ -922,7 +925,7 @@ impl PlayerInputObserver for Input {
     }
 
     fn attack(&self, player: &Player, entity_id: i32) -> bool {
-        if banker::attacked(entity_id) {
+        if banker::attacked(entity_id) || guides::clicked(player, entity_id) {
             return true;
         }
         let Some((rail, target)) = target_of(player, entity_id) else {
