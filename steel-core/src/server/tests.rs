@@ -4879,6 +4879,7 @@ mod data_command;
 mod fillbiome_command;
 mod game_time;
 mod help_command;
+mod loot_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;

@@ -16,9 +16,9 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
-        EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, NbtTagValue,
-        ObjectiveValue, SlotSourceValue, SteelArgumentValue, TimeValue, TimelineValue,
-        WorldClockValue,
+        EntityTypeValue, GameModeValue, IdentifierValue, ItemSlotValue, ItemStackValue,
+        LootTableValue, NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue,
+        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
     },
     argument::{
         CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
@@ -52,6 +52,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
+use steel_registry::loot_table::LootTableRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::recipe::UntypedRecipeRef;
 use steel_registry::{
@@ -415,6 +416,18 @@ where
     /// Vanilla `SlotSourceArgument.getSlotSource` for a slot range.
     pub(crate) fn slot_source(&self, name: &str) -> Result<&'static SlotRange, CommandSyntaxError> {
         self.typed_argument::<SlotSourceValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `SlotArgument.getSlot`.
+    pub(crate) fn item_slot(&self, name: &str) -> Result<i32, CommandSyntaxError> {
+        self.typed_argument::<ItemSlotValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getLootTable`.
+    pub(crate) fn loot_table(&self, name: &str) -> Result<LootTableRef, CommandSyntaxError> {
+        self.typed_argument::<LootTableValue>(name)
             .map(|value| value.0)
     }
 

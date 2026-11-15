@@ -1251,6 +1251,11 @@ pub trait Mob: LivingEntity + Leashable {
             .and_then(|key| REGISTRY.loot_tables.by_key(key))
     }
 
+    /// Vanilla `Mob.lootTable`: the custom death loot table's key, if set.
+    fn custom_death_loot_table_key(&self) -> Option<Identifier> {
+        self.mob_base().death_loot_table().lock().clone()
+    }
+
     fn has_custom_death_loot_table(&self) -> bool {
         self.mob_base().death_loot_table().lock().is_some()
     }
