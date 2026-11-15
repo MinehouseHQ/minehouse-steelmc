@@ -37,7 +37,9 @@ use crate::command::brigadier::{
 use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
-use crate::inventory::slot_range::{SlotRange, all_slot_range_names, slot_range};
+use crate::inventory::slot_range::{
+    SlotRange, all_slot_range_names, single_slot_names, slot_range,
+};
 use crate::scoreboard::{DisplaySlot, ObjectiveCriteria, TeamColor};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -49,6 +51,7 @@ use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::loot_table::LootTableRef;
 use steel_registry::{
     ATTRIBUTE_REGISTRY, BIOMES_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
     ENTITY_TYPE_REGISTRY, MOB_EFFECT_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
@@ -436,6 +439,17 @@ impl SteelArgumentType {
         Self::new(SlotSourceParser)
     }
 
+    /// Vanilla `SlotArgument.slot`: one slot by name.
+    pub(crate) fn item_slot() -> Self {
+        Self::new(ItemSlotParser)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.lootTable`, by id only: inline tables
+    /// need runtime loot table decoding, which Steel does not have yet.
+    pub(crate) fn loot_table() -> Self {
+        Self::new(LootTableParser)
+    }
+
     /// Vanilla `CompoundTagArgument.compoundTag`.
     pub(crate) fn compound_tag() -> Self {
         Self::new(CompoundTagParser)
@@ -684,6 +698,11 @@ argument_value_wrapper!(NbtTagValue(NbtTag), "steel:command/value/nbt_tag");
 argument_value_wrapper!(
     SlotSourceValue(&'static SlotRange),
     "steel:command/value/slot_source"
+);
+argument_value_wrapper!(ItemSlotValue(i32), "steel:command/value/item_slot");
+argument_value_wrapper!(
+    LootTableValue(LootTableRef),
+    "steel:command/value/loot_table"
 );
 argument_value_wrapper!(
     CompoundTagValue(NbtCompound),
@@ -1551,6 +1570,31 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::SlotSource, None)
 );
 unit_argument_parser!(
+    ItemSlotParser,
+    "steel:command/parser/item_slot",
+    ItemSlotValue,
+    parse | reader,
+    _source | { parse_item_slot(reader).map(ItemSlotValue) },
+    suggest | _context,
+    builder | { suggest_list(builder, single_slot_names()) },
+    protocol(ProtocolArgumentType::ItemSlot, None)
+);
+unit_argument_parser!(
+    LootTableParser,
+    "steel:command/parser/loot_table",
+    LootTableValue,
+    parse | reader,
+    _source | { parse_loot_table(reader).map(LootTableValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.loot_tables.iter().map(|(_, table)| &table.key),
+            builder,
+        );
+    },
+    protocol(ProtocolArgumentType::LootTable, None)
+);
+unit_argument_parser!(
     IdentifierParser,
     "steel:command/parser/identifier",
     IdentifierValue,
@@ -1993,6 +2037,51 @@ fn parse_slot_source(
             .message(["inline slot sources are not supported".to_owned()])
             .component(),
     ))))
+}
+
+/// Vanilla `SlotArgument.parse`: `SlotRanges.read`, which must name a
+/// single slot.
+fn parse_item_slot(reader: &mut StringReader<'_>) -> Result<i32, CommandSyntaxError> {
+    let start_byte = reader.read_so_far().len();
+    while reader.peek().is_some_and(|character| character != ' ') {
+        let _ = reader.skip();
+    }
+    let name = reader.read_so_far()[start_byte..].to_owned();
+    let Some(range) = slot_range(&name) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::SLOT_UNKNOWN.message([name]).component(),
+        ))));
+    };
+    match range.slots() {
+        &[slot] => Ok(slot),
+        _ => Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::SLOT_ONLY_SINGLE_ALLOWED
+                .message([range.name().to_owned()])
+                .component(),
+        )))),
+    }
+}
+
+/// Vanilla `ResourceOrIdArgument.LootTableArgument.parse` for a loot table
+/// id. An inline table fails to parse: Steel's loot tables are generated
+/// and it cannot decode one at runtime yet.
+fn parse_loot_table(reader: &mut StringReader<'_>) -> Result<LootTableRef, CommandSyntaxError> {
+    let inline = !reader.peek().is_some_and(is_allowed_in_identifier);
+    let key = parse_identifier(reader);
+    let (false, Ok(key)) = (inline, key) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
+                .message(["inline loot tables are not supported".to_owned()])
+                .component(),
+        ))));
+    };
+    REGISTRY.loot_tables.by_key(&key).ok_or_else(|| {
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                .message([key.to_string(), "minecraft:loot_table".to_owned()])
+                .component(),
+        )))
+    })
 }
 
 const fn is_allowed_in_identifier(character: char) -> bool {

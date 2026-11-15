@@ -1463,6 +1463,91 @@ pub(crate) fn loot_equipment(entity: &dyn Entity) -> Option<EntityEquipmentSlots
     entity.as_living_entity().map(living_loot_equipment)
 }
 
+/// The entity types vanilla builds with `EntityType.Builder.noLootTable`,
+/// whose `getDefaultLootTable` is empty.
+const NO_LOOT_TABLE_TYPES: [&str; 68] = [
+    "acacia_boat",
+    "acacia_chest_boat",
+    "area_effect_cloud",
+    "arrow",
+    "bamboo_chest_raft",
+    "bamboo_raft",
+    "birch_boat",
+    "birch_chest_boat",
+    "block_display",
+    "breeze_wind_charge",
+    "cherry_boat",
+    "cherry_chest_boat",
+    "chest_minecart",
+    "command_block_minecart",
+    "cushion",
+    "dark_oak_boat",
+    "dark_oak_chest_boat",
+    "dragon_fireball",
+    "egg",
+    "ender_pearl",
+    "end_crystal",
+    "evoker_fangs",
+    "experience_bottle",
+    "experience_orb",
+    "eye_of_ender",
+    "falling_block",
+    "fireball",
+    "firework_rocket",
+    "furnace_minecart",
+    "glow_item_frame",
+    "hopper_minecart",
+    "interaction",
+    "item",
+    "item_display",
+    "item_frame",
+    "jungle_boat",
+    "jungle_chest_boat",
+    "leash_knot",
+    "lightning_bolt",
+    "llama_spit",
+    "mangrove_boat",
+    "mangrove_chest_boat",
+    "marker",
+    "minecart",
+    "oak_boat",
+    "oak_chest_boat",
+    "ominous_item_spawner",
+    "painting",
+    "pale_oak_boat",
+    "pale_oak_chest_boat",
+    "poplar_boat",
+    "poplar_chest_boat",
+    "splash_potion",
+    "lingering_potion",
+    "shulker_bullet",
+    "small_fireball",
+    "snowball",
+    "spawner_minecart",
+    "spectral_arrow",
+    "spruce_boat",
+    "spruce_chest_boat",
+    "text_display",
+    "tnt",
+    "tnt_minecart",
+    "trident",
+    "wind_charge",
+    "wither_skull",
+    "fishing_bobber",
+];
+
+/// Vanilla `Entity.getLootTable`: a mob's custom death loot table, otherwise
+/// its type's default `entities/<type>` table, which `noLootTable` types do
+/// not have.
+pub(crate) fn entity_loot_table_key(entity: &dyn Entity) -> Option<Identifier> {
+    if let Some(key) = entity.as_mob().and_then(Mob::custom_death_loot_table_key) {
+        return Some(key);
+    }
+    let path = &entity.entity_type().key.path;
+    (!NO_LOOT_TABLE_TYPES.contains(&path.as_ref()))
+        .then(|| Identifier::vanilla(format!("entities/{path}")))
+}
+
 pub(crate) fn entity_loot_ref<'a>(
     entity: &'a dyn Entity,
     equipment: Option<&'a EntityEquipmentSlots>,

@@ -29,6 +29,7 @@ mod kick;
 mod kill;
 mod list;
 mod locate;
+mod loot;
 mod operator;
 mod perms;
 mod playsound;
@@ -121,6 +122,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(list::registration())?;
     builder.register(chat_commands::me_registration())?;
     builder.register(locate::registration())?;
+    builder.register(loot::registration())?;
     builder.register(chat_commands::msg_registration())?;
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
@@ -232,6 +234,7 @@ mod tests {
                 "list",
                 "me",
                 "locate",
+                "loot",
                 "msg",
                 "tell",
                 "w",
