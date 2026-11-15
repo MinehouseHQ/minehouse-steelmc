@@ -2,6 +2,7 @@
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::init_vanilla_registry;
+use steel_utils::BlockPos;
 
 use super::loot_command::setup;
 use super::scoreboard_command::{run, with_server_world};
@@ -77,13 +78,13 @@ fn items_counts_matching_items_in_container_slots() {
             ),
             Some(1)
         );
-        assert!(
+        assert_eq!(
             world
-                .get_block_state(steel_utils::BlockPos::new(2, 64, 2))
+                .get_block_state(BlockPos::new(2, 64, 2))
                 .get_block()
                 .key
-                .path
-                == "stone"
+                .path,
+            "stone"
         );
     });
 }
