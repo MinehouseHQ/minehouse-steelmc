@@ -7,14 +7,20 @@ use steel_utils::locks::SyncMutex;
 use tokio::runtime::Builder;
 
 use super::super::Server;
-use super::{fresh_test_world, test_server};
+use super::{fresh_test_world, test_player_with_packets, test_server};
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource as _,
     ExecutionStop,
 };
 use crate::command::sender::CommandSender;
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity as _, LivingEntity as _};
 use crate::permission::PermissionSubjectIndex;
-use crate::scoreboard::{DisplaySlot, ScoreHolder, Scoreboard, ScoreboardObjective};
+use crate::scoreboard::{
+    DisplaySlot, ScoreHolder, Scoreboard, ScoreboardObjective, TeamColor, TeamProperty,
+};
+use crate::world::World;
+use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 
 /// Runs `command` from the console and returns its result, or `None` when
 /// the command failed.
@@ -66,6 +72,11 @@ fn score(scoreboard: &Scoreboard, holder: &str, objective_name: &str) -> Option<
 
 /// Runs `test` against a fresh server with one domain.
 fn with_server(name: &'static str, test: impl FnOnce(&Arc<Server>, &str)) {
+    with_server_world(name, |server, world| test(server, world.domain()));
+}
+
+/// Runs `test` against a fresh server with its only world.
+fn with_server_world(name: &'static str, test: impl FnOnce(&Arc<Server>, &Arc<World>)) {
     let world_fixture = fresh_test_world(name);
     let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()
@@ -76,7 +87,7 @@ fn with_server(name: &'static str, test: impl FnOnce(&Arc<Server>, &str)) {
         let server = test_server(Arc::clone(world), PermissionSubjectIndex::new())
             .await
             .expect("test server should initialize");
-        test(&server, world.domain());
+        test(&server, world);
         drop(server);
     });
 }
@@ -263,5 +274,108 @@ fn enable_unlocks_only_trigger_objectives() {
         assert_eq!(run(server, "scoreboard players enable Alex vote"), None);
         // Only trigger objectives can be enabled.
         assert_eq!(run(server, "scoreboard players enable Alex plain"), None);
+    });
+}
+
+#[test]
+fn stat_criteria_follow_awarded_and_reset_stats() {
+    with_server_world("scoreboard_stat_criteria", |server, world| {
+        assert_eq!(
+            run(
+                server,
+                "scoreboard objectives add jumps minecraft.custom:minecraft.jump"
+            ),
+            Some(1)
+        );
+        let (player, _) = test_player_with_packets(server, Arc::clone(world), "Jumper", 1);
+        let board = scoreboard(server, world.domain());
+
+        player.award_custom_stat(&vanilla_custom_stats::JUMP);
+        player.award_custom_stat_with_count(&vanilla_custom_stats::JUMP, 4);
+        assert_eq!(score(board, "Jumper", "jumps"), Some(5));
+        // Other stats leave the objective alone.
+        player.award_custom_stat(&vanilla_custom_stats::DROP);
+        assert_eq!(score(board, "Jumper", "jumps"), Some(5));
+
+        player.reset_custom_stat(&vanilla_custom_stats::JUMP);
+        assert_eq!(score(board, "Jumper", "jumps"), None);
+    });
+}
+
+#[test]
+fn read_only_criteria_record_changed_player_values() {
+    with_server_world("scoreboard_recorded_criteria", |server, world| {
+        assert_eq!(run(server, "scoreboard objectives add hp health"), Some(1));
+        assert_eq!(
+            run(server, "scoreboard objectives add hunger food"),
+            Some(2)
+        );
+        assert_eq!(run(server, "scoreboard objectives add lvl level"), Some(3));
+        let (player, _) = test_player_with_packets(server, Arc::clone(world), "Recorded", 1);
+        let board = scoreboard(server, world.domain());
+
+        player.update_recorded_criteria();
+        assert_eq!(score(board, "Recorded", "hp"), Some(20));
+        assert_eq!(score(board, "Recorded", "hunger"), Some(20));
+        assert_eq!(score(board, "Recorded", "lvl"), Some(0));
+
+        // Health and absorption are summed and rounded up.
+        player.set_health(7.25);
+        player.update_recorded_criteria();
+        assert_eq!(score(board, "Recorded", "hp"), Some(8));
+
+        // A value that did not change is not written again, so a score
+        // removed meanwhile stays removed until the value changes.
+        assert_eq!(
+            run(server, "scoreboard players reset Recorded hunger"),
+            Some(1)
+        );
+        player.update_recorded_criteria();
+        assert_eq!(score(board, "Recorded", "hunger"), None);
+        assert_eq!(score(board, "Recorded", "hp"), Some(8));
+    });
+}
+
+#[test]
+fn kills_count_for_the_killer_and_by_team_color() {
+    with_server_world("scoreboard_kill_criteria", |server, world| {
+        for command in [
+            "scoreboard objectives add kills totalKillCount",
+            "scoreboard objectives add pvp playerKillCount",
+            "scoreboard objectives add red_kills teamkill.red",
+            "scoreboard objectives add by_blue killedByTeam.blue",
+        ] {
+            assert!(run(server, command).is_some(), "{command} should succeed");
+        }
+        let board = scoreboard(server, world.domain());
+        board.add_team("reds").expect("a new team");
+        board.add_team("blues").expect("a new team");
+        board
+            .modify_team("reds", TeamProperty::Color(Some(TeamColor::Red)))
+            .expect("the team exists");
+        board
+            .modify_team("blues", TeamProperty::Color(Some(TeamColor::Blue)))
+            .expect("the team exists");
+        let (killer, _) = test_player_with_packets(server, Arc::clone(world), "Killer", 1);
+        let (victim, _) = test_player_with_packets(server, Arc::clone(world), "Victim", 2);
+        board
+            .add_holder_to_team(&ScoreHolder::new("Victim"), "reds")
+            .expect("the team exists");
+        board
+            .add_holder_to_team(&ScoreHolder::new("Killer"), "blues")
+            .expect("the team exists");
+
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+        killer.award_kill_score(victim.as_ref(), &source);
+        assert_eq!(score(board, "Killer", "kills"), Some(1));
+        assert_eq!(score(board, "Killer", "pvp"), Some(1));
+        // The killer killed a red player; the victim was killed by a blue.
+        assert_eq!(score(board, "Killer", "red_kills"), Some(1));
+        assert_eq!(score(board, "Victim", "by_blue"), Some(1));
+        assert_eq!(score(board, "Killer", "by_blue"), None);
+
+        // Killing yourself scores nothing.
+        killer.award_kill_score(killer.as_ref(), &source);
+        assert_eq!(score(board, "Killer", "kills"), Some(1));
     });
 }

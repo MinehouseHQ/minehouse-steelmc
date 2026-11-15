@@ -1,5 +1,6 @@
 use std::{
     env::temp_dir,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -429,8 +430,8 @@ fn mutation_after_snapshot_remains_dirty_when_snapshot_is_marked_saved() {
 fn domains_keep_independent_scoreboards() {
     let scoreboards = DomainScoreboards {
         scoreboards: [
-            ("alpha".to_owned(), Scoreboard::new()),
-            ("beta".to_owned(), Scoreboard::new()),
+            ("alpha".to_owned(), Arc::new(Scoreboard::new())),
+            ("beta".to_owned(), Arc::new(Scoreboard::new())),
         ]
         .into_iter()
         .collect(),

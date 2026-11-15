@@ -939,6 +939,35 @@ impl Scoreboard {
         }
     }
 
+    /// Vanilla `forAllObjectives`: applies `update` to the holder's score
+    /// in every objective with `criteria`, creating the score first and
+    /// writing even read-only criteria, as the game itself keeps them.
+    pub fn for_all_objectives(
+        &self,
+        criteria: &ObjectiveCriteria,
+        holder: &ScoreHolder,
+        update: CriteriaUpdate,
+    ) {
+        for objective in self.objectives_with_criteria(criteria) {
+            // The objective was just listed, so only a concurrent removal
+            // can fail here, and then there is nothing left to update.
+            let _ = match update {
+                CriteriaUpdate::Set(value) => {
+                    self.set_score_forced(holder, objective.name(), value)
+                }
+                CriteriaUpdate::Add(amount) => self
+                    .add_score_forced(holder, objective.name(), amount)
+                    .map(drop),
+                CriteriaUpdate::Increment => {
+                    self.add_score_forced(holder, objective.name(), 1).map(drop)
+                }
+                CriteriaUpdate::Reset => self
+                    .get_or_create_score(holder, &objective)
+                    .map(|_| self.reset_score(holder, &objective)),
+            };
+        }
+    }
+
     /// Vanilla `addPlayerTeam`.
     ///
     /// # Errors
@@ -1089,9 +1118,23 @@ impl Scoreboard {
     }
 }
 
+/// What [`Scoreboard::for_all_objectives`] does to each score, as vanilla's
+/// `ScoreAccess` calls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CriteriaUpdate {
+    /// `ScoreAccess.set`.
+    Set(i32),
+    /// `ScoreAccess.add`.
+    Add(i32),
+    /// `ScoreAccess.increment`.
+    Increment,
+    /// `ScoreAccess.reset`.
+    Reset,
+}
+
 /// Loaded scoreboards keyed by Steel domain.
 pub struct DomainScoreboards {
-    scoreboards: BTreeMap<String, Scoreboard>,
+    scoreboards: BTreeMap<String, Arc<Scoreboard>>,
     save_lock: AsyncMutex<()>,
 }
 
@@ -1114,7 +1157,13 @@ impl DomainScoreboards {
                     format!("invalid scoreboard for domain '{domain}': {error}"),
                 )
             })?;
-            scoreboards.insert(domain.to_owned(), Scoreboard::from_state(state));
+            let scoreboard = Arc::new(Scoreboard::from_state(state));
+            // Vanilla reaches the scoreboard through `Level.getScoreboard`;
+            // every world of the domain shares the domain's.
+            for world in worlds.worlds_in_domain(domain) {
+                world.set_domain_scoreboard(Arc::clone(&scoreboard));
+            }
+            scoreboards.insert(domain.to_owned(), scoreboard);
         }
         Ok(Self {
             scoreboards,
@@ -1125,7 +1174,7 @@ impl DomainScoreboards {
     /// Returns the scoreboard for a domain.
     #[must_use]
     pub fn get(&self, domain: &str) -> Option<&Scoreboard> {
-        self.scoreboards.get(domain)
+        self.scoreboards.get(domain).map(AsRef::as_ref)
     }
 
     /// Saves every dirty domain scoreboard and returns the number written.

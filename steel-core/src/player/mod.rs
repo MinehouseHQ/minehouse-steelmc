@@ -34,6 +34,7 @@ pub mod warden_spawn_tracker;
 
 use crate::player::advancement::criteria;
 use crate::player::player_inventory::Prediction;
+use crate::scoreboard::{CriteriaUpdate, CustomCriteria, ObjectiveCriteria, ScoreHolder};
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
 pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
@@ -43,7 +44,7 @@ use container_counter::ContainerCounter;
 use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
-use health_sync::HealthSyncState;
+use health_sync::{HealthSyncState, RecordedCriteria};
 use item_cooldowns::ItemCooldowns;
 use lifecycle::PlayerLifecycleState;
 pub use lifecycle::PlayerRespawnConfig;
@@ -283,6 +284,8 @@ pub struct Player {
 
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
+    /// Vanilla `lastRecorded*` values of the read-only criteria.
+    recorded_criteria: SyncMutex<RecordedCriteria>,
 
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
@@ -700,6 +703,7 @@ impl Player {
             living_base,
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
+            recorded_criteria: SyncMutex::new(RecordedCriteria::new()),
             experience: SyncMutex::new(Experience::default()),
             permissions: SyncMutex::new(PlayerPermissionState::default()),
             seen_credits: SyncMutex::new(false),
@@ -1073,7 +1077,10 @@ impl Player {
             }
         }
 
-        // TODO: Increment DEATH_COUNT objective criterion
+        self.update_scores_for_criteria(
+            &ObjectiveCriteria::Custom(CustomCriteria::DeathCount),
+            CriteriaUpdate::Increment,
+        );
         if let Some(killer) = get_kill_credit(self, world.as_ref()) {
             self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
             killer.award_kill_score(self, source);
@@ -1920,13 +1927,23 @@ impl Entity for Player {
     fn award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
         if self.id() != victim.id() {
             // TODO: Trigger advancement criteria.
-            // TODO: Increment the score of some objectives of this player.
-            self.award_custom_stat(if victim.as_player().is_some() {
-                &vanilla_custom_stats::PLAYER_KILLS
+            self.update_scores_for_criteria(
+                &ObjectiveCriteria::Custom(CustomCriteria::TotalKillCount),
+                CriteriaUpdate::Increment,
+            );
+            if victim.as_player().is_some() {
+                self.award_custom_stat(&vanilla_custom_stats::PLAYER_KILLS);
+                self.update_scores_for_criteria(
+                    &ObjectiveCriteria::Custom(CustomCriteria::PlayerKillCount),
+                    CriteriaUpdate::Increment,
+                );
             } else {
-                &vanilla_custom_stats::MOB_KILLS
-            });
-            // TODO: Handle team kill
+                self.award_custom_stat(&vanilla_custom_stats::MOB_KILLS);
+            }
+            let own = ScoreHolder::new(self.scoreboard_name());
+            let victim = ScoreHolder::new(victim.scoreboard_name());
+            self.handle_team_kill(&own, &victim, CustomCriteria::TeamKill);
+            self.handle_team_kill(&victim, &own, CustomCriteria::KilledByTeam);
         }
     }
 }
@@ -2083,6 +2100,7 @@ impl LivingEntity for Player {
             }
         }
 
+        self.update_recorded_criteria();
         self.send_experience_packet_if_dirty();
     }
 
