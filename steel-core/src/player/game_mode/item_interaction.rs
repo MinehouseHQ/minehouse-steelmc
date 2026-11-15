@@ -34,6 +34,51 @@ fn spectator_use_item_on(
     InteractionResult::Pass
 }
 
+/// The block half of [`use_item_on`]: the block's `use_item_on`, then for the main hand its
+/// `use_without_item`. The held item is not used on the block. `Pass` if the block took
+/// nothing.
+pub fn use_block(
+    player: &Player,
+    world: &Arc<World>,
+    hand: InteractionHand,
+    hit_result: &BlockHitResult,
+) -> InteractionResult {
+    let pos = hit_result.block_pos;
+    let state = world.get_block_state(pos);
+    let Some(block) = REGISTRY.blocks.by_state_id(state) else {
+        return InteractionResult::Pass;
+    };
+    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+
+    let mut inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
+
+    let block_result = behavior.use_item_on(
+        state,
+        world,
+        pos,
+        player,
+        hand,
+        hit_result,
+        &mut inventory_access,
+    );
+
+    if block_result.consumes_action() {
+        return block_result;
+    }
+
+    if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
+        && hand == InteractionHand::MainHand
+    {
+        let empty_result =
+            behavior.use_without_item(state, world, pos, player, hit_result, &mut inventory_access);
+
+        if empty_result.consumes_action() {
+            return empty_result;
+        }
+    }
+    InteractionResult::Pass
+}
+
 /// Handles using an item on a block.
 ///
 /// This implements the logic from Java's `ServerPlayerGameMode.useItemOn()`.
@@ -67,48 +112,12 @@ pub fn use_item_on(
 
     let suppress_block_use = player.is_secondary_use_active() && have_something;
 
-    // Get behavior registries
-    let block_behaviors = &*BLOCK_BEHAVIORS;
-
     // Try block interaction first (if not suppressed).
     // No inventory lock held — block behaviors may need inventory access (e.g. opening chests).
     if !suppress_block_use {
-        let Some(block) = REGISTRY.blocks.by_state_id(state) else {
-            return InteractionResult::Pass;
-        };
-        let behavior = block_behaviors.get_behavior(block);
-
-        let mut inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
-
-        let block_result = behavior.use_item_on(
-            state,
-            world,
-            pos,
-            player,
-            hand,
-            hit_result,
-            &mut inventory_access,
-        );
-
+        let block_result = use_block(player, world, hand, hit_result);
         if block_result.consumes_action() {
             return block_result;
-        }
-
-        if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
-            && hand == InteractionHand::MainHand
-        {
-            let empty_result = behavior.use_without_item(
-                state,
-                world,
-                pos,
-                player,
-                hit_result,
-                &mut inventory_access,
-            );
-
-            if empty_result.consumes_action() {
-                return empty_result;
-            }
         }
     }
 

@@ -434,6 +434,14 @@ not when the cart already has that name). The name shows while a player points a
 A silent word in it makes the cart silent. Not ported: a cart placed from a minecart item
 renamed "Тихо" on an anvil is not made silent.
 
+Waxed and invisible item frames (`content/waxed_frames.rs`, the Fabric `WaxedFrames`):
+honeycomb waxes an item frame (sneak to put the honeycomb in instead) and a sneaking axe
+scrapes the wax off. A waxed frame is vanilla's fixed frame: its item cannot be turned or
+taken and the frame cannot be broken; a right click on it goes to the block it hangs on, so
+a frame on a chest opens the chest. Sneaking shears hide or show a frame that holds an
+item, and a hidden frame shows again once its item is out. `steel-core` has
+`ItemFrameObserver` (`display_ui/item_frame.rs`) and `player::game_mode::use_block` for this.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

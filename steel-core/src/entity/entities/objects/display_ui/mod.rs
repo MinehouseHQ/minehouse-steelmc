@@ -14,7 +14,7 @@ pub use armor_stand::{ArmorStandEntity, ArmorStandPose};
 pub use block_display::BlockDisplayEntity;
 pub use display::{BillboardConstraints, Brightness};
 pub use item_display::{ItemDisplayContext, ItemDisplayEntity};
-pub use item_frame::ItemFrameEntity;
+pub use item_frame::{ItemFrameEntity, ItemFrameObserver, set_item_frame_observer};
 pub use leash_fence_knot::LeashFenceKnotEntity;
 pub use painting::PaintingEntity;
 pub use text_display::{Align, TextDisplayEntity};
