@@ -989,6 +989,14 @@ impl Server {
         dispatcher.signable_arguments(&parse, SteelArgumentType::is_signed)
     }
 
+    /// The command tree, for commands that read it like `/help`.
+    ///
+    /// Commands run with no lock on it held, so reading it from a command
+    /// cannot deadlock.
+    pub(crate) const fn command_dispatcher(&self) -> &SyncRwLock<CommandDispatcher> {
+        &self.command_dispatcher
+    }
+
     pub(crate) fn submit_command_suggestions(
         &self,
         player: Arc<Player>,

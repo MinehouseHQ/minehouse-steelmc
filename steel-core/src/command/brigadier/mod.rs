@@ -41,6 +41,7 @@ mod reader;
 mod runtime;
 mod string_range;
 mod suggestion;
+mod usage;
 
 pub(crate) use argument::{
     ArgumentType, CommandArgumentParser, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue,

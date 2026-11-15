@@ -20,6 +20,7 @@ mod forceload;
 pub(crate) mod gamemode;
 mod gamerule;
 mod give;
+mod help;
 mod invsee;
 mod item;
 mod kick;
@@ -109,6 +110,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
+    builder.register(help::registration())?;
     builder.register(item::registration())?;
     builder.register(kick::registration())?;
     builder.register(kill::registration())?;
@@ -217,6 +219,7 @@ mod tests {
                 "gamemode",
                 "gamerule",
                 "give",
+                "help",
                 "item",
                 "kick",
                 "kill",
