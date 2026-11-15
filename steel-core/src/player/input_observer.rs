@@ -1,12 +1,14 @@
 //! A hook for what a client does to things the server itself does not know: entities sent
 //! to one player only, and the hotbar wheel while such a thing is shown.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use steel_registry::items::item::BlockHitResult;
 use steel_utils::Identifier;
 use steel_utils::types::InteractionHand;
 
 use super::Player;
+use crate::{behavior::InteractionResult, world::World};
 
 /// Sees a player's entity clicks and hotbar changes before the server acts on them.
 pub trait PlayerInputObserver: Send + Sync {
@@ -23,6 +25,19 @@ pub trait PlayerInputObserver: Send + Sync {
 
     /// The player is changing the hotbar slot `from` to `to`; the change goes on after.
     fn carried_item(&self, _player: &Player, _from: u8, _to: u8) {}
+
+    /// The player (not a spectator) used the item in `hand` on the block at `hit`, before
+    /// the block or the item is asked. `Some` if the observer took the click, with what
+    /// came of it; vanilla then does nothing with it.
+    fn use_on_block(
+        &self,
+        _player: &Arc<Player>,
+        _world: &Arc<World>,
+        _hand: InteractionHand,
+        _hit: &BlockHitResult,
+    ) -> Option<InteractionResult> {
+        None
+    }
 
     /// The player pressed a dialog button or clicked text with the `custom` action `id`.
     /// Vanilla does nothing with these.
