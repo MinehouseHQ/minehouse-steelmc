@@ -93,6 +93,15 @@ pub static JUNCTION: CustomItem = CustomItem {
     max_stack: 64,
 };
 
+/// «Семена магического растения»: fall from the wild plant and from the crop, and sow it.
+pub static SEEDS: CustomItem = CustomItem {
+    id: "minehouse-herbs:magic_seeds",
+    base: &vanilla_items::BEETROOT_SEEDS,
+    name: "Семена магического растения",
+    lore: &["Сажать на вспаханную землю"],
+    max_stack: 64,
+};
+
 /// «Магический лист»: what the magic herb gives.
 pub static LEAF: CustomItem = CustomItem {
     id: "minehouse-herbs:magic_leaf",
@@ -115,11 +124,20 @@ pub static LEAF_BLOCK: CustomItem = CustomItem {
 };
 
 /// Every item of ours.
-pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD, &STATION, &JUNCTION, &LEAF, &LEAF_BLOCK];
+pub static ITEMS: &[&CustomItem] = &[
+    &MAGNIFIER,
+    &CLOUD,
+    &STATION,
+    &JUNCTION,
+    &SEEDS,
+    &LEAF,
+    &LEAF_BLOCK,
+];
 
 static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
 static JUNCTION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::JUNCTION_BLOCK);
 static LEAF_BLOCK_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::LEAF_BLOCK);
+static SEEDS_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::CROP_BLOCK);
 
 /// What using `stack` does when it is an item of ours that does not behave as its vanilla
 /// item: clouds are white wool to the client, and must not be placed as wool.
@@ -131,6 +149,8 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&STATION_ITEM)
     } else if id == JUNCTION.id {
         Some(&JUNCTION_ITEM)
+    } else if id == SEEDS.id {
+        Some(&SEEDS_ITEM)
     } else if id == LEAF_BLOCK.id {
         Some(&LEAF_BLOCK_ITEM)
     } else {

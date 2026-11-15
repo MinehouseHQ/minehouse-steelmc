@@ -5,10 +5,12 @@
 //! it is sent a vanilla state instead, and the server resource pack draws that state with
 //! our model.
 //!
-//! Full blocks borrow the states of the note block, which look all the same to a client.
-//! A real note block is always sent as its default state, and every other state is a slot
-//! for a block of ours. `pack/client_blocks.json` says which slot is whose: this module and
-//! `pack/build_pack.py` both read it, so the server and the pack cannot disagree.
+//! The vanilla states come from carriers: vanilla blocks whose states all look the same to
+//! a client. A real carrier block is always sent as its default state, and every other
+//! state is a slot for a block of ours. Full blocks borrow the note block, plants the sugar
+//! cane, which has no collision and is drawn with cutouts. `pack/client_blocks.json` says
+//! which slot is whose: this module and `pack/build_pack.py` both read it, so the server
+//! and the pack cannot disagree.
 
 use std::str::FromStr as _;
 
@@ -28,20 +30,31 @@ use steel_utils::{BlockStateId, Identifier};
 use super::{
     CustomItem, JUNCTION, LEAF_BLOCK as LEAF_BLOCK_ITEM, STATION,
     cloud::{self, CLOUD_BLOCK},
-    herbs::{self, LEAF_BLOCK},
+    herbs::{self, CROP_BLOCK, LEAF_BLOCK, WILD_BLOCK},
     metro::{self, JUNCTION_BLOCK, STATION_BLOCK},
 };
 
 /// Which vanilla state each block of ours is drawn over.
 const CLIENT_BLOCKS: &str = include_str!("../../pack/client_blocks.json");
 
-/// A note block state `pack/client_blocks.json` gives to a block of ours.
+/// The vanilla blocks whose states our blocks are drawn over, by their name in
+/// `pack/client_blocks.json`.
+fn carriers() -> [(&'static str, &'static Block); 2] {
+    [
+        ("note_block", &vanilla_blocks::NOTE_BLOCK),
+        ("sugar_cane", &vanilla_blocks::SUGAR_CANE),
+    ]
+}
+
+/// A carrier state `pack/client_blocks.json` gives to a block of ours.
 struct Slot {
+    /// The vanilla block the state is of.
+    carrier: &'static Block,
     /// The block of ours.
     block: Identifier,
     /// The states of the block the slot is for, as properties. None: all of them.
     when: Vec<(String, String)>,
-    /// The note block state, as properties.
+    /// The carrier state, as properties.
     state: Vec<(String, String)>,
 }
 
@@ -55,23 +68,26 @@ fn properties_of(slot: &Value, key: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The note block states `pack/client_blocks.json` gives out.
-fn note_block_slots() -> Vec<Slot> {
+/// The carrier states `pack/client_blocks.json` gives out.
+fn slots() -> Vec<Slot> {
     let Ok(file) = serde_json::from_str::<Value>(CLIENT_BLOCKS) else {
         return Vec::new();
     };
-    let slots = file.get("note_block").and_then(Value::as_array);
-    slots
-        .into_iter()
-        .flatten()
-        .filter_map(|slot| {
+    let mut slots = Vec::new();
+    for (name, carrier) in carriers() {
+        let listed = file
+            .get("carriers")
+            .and_then(|carriers| carriers.get(name)?.get("slots")?.as_array());
+        slots.extend(listed.into_iter().flatten().filter_map(|slot| {
             Some(Slot {
+                carrier,
                 block: Identifier::from_str(slot.get("block")?.as_str()?).ok()?,
                 when: properties_of(slot, "when"),
                 state: properties_of(slot, "state"),
             })
-        })
-        .collect()
+        }));
+    }
+    slots
 }
 
 fn borrowed(properties: &[(String, String)]) -> Vec<(&str, &str)> {
@@ -81,45 +97,57 @@ fn borrowed(properties: &[(String, String)]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-/// The note block state `state` of `block` is drawn over.
-fn note_block_slot(
+/// The carrier state `state` of `block` is drawn over.
+fn slot_of(
     blocks: &BlockRegistry,
     block: &'static Block,
     state: BlockStateId,
 ) -> Option<BlockStateId> {
-    let slot = note_block_slots().into_iter().find(|slot| {
+    let slot = slots().into_iter().find(|slot| {
         slot.block == block.key
             && (slot.when.is_empty()
                 || blocks.state_id_from_block_properties(block, &borrowed(&slot.when))
                     == Some(state))
     })?;
-    let slot = blocks
-        .state_id_from_block_properties(&vanilla_blocks::NOTE_BLOCK, &borrowed(&slot.state))?;
-    // The default state is the one real note blocks are sent as.
-    (slot != blocks.get_default_state_id(&vanilla_blocks::NOTE_BLOCK)).then_some(slot)
+    let shown = blocks.state_id_from_block_properties(slot.carrier, &borrowed(&slot.state))?;
+    // The default state is the one real carrier blocks are sent as.
+    (shown != blocks.get_default_state_id(slot.carrier)).then_some(shown)
 }
 
-/// Has clients see every state of the full block `block` as its note block state, or as
-/// `fallback` when `pack/client_blocks.json` gives it none, and its break as `broken`:
-/// a note block breaks like wood, which few of our blocks are.
-pub(super) fn show_full_block(
+/// Has clients see every state of `block` as its carrier state, or as what `fallback`
+/// gives for it when `pack/client_blocks.json` has none, and its break as what `broken`
+/// gives: a carrier breaks like itself (a note block like wood), which few of our blocks
+/// are.
+pub(super) fn show_block(
     blocks: &mut BlockRegistry,
     block: &'static Block,
-    fallback: BlockStateId,
-    broken: BlockStateId,
+    fallback: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
+    broken: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
 ) {
     let first = blocks.get_base_state_id(block).0;
     for state in (first..first + block.state_count()).map(BlockStateId) {
-        let slot = note_block_slot(blocks, block, state);
+        let slot = slot_of(blocks, block, state);
         if slot.is_none() {
             log::error!(
                 "MineHouse blocks: pack/client_blocks.json has no state for {}",
                 block.key
             );
         }
-        blocks.show_to_clients_as(state, slot.unwrap_or(fallback));
+        let shown = slot.unwrap_or_else(|| fallback(blocks, state));
+        let broken = broken(blocks, state);
+        blocks.show_to_clients_as(state, shown);
         blocks.show_break_to_clients_as(state, broken);
     }
+}
+
+/// [`show_block`] for a block that looks the same in every state without the pack.
+pub(super) fn show_full_block(
+    blocks: &mut BlockRegistry,
+    block: &'static Block,
+    fallback: BlockStateId,
+    broken: BlockStateId,
+) {
+    show_block(blocks, block, |_, _| fallback, |_, _| broken);
 }
 
 /// A block of ours that is placed as its default state and drops its item.
@@ -169,16 +197,17 @@ fn tag(blocks: &mut BlockRegistry, tag: &'static str, added: &[&Block]) {
 pub(super) fn register(registry: &mut Registry) {
     let blocks = &mut registry.blocks;
 
-    // Every real note block goes out as one state: a client draws them all alike.
-    let note_block = &vanilla_blocks::NOTE_BLOCK;
-    let first = blocks.get_base_state_id(note_block).0;
-    let default = blocks.get_default_state_id(note_block);
-    for state in first..first + note_block.state_count() {
-        blocks.show_to_clients_as(BlockStateId(state), default);
+    // Every real carrier block goes out as one state: a client draws them all alike.
+    for (_, carrier) in carriers() {
+        let first = blocks.get_base_state_id(carrier).0;
+        let default = blocks.get_default_state_id(carrier);
+        for state in first..first + carrier.state_count() {
+            blocks.show_to_clients_as(BlockStateId(state), default);
+        }
     }
 
     blocks.register(&CLOUD_BLOCK);
-    let slot = note_block_slot(blocks, &CLOUD_BLOCK, blocks.get_base_state_id(&CLOUD_BLOCK));
+    let slot = slot_of(blocks, &CLOUD_BLOCK, blocks.get_base_state_id(&CLOUD_BLOCK));
     if slot.is_none() {
         log::error!("MineHouse blocks: pack/client_blocks.json has no state for the cloud");
     }
@@ -188,6 +217,8 @@ pub(super) fn register(registry: &mut Registry) {
     blocks.register(&JUNCTION_BLOCK);
     metro::show_to_clients(blocks);
     blocks.register(&LEAF_BLOCK);
+    blocks.register(&CROP_BLOCK);
+    blocks.register(&WILD_BLOCK);
     herbs::show_to_clients(blocks);
     tag(blocks, "mineable/pickaxe", PICKAXE);
     tag(blocks, "mineable/hoe", HOE);
@@ -203,6 +234,8 @@ pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     ] {
         behaviors.set_behavior(block, Box::new(OwnBlock { block, item }));
     }
+    behaviors.set_behavior(&CROP_BLOCK, Box::new(herbs::HerbCrop));
+    behaviors.set_behavior(&WILD_BLOCK, Box::new(herbs::WildHerb));
 }
 
 #[cfg(test)]
@@ -220,47 +253,56 @@ mod tests {
     }
 
     #[test]
-    fn the_table_lists_the_note_block_properties_of_the_game() {
+    fn the_table_lists_the_properties_of_the_carriers_as_the_game_has_them() {
         let file: Value = serde_json::from_str(CLIENT_BLOCKS).expect("client_blocks.json parses");
-        let listed = file["note_block_properties"]
-            .as_object()
-            .expect("the properties are listed");
-        let properties = vanilla_blocks::NOTE_BLOCK.properties;
-        assert_eq!(listed.len(), properties.len());
-        for property in properties {
-            let values: Vec<&str> = (0..property.value_count())
-                .map(|index| property.value_name_from_index(index))
-                .collect();
-            let listed: Vec<&str> = listed[property.get_name()]
-                .as_array()
-                .expect("a property lists its values")
-                .iter()
-                .filter_map(Value::as_str)
-                .collect();
-            assert_eq!(listed, values, "{}", property.get_name());
+        assert_eq!(
+            file["carriers"].as_object().map(serde_json::Map::len),
+            Some(carriers().len())
+        );
+        for (name, carrier) in carriers() {
+            let listed = file["carriers"][name]["properties"]
+                .as_object()
+                .expect("the properties are listed");
+            assert_eq!(listed.len(), carrier.properties.len(), "{name}");
+            for property in carrier.properties {
+                let values: Vec<&str> = (0..property.value_count())
+                    .map(|index| property.value_name_from_index(index))
+                    .collect();
+                let listed: Vec<&str> = listed[property.get_name()]
+                    .as_array()
+                    .expect("a property lists its values")
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect();
+                assert_eq!(listed, values, "{name} {}", property.get_name());
+            }
         }
     }
 
     #[test]
-    fn every_slot_is_a_note_block_state_of_its_own() {
+    fn every_slot_is_a_carrier_state_of_its_own() {
         let (registry, _) = extended();
-        let slots = note_block_slots();
+        let slots = slots();
         assert_ne!(slots.len(), 0);
-        let mut taken = vec![
-            registry
-                .blocks
-                .get_default_state_id(&vanilla_blocks::NOTE_BLOCK),
-        ];
+        let mut taken: Vec<BlockStateId> = carriers()
+            .iter()
+            .map(|(_, carrier)| registry.blocks.get_default_state_id(carrier))
+            .collect();
         for slot in slots {
             let block = registry
                 .blocks
                 .by_key(&slot.block)
                 .unwrap_or_else(|| panic!("{} is ours", slot.block));
-            assert_eq!(slot.state.len(), 3, "{} names every property", slot.block);
+            assert_eq!(
+                slot.state.len(),
+                slot.carrier.properties.len(),
+                "{} names every property",
+                slot.block
+            );
             let state = registry
                 .blocks
-                .state_id_from_block_properties(&vanilla_blocks::NOTE_BLOCK, &borrowed(&slot.state))
-                .expect("the slot is a note block state");
+                .state_id_from_block_properties(slot.carrier, &borrowed(&slot.state))
+                .expect("the slot is a carrier state");
             assert!(
                 !taken.contains(&state),
                 "{} has a state to itself",
@@ -367,7 +409,7 @@ mod tests {
         let sent = |state: BlockStateId| BlockStateId(shown[usize::from(state.0)]);
 
         let cloud = blocks.get_base_state_id(&CLOUD_BLOCK);
-        let slot = note_block_slot(blocks, &CLOUD_BLOCK, cloud).expect("the cloud has a slot");
+        let slot = slot_of(blocks, &CLOUD_BLOCK, cloud).expect("the cloud has a slot");
         let air = blocks.get_default_state_id(&vanilla_blocks::AIR);
         let wool = blocks.get_default_state_id(&vanilla_blocks::WHITE_WOOL);
         // Whole and melting clouds are the slot, a gone one is air.
@@ -377,12 +419,14 @@ mod tests {
         // A cloud breaks like wool, though it is drawn over a note block.
         assert_eq!(broken[usize::from(cloud.0)], wool.0);
 
-        // A real note block never reaches a client as a slot, whatever its state.
-        let note_block = &vanilla_blocks::NOTE_BLOCK;
-        let default = blocks.get_default_state_id(note_block);
-        let first = blocks.get_base_state_id(note_block).0;
-        for state in first..first + note_block.state_count() {
-            assert_eq!(sent(BlockStateId(state)), default);
+        // A real note block or sugar cane never reaches a client as a slot, whatever its
+        // state.
+        for (_, carrier) in carriers() {
+            let default = blocks.get_default_state_id(carrier);
+            let first = blocks.get_base_state_id(carrier).0;
+            for state in first..first + carrier.state_count() {
+                assert_eq!(sent(BlockStateId(state)), default);
+            }
         }
         // Everything else goes out as it is.
         let stone = blocks.get_default_state_id(&vanilla_blocks::STONE);

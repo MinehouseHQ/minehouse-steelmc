@@ -13,6 +13,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_entities, vanilla_game_rules, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::BlockLootContext;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
@@ -96,10 +97,17 @@ pub(super) fn crop_growth_speed(
     }
 }
 
-pub(crate) trait CropLike {
+/// A crop that grows on farmland by age. Every implementor that is also [`Bonemealable`]
+/// gets the block behavior of a vanilla crop; a registry extension implements it for a
+/// crop of its own.
+pub trait CropLike {
+    /// The crop block.
     fn block(&self) -> BlockRef;
+    /// The property the age is kept in.
     fn age_property(&self) -> &IntProperty;
+    /// The age the crop is ripe at.
     fn max_age(&self) -> u8;
+    /// What picking the block gives: the seed.
     fn clone_item_stack(&self) -> ItemStack;
 
     /// Additional checks before calling the standard `on_random_tick` code
@@ -107,24 +115,39 @@ pub(crate) trait CropLike {
         true
     }
 
+    /// What the crop drops, for a crop that has no loot table: one a registry extension
+    /// added. `None` leaves the drops to the loot table of the block.
+    fn drops(
+        &self,
+        _state: BlockStateId,
+        _context: &BlockLootContext<'_>,
+    ) -> Option<Vec<ItemStack>> {
+        None
+    }
+
+    /// The age of `state`.
     fn get_age(&self, state: BlockStateId) -> u8 {
         state.get_value(self.age_property())
     }
 
+    /// The state of the crop at `age`.
     fn get_state_for_age(&self, age: u8) -> BlockStateId {
         self.block()
             .default_state()
             .set_value(self.age_property(), age)
     }
 
+    /// Whether `state` is ripe.
     fn is_max_age(&self, state: BlockStateId) -> bool {
         state.get_value(self.age_property()) >= self.max_age()
     }
 
+    /// Whether the crop has the light to stay planted.
     fn has_sufficient_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
         world.raw_brightness(pos, 0) >= MIN_CROP_LIGHT_LEVEL
     }
 
+    /// Whether the crop has the light to grow.
     fn has_sufficient_growth_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
         world.raw_brightness(pos, 0) >= MIN_CROP_GROWTH_LIGHT_LEVEL
     }
@@ -139,6 +162,7 @@ pub(crate) trait CropLike {
         crop_growth_speed(self.block(), world.as_ref(), pos)
     }
 
+    /// Grows the crop by one age, at the chance its growth speed gives.
     fn on_random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !self.has_sufficient_growth_light(world.as_ref(), pos) {
             return;
@@ -287,6 +311,14 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn get_drops(
+        &self,
+        state: BlockStateId,
+        context: &BlockLootContext<'_>,
+    ) -> Option<Vec<ItemStack>> {
+        self.drops(state, context)
     }
 
     fn get_clone_item_stack(
