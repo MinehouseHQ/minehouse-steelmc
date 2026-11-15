@@ -271,13 +271,14 @@ impl DomainSwitchJob {
         })
     }
 
-    /// Ends the relocation and joins the target domain's boss bars, like a
-    /// connect.
+    /// Ends the relocation and joins the target domain's scoreboard and boss
+    /// bars, like a connect.
     fn admit_to_target_domain(&self, server: &Server) {
         server.release_player_admission(
             self.player.gameprofile.id(),
             PlayerAdmissionState::Relocating,
         );
+        server.connect_player_to_scoreboard(&self.target_domain, &self.player);
         server.connect_player_to_boss_bars(&self.target_domain, &self.player);
     }
 

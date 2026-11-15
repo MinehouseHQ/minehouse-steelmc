@@ -45,6 +45,7 @@ mod c_remove_mob_effect;
 mod c_remove_player_info;
 mod c_respawn;
 mod c_rotate_head;
+mod c_scoreboard;
 mod c_section_blocks_update;
 mod c_select_advancements_tab;
 mod c_set_action_bar_text;
@@ -175,6 +176,11 @@ pub use c_remove_mob_effect::CRemoveMobEffect;
 pub use c_remove_player_info::CRemovePlayerInfo;
 pub use c_respawn::CRespawn;
 pub use c_rotate_head::CRotateHead;
+pub use c_scoreboard::{
+    CResetScore, CSetDisplayObjective, CSetObjective, CSetPlayerTeam, CSetScore, NumberFormat,
+    ObjectiveMethod, ObjectiveRenderType, TeamCollisionRule, TeamMethod, TeamParameters,
+    TeamVisibility, style_nbt,
+};
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
 pub use c_select_advancements_tab::CSelectAdvancementsTab;
 pub use c_set_action_bar_text::CSetActionBarText;
