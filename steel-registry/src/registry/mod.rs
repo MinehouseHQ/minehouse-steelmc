@@ -101,12 +101,15 @@ use crate::{
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
+use steel_utils::types::set_client_block_states;
+
 use std::{
     fmt::Debug,
+    mem,
     ops::Deref,
     sync::{Once, OnceLock},
 };
-use steel_utils::Identifier;
+use steel_utils::{Identifier, locks::SyncMutex};
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -117,6 +120,20 @@ impl RegistryLock {
     }
 }
 
+/// What extensions add to the registry before it is frozen.
+static EXTENSIONS: SyncMutex<Vec<fn(&mut Registry)>> = SyncMutex::new(Vec::new());
+
+/// Has `extension` add its own entries (recipes, for one) on top of the vanilla ones, right
+/// before the registry is frozen. Returns `false` if the registry was already published:
+/// then it is too late and `extension` never runs.
+pub fn extend_registry(extension: fn(&mut Registry)) -> bool {
+    if REGISTRY.0.get().is_some() {
+        return false;
+    }
+    EXTENSIONS.lock().push(extension);
+    true
+}
+
 /// Returns `false` if the registry was already published.
 pub fn init_vanilla_registry() -> bool {
     static INIT: Once = Once::new();
@@ -124,6 +141,22 @@ pub fn init_vanilla_registry() -> bool {
     let mut published = false;
     INIT.call_once(|| {
         let mut registry = Registry::new_vanilla();
+        // What the client's game has: extensions can only add to it.
+        let vanilla_block_states = registry.blocks.next_state_id;
+        let extensions = mem::take(&mut *EXTENSIONS.lock());
+        for extension in extensions {
+            extension(&mut registry);
+        }
+        let (shown, problems) = registry.blocks.client_states(vanilla_block_states);
+        for problem in problems {
+            log::error!("Registry extension: {problem}; clients will see air");
+        }
+        if let Some(shown) = shown {
+            let broken = registry
+                .blocks
+                .client_break_states(&shown, vanilla_block_states);
+            set_client_block_states(shown, broken, vanilla_block_states);
+        }
         registry.freeze();
         published = REGISTRY.init(registry).is_ok();
     });

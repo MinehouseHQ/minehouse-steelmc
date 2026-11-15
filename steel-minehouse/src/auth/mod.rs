@@ -16,7 +16,6 @@ mod settings;
 mod trusted;
 
 use std::{
-    net::IpAddr,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -27,7 +26,7 @@ use std::{
 use rustc_hash::FxHashMap;
 use steel_core::server::{
     Server,
-    login_gate::{LoginAdmission, LoginConnection, LoginDecision, LoginGate, PendingLogin},
+    login_gate::{LoginConnection, LoginDecision, PendingLogin},
 };
 use steel_protocol::packets::{common::CClearDialog, config::CShowDialog};
 use steel_registry::game_profile::GameProfile;
@@ -107,8 +106,11 @@ impl Auth {
         Some(AuthSetup { config, site })
     }
 
-    /// Installs the login gate.
-    pub fn start(server: &Arc<Server>, setup: AuthSetup) -> Option<Arc<Self>> {
+    /// Profile properties Gate sends for the login check alone.
+    pub const PRIVATE_PROPERTIES: &[&str] = &[MOJANG_ID_PROPERTY];
+
+    /// Builds the login check; the caller puts it behind the server's login gate.
+    pub fn start(server: &Arc<Server>, setup: AuthSetup) -> Arc<Self> {
         let AuthSetup { config, site } = setup;
         if server.config.velocity_secret.is_none() {
             log::warn!(
@@ -128,16 +130,12 @@ impl Auth {
             sessions: SyncMutex::new(FxHashMap::default()),
             next_session: AtomicU64::new(1),
         });
-        if !server.set_login_gate(Arc::new(Gate(Arc::clone(&auth)))) {
-            log::error!("Another login gate is already installed, the login check is off");
-            return None;
-        }
         log::info!(
             "Login check on: API {}, server {:?}",
             auth.config.api_url,
             auth.config.server_id
         );
-        Some(auth)
+        auth
     }
 
     const fn messages(&self) -> &Messages {
@@ -178,7 +176,12 @@ impl Auth {
     /// that is still confirming a code is replaced when the new connection comes from the
     /// same IP (the player reconnected); a login from another IP blocks the nickname until
     /// its code expires.
-    fn refuse(&self, server: &Server, profile: &GameProfile, ip: &str) -> Option<TextComponent> {
+    pub(crate) fn refuse(
+        &self,
+        server: &Server,
+        profile: &GameProfile,
+        ip: &str,
+    ) -> Option<TextComponent> {
         let nickname = profile.name();
         let online = server.get_players().iter().any(|player| {
             player.gameprofile.id() == profile.id()
@@ -211,7 +214,7 @@ impl Auth {
         )
     }
 
-    async fn admit(self: Arc<Self>, login: PendingLogin) -> LoginDecision {
+    pub(crate) async fn admit(self: Arc<Self>, login: PendingLogin) -> LoginDecision {
         let nickname = login.profile.name().to_owned();
         let ip = login.address.to_string();
         let premium = login
@@ -395,26 +398,5 @@ impl Drop for PendingRequest {
                 log::debug!("Could not cancel request {id}: {error}");
             }
         });
-    }
-}
-
-struct Gate(Arc<Auth>);
-
-impl LoginGate for Gate {
-    fn private_properties(&self) -> &[&str] {
-        &[MOJANG_ID_PROPERTY]
-    }
-
-    fn refuse_login(
-        &self,
-        server: &Server,
-        profile: &GameProfile,
-        address: IpAddr,
-    ) -> Option<TextComponent> {
-        self.0.refuse(server, profile, &address.to_string())
-    }
-
-    fn admit(&self, login: PendingLogin) -> LoginAdmission {
-        Box::pin(Arc::clone(&self.0).admit(login))
     }
 }

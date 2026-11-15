@@ -5,7 +5,10 @@
 //! nickname and alt and survive a nickname change. The commands only call the site; a
 //! background task kicks whoever got banned elsewhere and announces those bans in chat.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, OnceLock, Weak},
+    time::Duration,
+};
 
 use rustc_hash::FxHashSet;
 use steel_core::{command::CommandRegistry, server::Server};
@@ -14,12 +17,13 @@ use text_components::TextComponent;
 use tokio::{runtime::Handle, task::JoinHandle, time::sleep};
 use uuid::Uuid;
 
-use crate::site::SiteClient;
+use crate::{config, site::SiteClient};
 
 pub mod api;
-mod commands;
+pub(crate) mod commands;
 pub mod format;
 pub mod settings;
+pub mod wipe;
 
 use api::BanEntry;
 use settings::BansConfig;
@@ -35,6 +39,8 @@ pub struct Moderation {
     /// Disconnect text when the site sends none.
     banned_message: String,
     runtime: Handle,
+    /// Set by [`Self::start`]. Weak: the server owns the commands, which own this.
+    server: OnceLock<Weak<Server>>,
     sync: SyncMutex<Option<JoinHandle<()>>>,
 }
 
@@ -53,6 +59,7 @@ impl Moderation {
             runtime: Handle::try_current()
                 .inspect_err(|error| log::error!("Moderation commands are off: {error}"))
                 .ok()?,
+            server: OnceLock::new(),
             sync: SyncMutex::new(None),
         });
         if let Err(error) = commands::register(registry, &moderation) {
@@ -63,6 +70,7 @@ impl Moderation {
 
     /// Starts the ban sync. Call once the server is ready for players.
     pub fn start(self: &Arc<Self>, server: &Arc<Server>) {
+        let _ = self.server.set(Arc::downgrade(server));
         let task = self
             .runtime
             .spawn(Arc::clone(self).run_sync(Arc::clone(server)));
@@ -96,6 +104,46 @@ impl Moderation {
             self.announce_site_bans(&server, &config, &mut known).await;
             sleep(Duration::from_secs(config.sync_seconds)).await;
             self.kick_banned(&server).await;
+            self.wipe_requested(&server).await;
+        }
+    }
+
+    /// The running server, for work a command does off the tick.
+    fn server(&self) -> Option<Arc<Server>> {
+        self.server.get()?.upgrade()
+    }
+
+    /// Resets the progress of the accounts it was asked for on the site (unban or ban with
+    /// «сбросить прогресс»).
+    async fn wipe_requested(&self, server: &Arc<Server>) {
+        // The site asks a server by its console id; a server without one goes by the id of
+        // its login check.
+        let server_id =
+            config::env_value("MINEHOUSE_SERVER_ID").unwrap_or_else(|| self.server_id.clone());
+        let wipes = match self.site.wipes(&server_id).await {
+            Ok(wipes) => wipes,
+            Err(error) => {
+                log::debug!("Wipe sync failed: {error}");
+                return;
+            }
+        };
+
+        for wipe in wipes {
+            let report = wipe::wipe_players(server, &wipe.uuids, wipe::WIPED_MESSAGE).await;
+            log::info!(
+                "Site wipe #{} of {}: {} nickname(s) reset",
+                wipe.id,
+                wipe.nickname,
+                report.wiped
+            );
+            let error = (!report.errors.is_empty()).then(|| report.errors.join("; "));
+            if let Err(error) = self
+                .site
+                .wipe_done(wipe.id, report.wiped, error.as_deref())
+                .await
+            {
+                log::warn!("Could not report site wipe #{}: {error}", wipe.id);
+            }
         }
     }
 

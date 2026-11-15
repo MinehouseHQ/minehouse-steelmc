@@ -103,8 +103,8 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::items::synchronize_map_updates;
 use crate::behavior::{
-    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
-    ItemBehavior, apply_use_remainder,
+    BlockStateBehaviorExt as _, InteractionResult, InventoryTickContext, ItemBehavior,
+    apply_use_remainder, use_behavior_of,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -138,6 +138,7 @@ use crate::player::player_inventory::{
 use crate::server::{
     PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
+    world_log::WorldLog,
 };
 use crate::world::player_spawn_finder::{
     POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
@@ -412,9 +413,7 @@ impl Player {
             let item = inventory.get_item_in_hand(hand);
             item.clone()
         };
-        let duration = ITEM_BEHAVIORS
-            .get_behavior(item.item())
-            .get_use_duration(&item, self);
+        let duration = use_behavior_of(&item).get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
@@ -451,12 +450,18 @@ impl Player {
             .set(flags & !Self::USING_ITEM_FLAG);
     }
 
+    /// The behavior of the stack in `hand` while it is in use: the one its use started
+    /// with, which an extension may have picked for the stack.
+    fn active_use_behavior(&self, hand: InteractionHand) -> &'static dyn ItemBehavior {
+        use_behavior_of(self.inventory.lock().get_item_in_hand(hand))
+    }
+
     /// Releases the currently used item and invokes its release hook.
     pub fn release_using_item(&self, entity: &SharedEntity) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
-        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        let behavior = self.active_use_behavior(active.hand());
         self.release_using_item_with_behavior(entity, behavior, active);
     }
 
@@ -504,7 +509,7 @@ impl Player {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
-        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        let behavior = self.active_use_behavior(active.hand());
         self.tick_active_item_use_with_behavior(entity, behavior, active);
     }
 
@@ -853,9 +858,13 @@ impl Player {
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
-    /// Handles a custom payload packet.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
+    /// Handles a custom payload packet: hands it to the plugin channel handler, if any.
+    pub fn handle_custom_payload(&self, packet: SCustomPayload) {
+        let server = self.server();
+        if let Some(handler) = server.plugin_channel_handler() {
+            handler.plugin_message(&server, self, &packet.identifier, &packet.payload.0);
+        }
+    }
 
     /// Handles the end of a client tick.
     pub fn handle_client_tick_end(&self) {
@@ -1112,6 +1121,18 @@ impl Player {
         self.server
             .upgrade()
             .expect("player must not outlive server")
+    }
+
+    /// The world log of the server. A player without a server (in tests) has none.
+    pub(crate) fn world_log(&self) -> Option<Arc<dyn WorldLog>> {
+        self.server.upgrade()?.world_log().cloned()
+    }
+
+    /// Tells the world log that this player broke `state` at `pos`.
+    pub(crate) fn log_block_broken(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+        if let Some(world_log) = self.world_log() {
+            world_log.block_broken(self, world, pos, state);
+        }
     }
 
     /// Returns the identity of the player's current continuous domain stay.

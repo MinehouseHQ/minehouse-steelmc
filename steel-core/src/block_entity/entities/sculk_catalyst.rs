@@ -346,7 +346,13 @@ mod tests {
         let block_entity = block_entity(world);
         let catalyst = catalyst(&block_entity);
         catalyst.add_cursors(BlockPos::new(14, 64, 8), 200);
-        for _ in 0..600 {
+        // Charge decays by chance, so how long it lasts is random: 600 ticks are enough
+        // for most runs, not for all. It never grows, so tick until it has run out,
+        // within a bound far above any run.
+        for _ in 0..20_000 {
+            if catalyst.spreader().cursors().is_empty() {
+                break;
+            }
             block_entity.tick(world);
             world.level_data.write().advance_game_time();
         }

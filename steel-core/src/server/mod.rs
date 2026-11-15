@@ -1,15 +1,18 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
 mod autosave;
 mod broadcasting;
+pub mod chat_interceptor;
 /// Tick-polled server jobs.
 pub mod jobs;
 pub mod login_gate;
 mod packet_processor;
+pub mod plugin_channels;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
 mod run_loop;
 mod service_keys;
+pub mod tab_list;
 mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
@@ -264,6 +267,11 @@ pub async fn test_server_with_worlds_and_config(
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
         login_gate: OnceLock::new(),
+        chat_interceptor: OnceLock::new(),
+        tab_list_provider: OnceLock::new(),
+        plugin_channel_handler: OnceLock::new(),
+        world_log: OnceLock::new(),
+        status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,
@@ -472,6 +480,7 @@ pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
+pub mod world_log;
 
 use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
@@ -505,6 +514,16 @@ pub struct Server {
     server_tick_changed: Notify,
     /// Holds verified logins in the configuration phase, see [`login_gate`].
     login_gate: OnceLock<Arc<dyn login_gate::LoginGate>>,
+    /// Takes over player chat, see [`chat_interceptor`].
+    chat_interceptor: OnceLock<Arc<dyn chat_interceptor::ChatInterceptor>>,
+    /// Draws the tab list, see [`tab_list`].
+    tab_list_provider: OnceLock<Arc<dyn tab_list::TabListProvider>>,
+    /// Talks to client mods over plugin channels, see [`plugin_channels`].
+    plugin_channel_handler: OnceLock<Arc<dyn plugin_channels::PluginChannelHandler>>,
+    /// Hears what players change in the world, see [`world_log`].
+    world_log: OnceLock<Arc<dyn world_log::WorldLog>>,
+    /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
+    status_motd: SyncMutex<Option<String>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
@@ -866,6 +885,11 @@ impl Server {
             player_admission_changed: Notify::new(),
             server_tick_changed: Notify::new(),
             login_gate: OnceLock::new(),
+            chat_interceptor: OnceLock::new(),
+            tab_list_provider: OnceLock::new(),
+            plugin_channel_handler: OnceLock::new(),
+            world_log: OnceLock::new(),
+            status_motd: SyncMutex::new(None),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             player_idle_timeout: AtomicI32::new(0),

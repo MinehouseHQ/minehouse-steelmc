@@ -74,7 +74,11 @@ impl JavaTcpClient {
 
     /// Handles the select known packs packet during the configuration state.
     pub async fn handle_select_known_packs(&self, packet: SSelectKnownPacks) {
-        let sequence_result = self.pre_play_state.lock().select_known_packs();
+        let resource_pack = self.server.config.resource_pack_packet();
+        let sequence_result = self
+            .pre_play_state
+            .lock()
+            .select_known_packs(resource_pack.is_some());
         if let Err(error) = sequence_result {
             self.reject_unexpected_packet(error).await;
             return;
@@ -90,6 +94,16 @@ impl JavaTcpClient {
         self.send_packet_now(&self.server.registry_cache.tags_packet)
             .await;
 
+        // Vanilla's task order: registries, the resource pack, joining the world.
+        if let Some(resource_pack) = resource_pack {
+            self.offer_resource_pack(resource_pack).await;
+            return;
+        }
+        self.join_world().await;
+    }
+
+    /// The last configuration task: the login gate if there is one, then the finish.
+    pub(crate) async fn join_world(&self) {
         if self.start_login_gate() {
             // The gate finishes the configuration, or disconnects.
             return;

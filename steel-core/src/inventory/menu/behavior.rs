@@ -26,7 +26,7 @@ use crate::{
     },
     player::{Player, PlayerConnection, connection::NetworkConnection},
 };
-use steel_utils::Downcast as _;
+use steel_utils::{BlockPos, Downcast as _};
 
 /// Shared behavior and state for all menu types.
 pub struct MenuBehavior {
@@ -117,6 +117,15 @@ impl MenuBehavior {
     #[must_use]
     pub fn lock_all_containers(&self) -> ContainerLockGuard {
         ContainerLockGuard::lock_all(&self.container_refs)
+    }
+
+    /// The contents of the block-entity containers of this menu, by block position.
+    #[must_use]
+    pub fn block_containers(&self) -> Vec<(BlockPos, Vec<ItemStack>)> {
+        self.container_refs
+            .iter()
+            .filter_map(ContainerRef::block_contents)
+            .collect()
     }
 
     /// Locks the menu containers together with one additional container.

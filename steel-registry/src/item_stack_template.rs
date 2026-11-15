@@ -126,6 +126,37 @@ impl ItemStackTemplate {
         })
     }
 
+    /// Constructs a template for an entry that a registry extension adds (see
+    /// [`extend_registry`](crate::extend_registry)), a recipe result with components for one.
+    ///
+    /// Extensions run before the registry is published, where component codecs cannot consult
+    /// `REGISTRY`, so the persistent shape is not validated here and there is no persistent
+    /// hash: like a template read from a stream, this one must not be hashed as a component.
+    ///
+    /// # Panics
+    /// Panics if `item` is air or `count` is outside the persistent range.
+    #[must_use]
+    pub fn for_registry_extension(
+        item: ItemRef,
+        count: i32,
+        components: DataComponentPatch,
+    ) -> Self {
+        assert!(
+            item != &*vanilla_items::AIR,
+            "Item stack template item must be non-empty"
+        );
+        assert!(
+            (Self::MIN_COUNT..=Self::MAX_COUNT).contains(&count),
+            "Item stack template count {count} is outside the persistent range"
+        );
+        Self {
+            item,
+            count,
+            components,
+            components_hash: None,
+        }
+    }
+
     /// Constructs a template from build-time validated Vanilla extractor data.
     ///
     /// This avoids persistent codec validation during registry bootstrap because

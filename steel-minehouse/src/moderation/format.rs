@@ -130,6 +130,25 @@ struct Style {
 }
 
 impl Style {
+    /// Reads the formatting code after a `&`: the new style and the bytes the code takes.
+    /// `None` when `after` does not start with one.
+    fn code(&self, after: &str) -> Option<(Self, usize)> {
+        if let Some(hex) = after.strip_prefix('#').and_then(|rest| rest.get(..6))
+            && let Ok(rgb) = u32::from_str_radix(hex, 16)
+            && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            let [_, red, green, blue] = rgb.to_be_bytes();
+            let style = Self {
+                color: Some(Color::Rgb(red, green, blue)),
+                ..Self::default()
+            };
+            return Some((style, 7));
+        }
+        let code = after.chars().next()?;
+        let style = self.with(code.to_ascii_lowercase())?;
+        Some((style, code.len_utf8()))
+    }
+
     /// Applies `&<code>`; `None` when `code` is not a formatting code.
     fn with(&self, code: char) -> Option<Self> {
         let color = match code {
@@ -217,7 +236,19 @@ impl Style {
 /// in a reason or a nickname is not read as a color.
 #[must_use]
 pub fn render(format: &str, values: &[(&str, &str)]) -> TextComponent {
-    let mut parts = Vec::new();
+    render_parts(format, &[], values)
+}
+
+/// [`render`] with placeholders that are ready-made components (a nickname with a hover, a
+/// role badge, the chat message). A part takes the color in effect where it stands; `None`
+/// leaves nothing. `&#rrggbb` is any color.
+#[must_use]
+pub fn render_parts(
+    format: &str,
+    parts: &[(&str, Option<TextComponent>)],
+    values: &[(&str, &str)],
+) -> TextComponent {
+    let mut children = Vec::new();
     let mut text = String::new();
     let mut style = Style::default();
     let mut rest = format;
@@ -226,24 +257,35 @@ pub fn render(format: &str, values: &[(&str, &str)]) -> TextComponent {
         let after = &rest[character.len_utf8()..];
 
         if character == '&'
-            && let Some(code) = after.chars().next()
-            && let Some(next) = style.with(code.to_ascii_lowercase())
+            && let Some((next, length)) = style.code(after)
         {
             if !text.is_empty() {
-                parts.push(style.apply(mem::take(&mut text)));
+                children.push(style.apply(mem::take(&mut text)));
             }
             style = next;
-            rest = &after[code.len_utf8()..];
+            rest = &after[length..];
             continue;
         }
 
         if character == '{'
             && let Some(end) = after.find('}')
-            && let Some((_, value)) = values.iter().find(|(key, _)| *key == &after[..end])
         {
-            text.push_str(value);
-            rest = &after[end + 1..];
-            continue;
+            let name = &after[..end];
+            if let Some((_, part)) = parts.iter().find(|(key, _)| *key == name) {
+                if !text.is_empty() {
+                    children.push(style.apply(mem::take(&mut text)));
+                }
+                if let Some(part) = part {
+                    children.push(style.apply(String::new()).add_child(part.clone()));
+                }
+                rest = &after[end + 1..];
+                continue;
+            }
+            if let Some((_, value)) = values.iter().find(|(key, _)| *key == name) {
+                text.push_str(value);
+                rest = &after[end + 1..];
+                continue;
+            }
         }
 
         text.push(character);
@@ -251,9 +293,21 @@ pub fn render(format: &str, values: &[(&str, &str)]) -> TextComponent {
     }
 
     if !text.is_empty() {
-        parts.push(style.apply(text));
+        children.push(style.apply(text));
     }
-    TextComponent::plain("").add_children(parts)
+    TextComponent::plain("").add_children(children)
+}
+
+/// Epoch milliseconds as `07.11.2026 18:00` Moscow time.
+#[must_use]
+pub fn format_epoch_millis(millis: i64) -> String {
+    let time = FixedOffset::east_opt(MOSCOW_OFFSET_S)
+        .zip(DateTime::from_timestamp_millis(millis))
+        .map(|(offset, time)| time.with_timezone(&offset));
+    time.map_or_else(
+        || millis.to_string(),
+        |time| time.format("%d.%m.%Y %H:%M").to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -304,6 +358,21 @@ mod tests {
             Some(86400)
         );
         assert_eq!(duration_between("2026-11-07T15:00:00Z", "never"), None);
+    }
+
+    #[test]
+    fn formats_take_parts_and_hex_colors() {
+        let name = TextComponent::plain("Steve").bold(true);
+        let message = render_parts(
+            "&#a855f7[Г] {prefix}&f{name}&8 » &f{message} &#zzzzzz",
+            &[("prefix", None), ("name", Some(name))],
+            &[("message", "привет {name}")],
+        );
+        assert_eq!(
+            message.to_plain(&NoResolutor),
+            "[Г] Steve » привет {name} &#zzzzzz"
+        );
+        assert_eq!(format_epoch_millis(1_794_063_600_000), "07.11.2026 18:00");
     }
 
     #[test]

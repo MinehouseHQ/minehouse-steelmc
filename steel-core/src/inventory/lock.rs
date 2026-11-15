@@ -12,7 +12,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use steel_utils::locks::Shared;
-use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
+use steel_utils::{BlockPos, Downcast as _, DowncastType, locks::SyncMutex};
 
 use crate::entity::Entity as _;
 use crate::world::World;
@@ -313,6 +313,15 @@ impl ContainerRef {
         if let Some(block_entity) = self.owner_block_entity() {
             block_entity.stop_open(player);
         }
+    }
+
+    /// The position and items of this container, if a live block entity owns it.
+    #[must_use]
+    pub fn block_contents(&self) -> Option<(BlockPos, Vec<ItemStack>)> {
+        let block_entity = self.owner.as_ref()?.block_entity.as_ref()?;
+        block_entity.live_block_entity()?;
+        let pos = block_entity.pos();
+        Some((pos, self.lock().items().to_vec()))
     }
 
     fn owner_block_entity(&self) -> Option<SharedBlockEntity> {
@@ -742,5 +751,39 @@ mod tests {
             world.has_scheduled_block_tick(comparator_pos, &vanilla_blocks::COMPARATOR),
             "barrel callback did not schedule the comparator despite analog output {analog}"
         );
+    }
+
+    #[test]
+    fn block_contents_come_with_the_position_of_the_block() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+        let world_fixture = fresh_test_world("barrel_block_contents");
+        let world = &world_fixture.world;
+        let barrel_pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(barrel_pos));
+        assert!(world.set_block(
+            barrel_pos,
+            vanilla_blocks::BARREL.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let container_ref = ContainerRef::from_block_entity(
+            world
+                .get_block_entity(barrel_pos)
+                .expect("barrel should create its block entity"),
+        )
+        .expect("barrel should expose a container capability");
+        let slot = NormalSlot::new(container_ref.clone(), 3);
+        let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+        slot.set_item(&mut guard, ItemStack::new(&vanilla_items::STONE));
+        drop(guard);
+
+        let (pos, items) = container_ref
+            .block_contents()
+            .expect("a barrel in the world has block contents");
+        assert_eq!(pos, barrel_pos);
+        assert_eq!(items.len(), 27);
+        assert_eq!(items[3].item().key, vanilla_items::STONE.key);
+        assert!(items[0].is_empty());
     }
 }

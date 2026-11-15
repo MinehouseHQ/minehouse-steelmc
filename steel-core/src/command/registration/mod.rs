@@ -291,13 +291,26 @@ where
             }
         }
 
-        let mut claimed_roots = FxHashSet::<Box<str>>::default();
-        for command in &resolved {
+        // An extension that registers a name vanilla also has takes it over, as a plugin
+        // does on other servers; the vanilla command stays reachable as `minecraft:<name>`.
+        // Otherwise the first registration owns the name.
+        let mut owners = FxHashMap::<Box<str>, usize>::default();
+        let indexed = || resolved.iter().enumerate();
+        let extensions_first = indexed()
+            .filter(|(_, command)| !command.is_vanilla())
+            .chain(indexed().filter(|(_, command)| command.is_vanilla()));
+        for (index, command) in extensions_first {
             for root in command.roots() {
-                if !claimed_roots.insert(root.into()) {
-                    continue;
+                owners.entry(root.into()).or_insert(index);
+            }
+        }
+        for (index, command) in indexed() {
+            for root in command.roots() {
+                // Taking the entry out keeps a repeated alias from registering twice.
+                if owners.get(root) == Some(&index) {
+                    owners.remove(root);
+                    register_renamed_root(&mut dispatcher, &command.root, root)?;
                 }
-                register_renamed_root(&mut dispatcher, &command.root, root)?;
             }
         }
 
@@ -410,6 +423,10 @@ impl<S> ResolvedCommand<S>
 where
     S: CommandPermissionSource,
 {
+    fn is_vanilla(&self) -> bool {
+        self.id.namespace == "minecraft"
+    }
+
     fn roots(&self) -> impl Iterator<Item = &str> {
         once(self.id.path.as_ref()).chain(self.aliases.iter().map(AsRef::as_ref))
     }

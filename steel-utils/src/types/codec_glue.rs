@@ -1,4 +1,7 @@
-use std::io::{self, Cursor, Write};
+use std::{
+    io::{self, Cursor, Write},
+    sync::OnceLock,
+};
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 
@@ -52,9 +55,67 @@ impl simdnbt::FromNbtTag for Todo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct BlockStateId(pub u16);
 
+/// What clients are sent for block states their game does not have.
+struct ClientBlockStates {
+    /// The state shown for each server state, indexed by server state id.
+    shown: Box<[u16]>,
+    /// The state whose break each server state is shown as, indexed the same way.
+    broken: Box<[u16]>,
+    /// How many block states the client's game has.
+    count: u16,
+}
+
+static CLIENT_BLOCK_STATES: OnceLock<ClientBlockStates> = OnceLock::new();
+
+/// Makes every block state go to clients as `shown[state]`, for a server whose block
+/// registry is larger than the client's. `count` is the number of states the client has.
+///
+/// `broken[state]` is the state the client plays the break of `state` as (its sound and
+/// particles), which may differ from the one it draws.
+///
+/// Returns `false` if the table was already set; it can be set once.
+pub fn set_client_block_states(shown: Box<[u16]>, broken: Box<[u16]>, count: u16) -> bool {
+    CLIENT_BLOCK_STATES
+        .set(ClientBlockStates {
+            shown,
+            broken,
+            count,
+        })
+        .is_ok()
+}
+
+/// How many block states the client's game has, if it differs from the server's registry.
+#[must_use]
+pub fn client_block_state_count() -> Option<u16> {
+    CLIENT_BLOCK_STATES.get().map(|states| states.count)
+}
+
+impl BlockStateId {
+    /// The state a client is sent for this one: itself, unless
+    /// [`set_client_block_states`] says otherwise.
+    #[must_use]
+    pub fn to_client(self) -> Self {
+        CLIENT_BLOCK_STATES
+            .get()
+            .and_then(|states| states.shown.get(usize::from(self.0)))
+            .map_or(self, |shown| Self(*shown))
+    }
+
+    /// The state a client is told was broken when this one is, see
+    /// [`set_client_block_states`].
+    #[must_use]
+    pub fn to_client_break(self) -> Self {
+        CLIENT_BLOCK_STATES
+            .get()
+            .and_then(|states| states.broken.get(usize::from(self.0)))
+            .map_or(self, |broken| Self(*broken))
+    }
+}
+
 impl WriteTo for BlockStateId {
+    /// Writes the state for a client, see [`BlockStateId::to_client`].
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
-        VarInt(i32::from(self.0)).write(writer)
+        VarInt(i32::from(self.to_client().0)).write(writer)
     }
 }
 

@@ -11,6 +11,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 pub use steel_protocol::packet_traits::CompressionInfo;
+use steel_protocol::packets::common::CResourcePackPush;
 use steel_protocol::packets::config::{CServerLinks, Link, ServerLinksType};
 use steel_registry::vanilla_dimension_types;
 use steel_utils::Identifier;
@@ -18,6 +19,7 @@ use steel_utils::codec::Or;
 use steel_utils::types::{Difficulty, GameType};
 use text_components::TextComponent;
 use toml::map::Map;
+use uuid::{Builder, Uuid, Variant, Version};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorRegistry};
@@ -93,6 +95,8 @@ pub struct RuntimeConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// The resource pack offered to every client.
+    pub resource_pack: Option<ResourcePack>,
     /// Optional count of persistent inter-tick gameplay packet workers.
     pub packet_workers: Option<usize>,
     /// Optional worker count for the Rayon chunk generation pool.
@@ -125,6 +129,7 @@ impl Default for RuntimeConfig {
             command_spam_threshold_seconds: DEFAULT_SPAM_THRESHOLD_SECONDS,
             compression: Some(CompressionInfo::default()),
             server_links: None,
+            resource_pack: None,
             packet_workers: None,
             chunk_generation_threads: None,
             chunk_encoding_threads: None,
@@ -155,6 +160,30 @@ impl RuntimeConfig {
             .collect();
 
         Some(CServerLinks { links })
+    }
+
+    /// Builds the packet that offers the server's resource pack, if one is set.
+    #[must_use]
+    pub fn resource_pack_packet(&self) -> Option<CResourcePackPush> {
+        let pack = self.resource_pack.as_ref()?;
+        if pack.url.is_empty() {
+            return None;
+        }
+        Some(CResourcePackPush {
+            id: pack.id(),
+            url: pack.url.clone(),
+            hash: pack.sha1.clone(),
+            required: pack.required,
+            prompt: pack.prompt.clone(),
+        })
+    }
+
+    /// Whether a client that declines the resource pack is disconnected.
+    #[must_use]
+    pub fn resource_pack_required(&self) -> bool {
+        self.resource_pack
+            .as_ref()
+            .is_some_and(|pack| !pack.url.is_empty() && pack.required)
     }
 }
 
@@ -190,6 +219,66 @@ pub struct ServerLinks {
     /// List of server links to display
     #[serde(default)]
     pub links: Vec<ConfigLink>,
+}
+
+/// The resource pack the server offers to every client. The fields are the `resource-pack*`
+/// keys of vanilla `server.properties`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ResourcePack {
+    /// Where the client downloads the pack. Empty for no pack.
+    pub url: String,
+    /// The SHA-1 of the pack as 40 hex digits. Without it the client fetches the pack
+    /// again only when the address changes.
+    pub sha1: String,
+    /// Whether a client that declines the pack is disconnected.
+    pub required: bool,
+    /// Shown on the client's prompt: plain text or a `TextComponent` object.
+    #[serde(deserialize_with = "deserialize_prompt")]
+    pub prompt: Option<TextComponent>,
+    /// Names the pack to the client. Derived from the address when unset, as in vanilla.
+    pub id: Option<Uuid>,
+}
+
+/// A prompt as written in the config: plain text or a `TextComponent` object.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigPrompt {
+    Plain(String),
+    Component(Box<TextComponent>),
+}
+
+fn deserialize_prompt<'de, D>(deserializer: D) -> Result<Option<TextComponent>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(
+        Option::<ConfigPrompt>::deserialize(deserializer)?.map(|prompt| match prompt {
+            ConfigPrompt::Plain(text) => TextComponent::plain(text),
+            ConfigPrompt::Component(component) => *component,
+        }),
+    )
+}
+
+impl ResourcePack {
+    /// The id of the pack: the configured one, or vanilla's
+    /// `UUID.nameUUIDFromBytes` of the address.
+    #[must_use]
+    pub fn id(&self) -> Uuid {
+        self.id.unwrap_or_else(|| {
+            Builder::from_md5_bytes(md5::compute(self.url.as_bytes()).0)
+                .with_version(Version::Md5)
+                .with_variant(Variant::RFC4122)
+                .into_uuid()
+        })
+    }
+
+    /// Whether [`Self::sha1`] is empty or 40 hex digits, the only hash a client accepts.
+    #[must_use]
+    pub fn sha1_is_valid(&self) -> bool {
+        self.sha1.is_empty()
+            || (self.sha1.len() == 40 && self.sha1.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    }
 }
 
 /// Configuration for world storage.
