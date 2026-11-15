@@ -265,12 +265,10 @@ enum TeleportFacing {
     },
 }
 
-fn perform_teleport(
-    source: &CommandSource,
-    target: &SharedEntity,
-    transition: TeleportTransition,
-    facing: Option<&TeleportFacing>,
-) {
+/// Vanilla `Entity.teleportTo(level, x, y, z, relatives, yRot, xRot, true)`
+/// with `ServerPlayer`'s override: a sleeping player wakes and the camera
+/// returns to the player. Returns whether the entity arrived.
+pub(super) fn teleport_entity_to(target: &SharedEntity, transition: &TeleportTransition) -> bool {
     if let Some(player) = target.as_player() {
         if player.is_sleeping() {
             player.stop_sleeping();
@@ -279,7 +277,16 @@ fn perform_teleport(
             camera_id: player.id(),
         });
     }
-    if change_entity_world(Arc::clone(target), &transition).is_none() {
+    change_entity_world(Arc::clone(target), transition).is_some()
+}
+
+fn perform_teleport(
+    source: &CommandSource,
+    target: &SharedEntity,
+    transition: TeleportTransition,
+    facing: Option<&TeleportFacing>,
+) {
+    if !teleport_entity_to(target, &transition) {
         return;
     }
 
