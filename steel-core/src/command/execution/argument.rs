@@ -46,10 +46,11 @@ use steel_protocol::packets::game::{
     SuggestionType as ProtocolSuggestionType,
 };
 use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
-    DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, MOB_EFFECT_REGISTRY,
-    REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
+    ATTRIBUTE_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY,
+    MOB_EFFECT_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     mob_effect::MobEffectRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
@@ -386,6 +387,11 @@ impl SteelArgumentType {
         Self::new(MobEffectParser)
     }
 
+    /// Vanilla `ResourceArgument.resource(context, Registries.ATTRIBUTE)`.
+    pub(crate) fn attribute() -> Self {
+        Self::new(AttributeParser)
+    }
+
     /// Vanilla `MessageArgument.message`.
     pub(crate) fn message() -> Self {
         Self::new(MessageParser)
@@ -655,6 +661,10 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     MobEffectValue(MobEffectRef),
     "steel:command/value/mob_effect"
+);
+argument_value_wrapper!(
+    AttributeValue(AttributeRef),
+    "steel:command/value/attribute"
 );
 argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
 argument_value_wrapper!(
@@ -1322,6 +1332,35 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::Resource {
             identifier: "minecraft:mob_effect",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    AttributeParser,
+    "steel:command/parser/attribute",
+    AttributeValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.attributes.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &ATTRIBUTE_REGISTRY)),
+            |attribute| Ok(AttributeValue(attribute)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .attributes
+                .iter()
+                .map(|(_, attribute)| &attribute.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:attribute",
         },
         None,
     )

@@ -31,7 +31,7 @@ use crate::command::brigadier::{
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
 use crate::command::execution::argument::{
-    AdvancementValue, DamageTypeValue, MobEffectValue, RecipeKeyValue,
+    AdvancementValue, AttributeValue, DamageTypeValue, MobEffectValue, RecipeKeyValue,
 };
 use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
@@ -48,6 +48,7 @@ use crate::{
     },
 };
 use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::mob_effect::MobEffectRef;
@@ -395,6 +396,11 @@ where
             .map(|value| value.0)
     }
 
+    pub(crate) fn attribute(&self, name: &str) -> Result<AttributeRef, CommandSyntaxError> {
+        self.typed_argument::<AttributeValue>(name)
+            .map(|value| value.0)
+    }
+
     /// Returns a parsed vanilla message argument.
     pub(crate) fn message(&self, name: &str) -> Result<&MessageArgument, CommandSyntaxError> {
         self.typed_argument::<MessageArgument>(name)
@@ -532,6 +538,29 @@ impl SteelSuggestionContext<'_, CommandSource> {
     pub(crate) fn score_holders(&self, name: &str) -> Result<Vec<ScoreHolder>, CommandSyntaxError> {
         self.typed_argument::<ScoreHolderArgument>(name)?
             .resolve(self.source(), ScoreHolderWildcard::Tracked)
+    }
+
+    /// Vanilla `EntityArgument.getEntity` while suggesting: the one entity
+    /// the selector finds, or an error when it finds none or several.
+    pub(crate) fn entity(&self, name: &str) -> Result<SharedEntity, CommandSyntaxError> {
+        let mut entities = self
+            .typed_argument::<EntitySelector>(name)?
+            .find_entities(self.source())?;
+        match entities.len() {
+            0 => Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_ENTITY_NOTFOUND_ENTITY,
+            ))),
+            1 => Ok(entities.remove(0)),
+            _ => Err(CommandSyntaxError::dynamic(TextComponent::from(
+                &translations::ARGUMENT_ENTITY_TOOMANY,
+            ))),
+        }
+    }
+
+    /// Returns a parsed attribute argument while suggesting.
+    pub(crate) fn attribute(&self, name: &str) -> Result<AttributeRef, CommandSyntaxError> {
+        self.typed_argument::<AttributeValue>(name)
+            .map(|value| value.0)
     }
 }
 

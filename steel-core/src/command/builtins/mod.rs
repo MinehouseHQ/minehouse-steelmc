@@ -1,6 +1,7 @@
 //! Steel-owned built-in command declarations.
 
 pub mod advancement;
+mod attribute;
 mod bossbar;
 mod chat_commands;
 mod clear;
@@ -91,6 +92,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
     builder.register(advancement::registration())?;
+    builder.register(attribute::registration())?;
     builder.register(bossbar::registration())?;
     builder.register(clear::registration())?;
     builder.register(clone::registration())?;
@@ -199,6 +201,7 @@ mod tests {
             names,
             [
                 "advancement",
+                "attribute",
                 "bossbar",
                 "clear",
                 "clone",
