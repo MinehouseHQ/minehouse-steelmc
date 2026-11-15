@@ -29,7 +29,7 @@ use steel_registry::{
     equipment::EquipmentSlot, item_stack::ItemStack, menu_type::MenuTypeRef,
     mob_effect::MobEffectRef,
 };
-use steel_utils::{Downcast as _, types::GameType};
+use steel_utils::{BlockPos, Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::{CrafterKind, InventoryKind, MerchantKind};
@@ -130,6 +130,13 @@ impl Menu {
     #[must_use]
     pub fn chest_menu_containers(&self) -> Vec<ContainerId> {
         self.kind.chest_menu_containers()
+    }
+
+    /// The contents of every block container of this menu, by block position: both halves of
+    /// a double chest, a barrel, a furnace. Menus over anything else give nothing.
+    #[must_use]
+    pub fn block_containers(&self) -> Vec<(BlockPos, Vec<ItemStack>)> {
+        self.behavior.block_containers()
     }
 
     /// Returns true if this menu is still valid for the player.

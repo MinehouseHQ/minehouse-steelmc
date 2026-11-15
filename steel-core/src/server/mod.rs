@@ -270,6 +270,7 @@ pub async fn test_server_with_worlds_and_config(
         chat_interceptor: OnceLock::new(),
         tab_list_provider: OnceLock::new(),
         plugin_channel_handler: OnceLock::new(),
+        world_log: OnceLock::new(),
         status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
@@ -479,6 +480,7 @@ pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
+pub mod world_log;
 
 use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
@@ -518,6 +520,8 @@ pub struct Server {
     tab_list_provider: OnceLock<Arc<dyn tab_list::TabListProvider>>,
     /// Talks to client mods over plugin channels, see [`plugin_channels`].
     plugin_channel_handler: OnceLock<Arc<dyn plugin_channels::PluginChannelHandler>>,
+    /// Hears what players change in the world, see [`world_log`].
+    world_log: OnceLock<Arc<dyn world_log::WorldLog>>,
     /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
     status_motd: SyncMutex<Option<String>>,
     /// The tick rate manager for the server.
@@ -884,6 +888,7 @@ impl Server {
             chat_interceptor: OnceLock::new(),
             tab_list_provider: OnceLock::new(),
             plugin_channel_handler: OnceLock::new(),
+            world_log: OnceLock::new(),
             status_motd: SyncMutex::new(None),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),

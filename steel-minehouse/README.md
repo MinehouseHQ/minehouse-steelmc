@@ -201,3 +201,50 @@ players. The core hook is `PluginChannelHandler`
 (`steel-core/src/server/plugin_channels.rs`); answers go out as `CPluginMessage`.
 
 The packet formats follow the `protocol` module of Plasmo Voice (LGPL-3.0, by Apehum).
+
+## Block log
+
+Who broke and placed which block, and who put what into which chest and took it out. On the
+Fabric server this was CoreProtect; its history comes over with `/co import`.
+
+The server tick only queues an event. One thread writes the queue to
+`<data>/blocklog.db` (SQLite) in batches, another answers lookups from its own read-only
+connection, so neither a busy moment nor a search over the whole history holds the tick. A
+lookup first waits for the queue to reach the disk, so it sees what happened a moment ago.
+
+Settings: `config/minehouse/blocklog.toml`, on by default.
+
+```toml
+enabled = true
+keep_days = 90      # older rows are deleted; 0 keeps everything
+page_size = 8
+near_radius = 5     # /co near
+max_radius = 100    # the widest r:
+
+[import_worlds]     # world names of the imported history that differ from ours
+# "world_nether" = "minecraft:the_nether"
+```
+
+`/co` (alias `/blocklog`) is for the console and players with `minehouse.command.co`:
+
+| Command | What it does |
+| --- | --- |
+| `/co inspect`, `/co i` | Inspector on or off. Hitting a block shows its history, using it also shows what went in and out. The click itself does nothing. |
+| `/co lookup <words>`, `/co l` | `u:Nick,Nick2` `t:3d` `r:10` (`r:#global`) `b:chest,tnt` `a:block`, `+block`, `-block`, `container`, `+container`, `-container`. Without `r:` the whole history is searched. |
+| `/co near` | Everything within `near_radius` blocks. |
+| `/co page <n>`, `/co p` | Another page of the last answer. |
+| `/co status` | How much the log holds. |
+| `/co purge <age>` | Deletes rows older than `90d` (30 days at least). |
+| `/co import` | Imports `<data>/coreprotect-export`. |
+
+Moving the history of CoreProtect: `src/blocklog/export.sql` turns a copy of its DuckDB
+database into `blocks.csv`, `containers.csv` and `data_map.csv`; put them into
+`<data>/coreprotect-export` and run `/co import`. It runs on its own thread, reports to the
+log, and can be run again: it goes on after the last row it brought over. Nicknames like
+`#tnt` are causes that are not players. Item components of old container rows are not
+brought over, only the item and the amount.
+
+Not there yet: rollback and restore (the rows already keep the block state and the item
+NBT they need), blocks changed by anything but a player's hand (explosions, fire, fluids,
+buckets), signs, chat and sessions. The core hook is `WorldLog`
+(`steel-core/src/server/world_log.rs`).

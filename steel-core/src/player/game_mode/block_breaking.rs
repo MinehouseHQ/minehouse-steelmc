@@ -438,6 +438,7 @@ impl BlockBreakingManager {
         let changed = changed_by_player_will_destroy || removed_by_player_break;
 
         if removed_by_player_break {
+            player.log_block_broken(world, pos, state_after_player_will_destroy);
             behavior.destroy(adjusted_state, world, pos);
 
             // Play block destruction particles and sound (skip for fire blocks like vanilla)
