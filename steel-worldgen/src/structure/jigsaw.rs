@@ -703,6 +703,31 @@ pub struct AssemblyResult {
     pub biome_check_pos: IVec3,
 }
 
+impl AssemblyResult {
+    /// The placed pieces as vanilla `PoolElementStructurePiece`s.
+    #[must_use]
+    pub fn into_structure_pieces(self, liquid_settings: LiquidSettingsData) -> Vec<StructurePiece> {
+        self.pieces
+            .into_iter()
+            .map(|piece| StructurePiece {
+                piece_type: Identifier::new_static("minecraft", "jigsaw"),
+                bounding_box: piece.assembly_bb,
+                gen_depth: 0,
+                orientation: None,
+                payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
+                    pool_element: piece.element,
+                    position: piece.position,
+                    rotation: piece.rotation,
+                    liquid_settings,
+                }),
+                ground_level_delta: piece.ground_level_delta,
+                junctions: piece.junctions,
+                projection: Some(piece.projection),
+            })
+            .collect()
+    }
+}
+
 struct StartedAssembly {
     pieces: Vec<PlacedPiece>,
     biome_check_pos: IVec3,
@@ -716,8 +741,8 @@ struct StartedAssembly {
 fn start_assembly(
     config: &JigsawConfig,
     rng: &mut LegacyRandom,
-    chunk_x: i32,
-    chunk_z: i32,
+    start_x: i32,
+    start_z: i32,
     pools: &FxHashMap<Identifier, TemplatePoolData>,
     templates: &FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
@@ -726,8 +751,6 @@ fn start_assembly(
     max_y: i32,
 ) -> Option<StartedAssembly> {
     let start_y = sample_start_height(config, rng);
-    let start_x = chunk_x * 16;
-    let start_z = chunk_z * 16;
     let center_rotation = Rotation::get_random(rng);
 
     let start_pool_key = alias_map
@@ -902,6 +925,8 @@ fn finish_assembly<'a>(
 
 /// Vanilla's `JigsawPlacement.addPieces`. Returns `None` on failure (empty start
 /// pool, dimension padding violation, etc.).
+///
+/// The start sits at block `start_x`, `start_z` and the config's start height.
 #[expect(
     clippy::too_many_arguments,
     reason = "matches vanilla's addPieces call surface"
@@ -913,8 +938,8 @@ fn finish_assembly<'a>(
 pub fn assemble(
     config: &JigsawConfig,
     rng: &mut LegacyRandom,
-    chunk_x: i32,
-    chunk_z: i32,
+    start_x: i32,
+    start_z: i32,
     pools: &FxHashMap<Identifier, TemplatePoolData>,
     templates: &FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
@@ -923,7 +948,7 @@ pub fn assemble(
     max_y: i32,
 ) -> Option<AssemblyResult> {
     let started = start_assembly(
-        config, rng, chunk_x, chunk_z, pools, templates, alias_map, get_height, min_y, max_y,
+        config, rng, start_x, start_z, pools, templates, alias_map, get_height, min_y, max_y,
     )?;
     Some(finish_assembly(
         started, config, rng, pools, templates, alias_map, get_height, min_y, max_y,
@@ -961,8 +986,8 @@ impl Structure for JigsawStructure {
             start_assembly(
                 config,
                 &mut assembly_rng,
-                ctx.chunk_x(),
-                ctx.chunk_z(),
+                ctx.chunk_min_x(),
+                ctx.chunk_min_z(),
                 ctx.template_pools(),
                 ctx.templates(),
                 &alias_map,
@@ -981,7 +1006,7 @@ impl Structure for JigsawStructure {
             started.biome_check_pos.y,
             started.biome_check_pos.z,
         );
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 
@@ -1000,33 +1025,14 @@ impl Structure for JigsawStructure {
             )
         };
 
-        let pieces = assembly
-            .pieces
-            .into_iter()
-            .map(|piece| StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "jigsaw"),
-                bounding_box: piece.assembly_bb,
-                gen_depth: 0,
-                orientation: None,
-                payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
-                    pool_element: piece.element,
-                    position: piece.position,
-                    rotation: piece.rotation,
-                    liquid_settings: config.liquid_settings,
-                }),
-                ground_level_delta: piece.ground_level_delta,
-                junctions: piece.junctions,
-                projection: Some(piece.projection),
-            })
-            .collect();
-
+        let position = (
+            assembly.biome_check_pos.x,
+            assembly.biome_check_pos.y,
+            assembly.biome_check_pos.z,
+        );
         Some(GenerationStub {
-            position: (
-                assembly.biome_check_pos.x,
-                assembly.biome_check_pos.y,
-                assembly.biome_check_pos.z,
-            ),
-            pieces,
+            position,
+            pieces: assembly.into_structure_pieces(config.liquid_settings),
         })
     }
 }

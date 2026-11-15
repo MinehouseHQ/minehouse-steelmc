@@ -164,7 +164,7 @@ impl Structure for NetherFossilStructure {
             result.biome_check_pos.y,
             result.biome_check_pos.z,
         );
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

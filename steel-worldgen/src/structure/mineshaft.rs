@@ -729,7 +729,7 @@ impl Structure for MineshaftStructure {
 
         let (bx, by, bz) = result.biome_check_pos;
         let biome = ctx.biome_at(bx, by, bz);
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

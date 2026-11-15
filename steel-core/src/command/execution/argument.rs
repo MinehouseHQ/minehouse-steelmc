@@ -1,4 +1,5 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
+use std::sync::{Arc, LazyLock};
 
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, CommandArgumentSource, Coordinates, IntRange,
@@ -53,6 +54,7 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
+use steel_registry::vanilla_template_pools::vanilla_template_pools;
 use steel_registry::{
     ATTRIBUTE_REGISTRY, BIOMES_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
     ENTITY_TYPE_REGISTRY, MOB_EFFECT_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
@@ -456,6 +458,18 @@ impl SteelArgumentType {
     /// Vanilla `ResourceOrIdArgument.feature`, by id only, like [`Self::loot_table`].
     pub(crate) fn feature() -> Self {
         Self::new(FeatureParser)
+    }
+
+    /// Vanilla `ResourceKeyArgument.key(Registries.STRUCTURE)`: an id, resolved
+    /// when the command runs.
+    pub(crate) fn structure_key() -> Self {
+        Self::new(StructureKeyParser)
+    }
+
+    /// Vanilla `ResourceKeyArgument.key(Registries.TEMPLATE_POOL)`: an id,
+    /// resolved when the command runs.
+    pub(crate) fn template_pool_key() -> Self {
+        Self::new(TemplatePoolKeyParser)
     }
 
     /// Vanilla `TemplateRotationArgument.templateRotation`.
@@ -1643,6 +1657,46 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::Feature, None)
 );
 unit_argument_parser!(
+    StructureKeyParser,
+    "steel:command/parser/structure_key",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .structures
+                .iter()
+                .map(|(_, structure)| &structure.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceKey {
+            identifier: "minecraft:worldgen/structure",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    TemplatePoolKeyParser,
+    "steel:command/parser/template_pool_key",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(template_pool_ids().iter(), builder);
+    },
+    protocol(
+        ProtocolArgumentType::ResourceKey {
+            identifier: "minecraft:worldgen/template_pool",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
     TemplateRotationParser,
     "steel:command/parser/template_rotation",
     TemplateRotationValue,
@@ -2150,6 +2204,17 @@ fn parse_loot_table(reader: &mut StringReader<'_>) -> Result<LootTableRef, Comma
                 .component(),
         )))
     })
+}
+
+/// Every vanilla template pool id, for `/place jigsaw` suggestions.
+fn template_pool_ids() -> &'static [Identifier] {
+    static IDS: LazyLock<Vec<Identifier>> = LazyLock::new(|| {
+        vanilla_template_pools()
+            .into_iter()
+            .map(|pool| pool.key)
+            .collect()
+    });
+    &IDS
 }
 
 /// Vanilla `ResourceOrIdArgument.FeatureArgument.parse` for a configured

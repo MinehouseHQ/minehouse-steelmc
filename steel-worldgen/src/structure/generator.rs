@@ -1,13 +1,14 @@
 //! Shared structure placement/selection engine.
 
+use std::sync::LazyLock;
 use std::{iter, path::Path};
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use steel_registry::REGISTRY;
 use steel_registry::biome::BiomeRef;
 use steel_registry::structure::StructureRef;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
+use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
@@ -1007,6 +1008,49 @@ impl StructureGenerator {
         );
         None
     }
+}
+
+/// Vanilla `Structure.generate` for one structure in the context's chunk,
+/// regardless of structure sets and placement, as `/place structure` calls it.
+///
+/// Biomes are checked through the context, so `/place structure` wraps it in an
+/// [`AnyBiomeContext`](crate::structure::AnyBiomeContext). Returns `None` for an
+/// unknown structure or when it finds no valid start.
+pub fn generate_structure_start(
+    structure: &Identifier,
+    ctx: &mut dyn StructureGenerationContext,
+) -> Option<StructureStart> {
+    static IMPLS: LazyLock<FxHashMap<Identifier, Box<dyn Structure>>> =
+        LazyLock::new(vanilla_structure_impls);
+    let structure = REGISTRY.structures.by_key(structure)?;
+    let structure_impl = IMPLS.get(&structure.structure_type)?;
+    let mut rng = LegacyRandom::from_seed(0);
+    rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
+    let stub = structure_impl.find_generation_point(ctx, structure, &mut rng)?;
+    let start = StructureStart::new(
+        structure.key.clone(),
+        ChunkPos::new(ctx.chunk_x(), ctx.chunk_z()),
+        stub.pieces,
+        structure.terrain_adjustment,
+    );
+    (!start.pieces.is_empty()).then_some(start)
+}
+
+/// The bundled vanilla template pools and templates, loaded once, for callers
+/// without a [`StructureGenerator`] of their own.
+#[must_use]
+pub fn vanilla_template_assets() -> (
+    &'static FxHashMap<Identifier, TemplatePoolData>,
+    &'static FxHashMap<Identifier, TemplateData>,
+) {
+    static ASSETS: LazyLock<(
+        FxHashMap<Identifier, TemplatePoolData>,
+        FxHashMap<Identifier, TemplateData>,
+    )> = LazyLock::new(|| {
+        let assets = StructureGeneratorAssets::vanilla();
+        (assets.template_pools, assets.templates)
+    });
+    (&ASSETS.0, &ASSETS.1)
 }
 
 fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {

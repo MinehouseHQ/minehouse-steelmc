@@ -41,11 +41,13 @@ pub use piece::{
     TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
-pub use generation::{ColumnBlock, GenerationContext, GenerationStub, StructureGenerationContext};
+pub use generation::{
+    AnyBiomeContext, ColumnBlock, GenerationContext, GenerationStub, StructureGenerationContext,
+};
 pub use generator::{
     FixedStructureBiomeProvider, StructureBiomeProvider, StructureGenerator,
     StructureGeneratorAssets, StructureLocateCandidate, StructureLocatePlacement,
-    StructureLocatePlan, squared_distance,
+    StructureLocatePlan, generate_structure_start, squared_distance, vanilla_template_assets,
 };
 pub use start::{StructureReferenceMap, StructureReferenceSet, StructureStart, StructureStartMap};
 pub(crate) use utils::{make_oriented_piece_bounding_box, random_horizontal_direction};

@@ -35,7 +35,7 @@ impl Structure for BuriedTreasureStructure {
     ) -> Option<GenerationStub> {
         let ocean_floor_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), true) - 1;
         let biome = ctx.biome_at(ctx.center_block_x(), ocean_floor_y, ctx.center_block_z());
-        if !structure.allowed_biomes.contains(&biome.key) {
+        if !ctx.is_valid_biome(structure, biome) {
             return None;
         }
 

@@ -13,6 +13,7 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::sync::Arc;
 use steel_registry::biome::BiomeRef;
+use steel_registry::structure::StructureData;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_utils::Identifier;
 use steel_utils::random::RandomSplitter;
@@ -191,6 +192,90 @@ pub trait StructureGenerationContext {
     fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32;
     /// Opaque terrain test for off-chunk terrain queries used by piece placement.
     fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool;
+    /// Vanilla `GenerationContext.validBiome`: whether `structure` may start in
+    /// `biome`. World generation allows only the structure's own biomes.
+    fn is_valid_biome(&self, structure: &StructureData, biome: BiomeRef) -> bool {
+        structure.allowed_biomes.contains(&biome.key)
+    }
+}
+
+/// A context that accepts every biome, as vanilla `/place structure` passes
+/// `b -> true` for `validBiome`. Every other query goes to the wrapped context.
+pub struct AnyBiomeContext<'a>(pub &'a mut dyn StructureGenerationContext);
+
+impl StructureGenerationContext for AnyBiomeContext<'_> {
+    fn seed(&self) -> i64 {
+        self.0.seed()
+    }
+    fn chunk_x(&self) -> i32 {
+        self.0.chunk_x()
+    }
+    fn chunk_z(&self) -> i32 {
+        self.0.chunk_z()
+    }
+    fn chunk_min_x(&self) -> i32 {
+        self.0.chunk_min_x()
+    }
+    fn chunk_min_z(&self) -> i32 {
+        self.0.chunk_min_z()
+    }
+    fn center_block_x(&self) -> i32 {
+        self.0.center_block_x()
+    }
+    fn center_block_z(&self) -> i32 {
+        self.0.center_block_z()
+    }
+    fn sea_level(&self) -> i32 {
+        self.0.sea_level()
+    }
+    fn min_y(&self) -> i32 {
+        self.0.min_y()
+    }
+    fn height(&self) -> i32 {
+        self.0.height()
+    }
+    fn max_y(&self) -> i32 {
+        self.0.max_y()
+    }
+    fn template_pools(&self) -> &FxHashMap<Identifier, TemplatePoolData> {
+        self.0.template_pools()
+    }
+    fn templates(&self) -> &FxHashMap<Identifier, TemplateData> {
+        self.0.templates()
+    }
+    fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        self.0.base_height(x, z, ocean_floor)
+    }
+    fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        self.0.base_height_full(x, z, ocean_floor)
+    }
+    fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef {
+        self.0.biome_at(block_x, block_y, block_z)
+    }
+    fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
+        self.0.column_state(x, y, z)
+    }
+    fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        self.0.solid_block_below_air(x, z, start_y, min_solid_y)
+    }
+    fn surface_y(&mut self) -> i32 {
+        self.0.surface_y()
+    }
+    fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        self.0.terrain_surface_height(x, z, ocean_floor)
+    }
+    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool {
+        self.0.terrain_is_opaque(x, y, z, ocean_floor)
+    }
+    fn is_valid_biome(&self, _structure: &StructureData, _biome: BiomeRef) -> bool {
+        true
+    }
 }
 
 impl<'ctx, 'src, N: DimensionNoises> GenerationContext<'ctx, 'src, N>
