@@ -308,9 +308,12 @@ impl Server {
         self.connect_player_to_boss_bars(state.world.domain(), &player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
-            // Vanilla `PlayerList.placeNewPlayer` ends with `initInventoryMenu`.
-            player.init_inventory_menu();
         }
+        // Vanilla `PlayerList.placeNewPlayer` ends with `initInventoryMenu`.
+        // It must not wait for the client's loaded signal: without the slot
+        // listener the inventory menu never reports changes, so
+        // `inventory_changed` only fired through an opened container.
+        player.init_inventory_menu();
         self.schedule_domain_restores(&player, residence_token, restores);
         if player.connection.closed() {
             self.queue_player_disconnect(player);

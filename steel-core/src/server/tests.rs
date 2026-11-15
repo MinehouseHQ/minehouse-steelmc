@@ -56,7 +56,10 @@ use crate::command::execution::{
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
+use crate::inventory::container::Container as _;
+use crate::player::advancement::criteria::init_criteria;
 use crate::random_sequences::SeedDefaults;
+use steel_registry::REGISTRY;
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -3448,6 +3451,71 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         assert_eq!(joining.pending_ender_pearls().len(), 1);
         assert_eq!(joining.pending_ender_pearls()[0].entity.uuid, pearl_uuid);
         assert_eq!(server.jobs.len(), 2);
+        server.jobs.cancel_all();
+
+        if let Err(error) = server.flush_known_players().await {
+            panic!("known player cache should flush before test teardown: {error}");
+        }
+        drop(joining);
+        drop(server);
+    });
+}
+
+#[test]
+fn joining_before_the_client_loads_still_reports_inventory_changes() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_criteria();
+    let world_fixture = fresh_test_world_in_domain("survival", "inventory_listener");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let joining = test_player(&server, Arc::clone(world));
+        assert!(server.reserve_player_join(&joining));
+        let mut data = PersistentPlayerData::from_player(&joining);
+        data.world = world.key.to_string();
+        let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
+        let state = DomainPlayerState {
+            world: Arc::clone(world),
+            data: DomainPlayerData::SavedRestored {
+                data: Box::new(data),
+            },
+            spawn_chunk_request: world.request_player_spawn_chunks(spawn_position),
+        };
+        // The client has not sent its loaded signal yet, as on a real join.
+        assert!(!joining.has_client_loaded());
+        server.finish_prepared_player_join(PendingPlayerJoin {
+            player: Arc::clone(&joining),
+            state: Ok(state),
+        });
+
+        // An item picked up later is reported by the next tick's broadcast,
+        // not only once a container is opened.
+        joining
+            .inventory
+            .lock()
+            .set_item(3, ItemStack::new(&vanilla_items::CRAFTING_TABLE));
+        joining.broadcast_inventory_changes_and_trigger();
+        let key: Identifier = "minecraft:story/root".parse().expect("id parses");
+        let root = REGISTRY
+            .advancements
+            .value_by_key(&key)
+            .expect("vanilla advancement exists");
+        assert!(
+            joining
+                .advancements
+                .lock()
+                .progress
+                .get_progress(root)
+                .is_some_and(|progress| progress.is_criterion_done("crafting_table"))
+        );
         server.jobs.cancel_all();
 
         if let Err(error) = server.flush_known_players().await {
