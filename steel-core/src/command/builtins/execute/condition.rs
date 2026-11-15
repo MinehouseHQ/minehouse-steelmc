@@ -116,7 +116,7 @@ fn matching_data_count(path: &NbtPath, tag: &NbtTag) -> Result<i32, CommandSynta
         .map_err(|_| CommandSyntaxError::dynamic("NBT match count exceeds the command range"))
 }
 
-pub(super) fn invalid_block_data_source() -> CommandSyntaxError {
+pub(in crate::command::builtins) fn invalid_block_data_source() -> CommandSyntaxError {
     CommandSyntaxError::dynamic(TextComponent::from(
         &translations::COMMANDS_DATA_BLOCK_INVALID,
     ))
