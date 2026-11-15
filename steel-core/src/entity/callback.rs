@@ -6,6 +6,7 @@ use glam::DVec3;
 use steel_utils::{ChunkPos, WorldAabb};
 
 use super::EntityMoveError;
+use crate::scoreboard::ScoreHolder;
 use crate::world::World;
 use crate::world::game_event::DynamicListenerAction;
 
@@ -292,6 +293,16 @@ impl EntityLevelCallback for EntityChunkCallback {
         if let Some(entity) = entity {
             world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
             world.update_dynamic_game_event_listeners(&entity, DynamicListenerAction::Remove);
+            // Vanilla `EntityCallbacks.onDestroyed`.
+            if reason.should_destroy()
+                && let Some(scoreboard) = world.scoreboard()
+            {
+                scoreboard.entity_removed(
+                    &ScoreHolder::new(entity.scoreboard_name()),
+                    entity.as_player().is_some(),
+                    entity.is_alive(),
+                );
+            }
         }
 
         world.remove_entity_from_tracker(self.entity_id);

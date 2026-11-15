@@ -1,7 +1,11 @@
 //! This module provides the [`StatsCounter`], which keeps track of stats with their counters, and
 //! implements some stat-related functions for the player.
 
+use crate::entity::Entity as _;
 use crate::player::Player;
+use crate::scoreboard::{
+    CriteriaUpdate, CustomCriteria, ObjectiveCriteria, ScoreHolder, TeamColor,
+};
 use rustc_hash::FxHashMap;
 use steel_protocol::packets::game::CAwardStats;
 use steel_registry::RegistryExt;
@@ -172,7 +176,45 @@ impl Player {
     /// Awards a given amount of a particular stat to this player.
     pub(crate) fn award_erased_stat_with_count(&self, stat: Stat, count: i32) {
         self.stats.lock().increment(stat, count);
-        // TODO: Add score to the objectives having the criterion of this stat for the player.
+        self.update_scores_for_criteria(&ObjectiveCriteria::Stat(stat), CriteriaUpdate::Add(count));
+    }
+
+    /// Vanilla `ServerPlayer.handleTeamKill`: when `target` is on a colored
+    /// team, `source` scores in the objectives of that color's criterion.
+    pub(crate) fn handle_team_kill(
+        &self,
+        source: &ScoreHolder,
+        target: &ScoreHolder,
+        criteria_by_team: fn(TeamColor) -> CustomCriteria,
+    ) {
+        let Some(scoreboard) = self.get_world().scoreboard() else {
+            return;
+        };
+        if let Some(color) = scoreboard
+            .holder_team(target.name())
+            .and_then(|team| team.color())
+        {
+            scoreboard.for_all_objectives(
+                &ObjectiveCriteria::Custom(criteria_by_team(color)),
+                source,
+                CriteriaUpdate::Increment,
+            );
+        }
+    }
+
+    /// Vanilla `level().getScoreboard().forAllObjectives(criteria, this, ...)`.
+    pub(crate) fn update_scores_for_criteria(
+        &self,
+        criteria: &ObjectiveCriteria,
+        update: CriteriaUpdate,
+    ) {
+        if let Some(scoreboard) = self.get_world().scoreboard() {
+            scoreboard.for_all_objectives(
+                criteria,
+                &ScoreHolder::new(self.scoreboard_name()),
+                update,
+            );
+        }
     }
 
     /// Vanilla `ServerStatsCounter.getValue` for a custom stat.
@@ -184,7 +226,7 @@ impl Player {
     /// Resets the counter of a stat from this player to zero.
     pub fn reset_stat(&self, stat: Stat) {
         self.stats.lock().set(stat, 0);
-        // TODO: Reset score of the objectives having the criterion of this stat for the player.
+        self.update_scores_for_criteria(&ObjectiveCriteria::Stat(stat), CriteriaUpdate::Reset);
     }
 
     /// Resets the counter of a custom stat from this player to zero.

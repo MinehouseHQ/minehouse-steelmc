@@ -23,6 +23,7 @@ use crate::entity::entities::ItemFrameEntity;
 use crate::entity::entity_selector::no_creative_or_spectator;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
+use crate::scoreboard::Scoreboard;
 use crate::world::game_event::{
     GameEventContext, GameEventDispatcher, GameEventListenerCount, GameEventListenerStorage,
     SharedGameEventListener,
@@ -318,6 +319,8 @@ pub struct World {
     domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// Map storage, shared by every world of the domain once the world map binds it.
     domain_maps: SyncRwLock<Arc<maps::DomainMaps>>,
+    /// The domain's scoreboard, once the server loads it.
+    domain_scoreboard: SyncRwLock<Option<Arc<Scoreboard>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -505,6 +508,7 @@ impl World {
                 entity_manager: WorldEntityManager::new(),
                 domain_entity_directory: SyncRwLock::new(None),
                 domain_maps: SyncRwLock::new(Arc::new(domain_maps)),
+                domain_scoreboard: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -584,6 +588,17 @@ impl World {
 
     pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
         *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    pub(crate) fn set_domain_scoreboard(&self, scoreboard: Arc<Scoreboard>) {
+        *self.domain_scoreboard.write() = Some(scoreboard);
+    }
+
+    /// Vanilla `Level.getScoreboard`: the domain's scoreboard, which a world
+    /// outside a server (in tests) does not have.
+    #[must_use]
+    pub fn scoreboard(&self) -> Option<Arc<Scoreboard>> {
+        self.domain_scoreboard.read().clone()
     }
 
     pub(crate) fn set_domain_maps(&self, maps: Arc<maps::DomainMaps>) {
