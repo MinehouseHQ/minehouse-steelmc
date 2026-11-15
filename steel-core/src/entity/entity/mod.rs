@@ -14,7 +14,7 @@ use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
-use crate::scoreboard::TeamRules;
+use crate::scoreboard::{PlayerTeam, TeamRules};
 use crate::world::game_event::DynamicListenerAction;
 use crate::world::game_event::vibrations::VibrationSystem;
 use crate::world::ticking_world::LevelRef;
@@ -221,10 +221,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns this entity's vanilla display name.
+    /// Returns this entity's vanilla display name, decorated by its team.
     fn display_name(&self) -> TextComponent {
         let name = self.name();
-        name.clone()
+        self.format_name_for_team(name.clone())
             .hover_event(HoverEvent::show_entity(
                 self.entity_type().key.to_string(),
                 self.uuid(),
@@ -643,6 +643,35 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return None;
         }
         tamable.root_owner()?.team()
+    }
+
+    /// Vanilla `getTeam` as the whole team, for names that need its prefix,
+    /// suffix and color. [`Self::team`] is the cheap form for checks.
+    fn player_team(&self) -> Option<PlayerTeam> {
+        let own = self.level().and_then(|world| {
+            let scoreboard = world.scoreboard()?;
+            if !scoreboard.has_team_members() {
+                return None;
+            }
+            scoreboard.holder_team(&self.scoreboard_name())
+        });
+        if own.is_some() {
+            return own;
+        }
+        let tamable = self.as_tamable_animal()?;
+        if !tamable.is_tame() {
+            return None;
+        }
+        tamable.root_owner()?.player_team()
+    }
+
+    /// Vanilla `PlayerTeam.formatNameForTeam(getTeam(), name)`: the name with
+    /// the team's prefix, suffix and color, or unchanged without a team.
+    fn format_name_for_team(&self, name: TextComponent) -> TextComponent {
+        match self.player_team() {
+            Some(team) => team.formatted_name(name),
+            None => name,
+        }
     }
 
     /// Returns whether this entity is allied to `other`: vanilla

@@ -7,7 +7,7 @@ use steel_utils::locks::SyncMutex;
 use tokio::runtime::Builder;
 
 use super::super::Server;
-use super::{fresh_test_world, test_player_with_packets, test_server};
+use super::{chat_packets, fresh_test_world, test_player_with_packets, test_server};
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource as _,
     ExecutionStop,
@@ -23,7 +23,10 @@ use crate::scoreboard::{
 };
 use crate::world::World;
 use steel_protocol::packets::game::TeamVisibility;
+use steel_registry::packets::play::C_SYSTEM_CHAT;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
+use steel_utils::text::DisplayResolutor;
+use text_components::TextComponent;
 
 /// Runs `command` from the console and returns its result, or `None` when
 /// the command failed.
@@ -552,5 +555,71 @@ fn teams_decide_allies_friendly_fire_and_pushing() {
         assert_eq!(run(server, "team modify reds collisionRule never"), Some(0));
         assert!(!pushable_by(&alex, &steve));
         assert!(!pushable_by(&noor, &alex));
+    });
+}
+
+#[test]
+fn team_names_death_messages_and_team_chat() {
+    with_server_world("team_names", |server, world| {
+        let mut joined = Vec::new();
+        for (id, name) in [(1, "Alex"), (2, "Steve"), (3, "Noor")] {
+            let (player, packets) = test_player_with_packets(server, Arc::clone(world), name, id);
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+            joined.push((player, packets));
+        }
+        let plain = |player: &Player| player.display_name().to_plain(&DisplayResolutor);
+        assert_eq!(plain(&joined[0].0), "Alex");
+
+        assert_eq!(run(server, "team add reds"), Some(1));
+        assert_eq!(run(server, "team join reds Alex"), Some(1));
+        assert_eq!(run(server, "team join reds Steve"), Some(1));
+        assert_eq!(run(server, "team modify reds prefix \"[R] \""), Some(1));
+        assert_eq!(run(server, "team modify reds suffix \"!\""), Some(1));
+        // The display name carries the team prefix and suffix.
+        assert_eq!(plain(&joined[0].0), "[R] Alex!");
+        assert_eq!(plain(&joined[2].0), "Noor");
+
+        let system_chats = |index: usize| {
+            let count = chat_packets(&joined[index].1, C_SYSTEM_CHAT).len();
+            joined[index].1.lock().clear();
+            count
+        };
+        let death = |visibility: &str| {
+            for index in 0..3 {
+                system_chats(index);
+            }
+            assert_eq!(
+                run(
+                    server,
+                    &format!("team modify reds deathMessageVisibility {visibility}")
+                ),
+                Some(0)
+            );
+            joined[0]
+                .0
+                .broadcast_death_message(world, TextComponent::plain("Alex died"));
+            [system_chats(0), system_chats(1), system_chats(2)]
+        };
+        // Only teammates other than the dead player hear it.
+        assert_eq!(death("hideForOtherTeams"), [0, 1, 0]);
+        // Everyone off the team hears it.
+        assert_eq!(death("hideForOwnTeam"), [0, 0, 1]);
+        assert_eq!(death("never"), [0, 0, 0]);
+        assert_eq!(death("always"), [1, 1, 1]);
+
+        // Team chat reaches the sender and its teammates.
+        let send = |index: usize, command: &str| {
+            run_as(
+                server,
+                CommandSender::Player(Arc::clone(&joined[index].0)),
+                command,
+            )
+        };
+        assert_eq!(send(0, "teammsg hello"), Some(2));
+        assert_eq!(send(1, "tm hi"), Some(2));
+        assert_eq!(send(2, "teammsg alone"), None);
+        assert_eq!(run(server, "teammsg console"), None);
     });
 }

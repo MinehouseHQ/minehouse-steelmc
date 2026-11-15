@@ -1,11 +1,13 @@
 //! Vanilla chat commands: `MsgCommand` (with its `tell` and `w` redirects),
-//! `EmoteCommands` and `SayCommand`.
+//! `TeamMsgCommand` (with `tm`), `EmoteCommands` and `SayCommand`.
 
 use std::time::SystemTime;
 
 use steel_registry::{chat_type::ChatType, vanilla_chat_types};
-use steel_utils::Identifier;
 use steel_utils::text::DisplayResolutor;
+use steel_utils::{Identifier, translations};
+use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier as _, TextComponent};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
@@ -25,6 +27,12 @@ pub(super) fn msg_registration() -> CommandRegistration<CommandSource> {
         .default_access()
 }
 
+pub(super) fn teammsg_registration() -> CommandRegistration<CommandSource> {
+    CommandRegistration::new(Identifier::vanilla_static("teammsg"), |_| teammsg_command())
+        .alias("tm")
+        .default_access()
+}
+
 pub(super) fn me_registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("me"), |_| me_command()).default_access()
 }
@@ -38,6 +46,11 @@ fn msg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         argument("targets", SteelArgumentType::players())
             .then(argument("message", SteelArgumentType::message()).executes(send_private)),
     )
+}
+
+fn teammsg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
+    literal("teammsg")
+        .then(argument("message", SteelArgumentType::message()).executes(send_team_message))
 }
 
 fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -140,4 +153,66 @@ fn log_chat_message(message: &PlayerChatMessage, bound: &BoundChatType) {
     } else {
         log::info!("[Not Secure] {decorated}");
     }
+}
+
+/// Vanilla `TeamMsgCommand`: the message goes to every online player on the
+/// source entity's team, the source itself seeing the outgoing form.
+fn send_team_message(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    let source = context.source();
+    let Some(entity) = source.entity() else {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
+            &translations::PERMISSIONS_REQUIRES_ENTITY,
+        )));
+    };
+    let (Some(team), Some(player_team)) = (entity.team(), entity.player_team()) else {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
+            &translations::COMMANDS_TEAMMSG_FAILED_NOTEAM,
+        )));
+    };
+    let receivers: Vec<_> = source
+        .server()
+        .get_players()
+        .into_iter()
+        .filter(|receiver| {
+            receiver.id() == entity.id()
+                || receiver
+                    .team()
+                    .is_some_and(|other| team.is_same_team(&other))
+        })
+        .collect();
+    if receivers.is_empty() {
+        return Ok(0);
+    }
+    let message = context
+        .message("message")?
+        .resolve_chat_message("message", source)?;
+    let team_name = player_team
+        .formatted_display_name()
+        .hover_event(HoverEvent::show_text(TextComponent::from(
+            &translations::CHAT_TYPE_TEAM_HOVER,
+        )))
+        .click_event(ClickEvent::suggest_command("/teammsg "));
+    let incoming = BoundChatType::new(
+        &vanilla_chat_types::TEAM_MSG_COMMAND_INCOMING,
+        source.display_name(),
+    )
+    .with_target_name(team_name.clone());
+    let outgoing = BoundChatType::new(
+        &vanilla_chat_types::TEAM_MSG_COMMAND_OUTGOING,
+        source.display_name(),
+    )
+    .with_target_name(team_name);
+    for receiver in &receivers {
+        let chat_type = if receiver.id() == entity.id() {
+            &outgoing
+        } else {
+            &incoming
+        };
+        receiver.send_chat_message(&message, chat_type);
+    }
+    i32::try_from(receivers.len()).map_err(|_| {
+        CommandSyntaxError::dynamic("Team message receiver count exceeds the command result range")
+    })
 }
