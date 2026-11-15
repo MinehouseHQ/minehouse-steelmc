@@ -20,7 +20,7 @@ mod end_lock;
 mod first_join;
 mod herbs;
 mod leaf_decay;
-mod map_markers;
+pub mod map_markers;
 mod map_view;
 mod metro;
 mod minecart_names;

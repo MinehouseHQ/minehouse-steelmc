@@ -26,7 +26,7 @@ use std::{
 
 use serde_json::{Map, Value, json};
 use steel_registry::dye_color::DyeColor;
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, locks::SyncMutex};
 
 use super::{
     metro,
@@ -46,6 +46,9 @@ const EVERY: Duration = Duration::from_secs(2);
 const MAX_FORKS: usize = 64;
 
 static DIRTY: AtomicBool = AtomicBool::new(true);
+/// Marker sets of other modules, by their id and then by the name of the map.
+static EXTRA: SyncMutex<BTreeMap<&'static str, BTreeMap<String, Value>>> =
+    SyncMutex::new(BTreeMap::new());
 static WRITER: Once = Once::new();
 
 /// Stations or tracks changed: the markers are written again soon.
@@ -55,6 +58,19 @@ pub fn changed() {
     if cfg!(not(test)) {
         start();
     }
+}
+
+/// Puts the marker set `id` of another module beside the metro: one set a map. A map left
+/// out loses the set.
+pub fn put_extra(id: &'static str, sets: BTreeMap<String, Value>) {
+    {
+        let mut extra = EXTRA.lock();
+        if extra.get(id) == Some(&sets) {
+            return;
+        }
+        extra.insert(id, sets);
+    }
+    changed();
 }
 
 /// Starts the writer. It runs beside the server and takes the lists one at a time, so
@@ -436,20 +452,20 @@ fn replace(file: &Path, text: &str) -> io::Result<()> {
     fs::rename(&temporary, file)
 }
 
-/// Puts the set of one map into its `markers.json`, leaving the other sets of the file as
-/// they are. `None` takes the metro out.
-fn put(file: &Path, set: Option<Value>) -> io::Result<()> {
+/// Puts the set `id` of one map into its `markers.json`, leaving the other sets of the file
+/// as they are. `None` takes the set out.
+fn put(file: &Path, id: &str, set: Option<Value>) -> io::Result<()> {
     let mut all = fs::read_to_string(file)
         .ok()
         .and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok())
         .unwrap_or_default();
-    let before = all.get(MARKER_SET).cloned();
+    let before = all.get(id).cloned();
     if before == set && file.exists() {
         return Ok(());
     }
     match set {
-        Some(set) => all.insert(MARKER_SET.to_owned(), set),
-        None => all.remove(MARKER_SET),
+        Some(set) => all.insert(id.to_owned(), set),
+        None => all.remove(id),
     };
     let text = serde_json::to_string(&all).map_err(io::Error::other)?;
     replace(file, &text)
@@ -499,15 +515,22 @@ pub fn write(directory: &Path) {
         let edges = edges.remove(world).unwrap_or_default();
         sets.insert(map_name(world), Some(marker_set(stations, &edges)));
     }
+    let extra = EXTRA.lock().clone();
+    for map in extra.values().flat_map(BTreeMap::keys) {
+        sets.entry(map.clone()).or_insert(None);
+    }
     let maps: BTreeSet<String> = sets.keys().cloned().collect();
     let result = (|| {
         for (map, set) in sets {
             let file = directory
                 .join("maps")
-                .join(map)
+                .join(&map)
                 .join("live")
                 .join("markers.json");
-            put(&file, set)?;
+            put(&file, MARKER_SET, set)?;
+            for (id, by_map) in &extra {
+                put(&file, id, by_map.get(&map).cloned())?;
+            }
         }
         settings(directory, &maps)
     })();
@@ -641,7 +664,7 @@ mod tests {
             .join("markers.json");
         let other = json!({ "label": "Other" });
         let wrote = replace(&file, &json!({ "other": other }).to_string())
-            .and_then(|()| put(&file, Some(json!({ "label": "Метро" }))));
+            .and_then(|()| put(&file, MARKER_SET, Some(json!({ "label": "Метро" }))));
         assert!(wrote.is_ok(), "{wrote:?}");
         let read = |file: &Path| {
             fs::read_to_string(file)
@@ -662,7 +685,7 @@ mod tests {
             read(&directory.join("settings.json")).get("maps"),
             Some(&json!(["world"]))
         );
-        assert!(put(&file, None).is_ok());
+        assert!(put(&file, MARKER_SET, None).is_ok());
         assert_eq!(read(&file).get(MARKER_SET), None);
         let _ = fs::remove_dir_all(&directory);
     }
