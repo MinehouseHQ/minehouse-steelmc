@@ -10,6 +10,7 @@ mod bluemap;
 mod bossbars;
 pub mod commands;
 pub mod gui;
+pub mod map;
 pub mod markup;
 mod zone;
 
@@ -77,6 +78,8 @@ pub struct Zones {
     pub(super) bars: bossbars::BossBars,
     /// The drafts of the admins and the borders players asked to see.
     pub markup: markup::Markup,
+    /// The picture of the «Карта зон спавна».
+    pub map: map::ZoneMap,
 }
 
 impl Zones {
@@ -94,6 +97,7 @@ impl Zones {
             live: SyncMutex::new(Vec::new()),
             bars: bossbars::BossBars::load(),
             markup: markup::Markup::default(),
+            map: map::ZoneMap::default(),
         }
     }
 
@@ -116,6 +120,7 @@ impl Zones {
     fn forget(&self, player: Uuid) {
         self.current.lock().remove(&player);
         self.markup.forget(player);
+        self.map.forget(player);
         let mut presence = self.presence.lock();
         if presence.zones.remove(&player).is_some() {
             presence.dirty = true;
@@ -342,6 +347,9 @@ impl Bank {
         }
         if tick.is_multiple_of(HUD_TICKS) {
             self.tick_markup(server, tick);
+        }
+        if tick % HUD_TICKS == 3 && self.zones_open() {
+            self.tick_zone_map(server, tick);
         }
         if tick.is_multiple_of(LIVE_TICKS) {
             let windows: Vec<Arc<dyn Live>> = {

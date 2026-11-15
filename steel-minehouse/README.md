@@ -350,6 +350,11 @@ is protected. The site keeps everything; the server asks for the list every 30 s
   them for one player; who hid them is kept in `zones-hidden-bars.txt` of the data directory.
 - `/zones show [num]` (every player) draws the borders with dust particles for 30 seconds, in
   the color of the zone's status, at the player's height and within 64 blocks.
+- `/zones map` (every player) gives «Карта зон спавна»: a filled map the server draws itself
+  and sends only as packets while it is held (no saved map data): the terrain of the loaded
+  chunks, the borders of the zones in the colors of their status, a banner with the number and
+  the tenant or the auction over every zone, and the holder's marker. The picture is sent again
+  when the zones change, the terrain is read again every two minutes.
 - `/zones auction <num> [hours] [price] [delay minutes]` (`minehouse.zones.auction` or
   `minehouse.zones.admin`, and the console), `/zones delete <num>` and `/zones reload`
   (`minehouse.zones.admin`, and the console).
@@ -370,7 +375,7 @@ card of the lot: the area, the rent, the tenant or the bid, when the auction end
 time) and a button to the zone on the site. The set is rewritten when the site's list changes
 and taken off while the zones are closed.
 
-Not here yet: the banker, and of the zones the map item and the guides.
+Not here yet: the banker, and of the zones the guides.
 
 `config/minehouse/bank.toml`:
 
