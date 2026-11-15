@@ -10,10 +10,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use std::sync::Arc;
 
 use super::{
-    BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandDialog, CommandResultSuspension,
-    CommandSource, Coordinates, DoubleRange, ExecutionCommandSource, ExecutionControl,
-    GameProfileArgument, IntRange, ItemPredicate, PermissionGroupName, ScoreHolderArgument,
-    ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
+    BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    Coordinates, DoubleRange, ExecutionCommandSource, ExecutionControl, GameProfileArgument,
+    IntRange, ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
+    SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DialogValue, DomainValue,
         EnchantmentValue, EntityTypeValue, FeatureValue, FunctionReference, FunctionValue,
@@ -53,6 +53,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
+use steel_registry::dialog::DialogRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::mob_effect::MobEffectRef;
@@ -442,9 +443,9 @@ where
     }
 
     /// Vanilla `ResourceOrIdArgument.getDialog`.
-    pub(crate) fn dialog(&self, name: &str) -> Result<CommandDialog, CommandSyntaxError> {
+    pub(crate) fn dialog(&self, name: &str) -> Result<DialogRef, CommandSyntaxError> {
         self.typed_argument::<DialogValue>(name)
-            .map(|value| value.0.clone())
+            .map(|value| value.0)
     }
 
     /// Vanilla `ResourceOrIdArgument.getFeature`.

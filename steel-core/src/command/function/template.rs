@@ -5,14 +5,14 @@ pub(super) const MAX_COMMAND_LENGTH: usize = 2_000_000;
 
 /// A macro line's literal segments and the variables between them.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct StringTemplate {
+pub(super) struct StringTemplate {
     segments: Vec<String>,
     variables: Vec<String>,
 }
 
 impl StringTemplate {
     /// Vanilla `StringTemplate.fromString`.
-    pub(crate) fn parse(input: &str) -> Result<Self, String> {
+    pub(super) fn parse(input: &str) -> Result<Self, String> {
         let mut segments = Vec::new();
         let mut variables = Vec::new();
         let mut start = 0;
@@ -71,7 +71,7 @@ impl StringTemplate {
 }
 
 /// Vanilla `isValidVariableName`: letters, digits and `_`.
-pub(crate) fn is_valid_variable_name(variable: &str) -> bool {
+fn is_valid_variable_name(variable: &str) -> bool {
     variable
         .chars()
         .all(|character| character.is_alphanumeric() || character == '_')

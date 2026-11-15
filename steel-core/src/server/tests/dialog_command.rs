@@ -1,4 +1,4 @@
-//! `/dialog`, which shows registry and inline dialogs and clears them.
+//! `/dialog`, which shows registry dialogs by holder id and clears them.
 
 use std::sync::Arc;
 
@@ -46,10 +46,6 @@ fn dialogs_are_shown_by_registry_id_and_cleared() {
                 "dialog show Alex {type:\"notice\"}",
                 "argument.resource_or_id.failed_to_parse",
             ),
-            (
-                "dialog show Alex \"minecraft:server_links\"",
-                "argument.resource_or_id.failed_to_parse",
-            ),
         ] {
             let source = CommandSource::new(CommandSender::Console, Arc::clone(server));
             let dispatcher = server.command_dispatcher.read();
@@ -59,16 +55,6 @@ fn dialogs_are_shown_by_registry_id_and_cleared() {
             };
             assert!(failure.to_string().contains(error), "{failure}");
         }
-
-        // An inline dialog is sent as a direct holder: zero, then its NBT.
-        assert_eq!(
-            run(server, "dialog show @a {type:\"notice\",title:\"Hi\"}"),
-            Some(2)
-        );
-        let shown = chat_packets(&steve_packets, C_SHOW_DIALOG);
-        assert_eq!(shown.len(), 1);
-        let (_, mut body) = packet_body(&shown[0]);
-        assert_eq!(VarInt::read(&mut body).expect("holder id decodes").0, 0);
 
         assert_eq!(run(server, "dialog clear @a"), Some(2));
         assert_eq!(chat_packets(&alex_packets, C_CLEAR_DIALOG).len(), 1);

@@ -10,7 +10,6 @@ use super::{
         parse_block_pos, parse_column_pos, parse_rotation, parse_vec2, parse_vec3,
         suggest_coordinates, suggest_vec2,
     },
-    dialog::{CommandDialog, check_dialog},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     message::MessageArgument,
@@ -56,6 +55,7 @@ use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::dialog::DialogRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::vanilla_template_pools::vanilla_template_pools;
@@ -73,7 +73,7 @@ use steel_worldgen::structure::StructureMirror;
 
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, Rotation,
-    nbt::{NbtPath, normalize_nbt_tag, parse_snbt_argument},
+    nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
 };
@@ -464,7 +464,7 @@ impl SteelArgumentType {
         Self::new(LootTableParser)
     }
 
-    /// Vanilla `ResourceOrIdArgument.dialog`: a dialog by id or inline.
+    /// Vanilla `ResourceOrIdArgument.dialog`, by id only, like [`Self::loot_table`].
     pub(crate) fn dialog() -> Self {
         Self::new(DialogParser)
     }
@@ -756,7 +756,7 @@ argument_value_wrapper!(
     LootTableValue(LootTableRef),
     "steel:command/value/loot_table"
 );
-argument_value_wrapper!(DialogValue(CommandDialog), "steel:command/value/dialog");
+argument_value_wrapper!(DialogValue(DialogRef), "steel:command/value/dialog");
 argument_value_wrapper!(
     FeatureValue(ConfiguredFeatureEntryRef),
     "steel:command/value/feature"
@@ -2289,42 +2289,25 @@ fn parse_loot_table(reader: &mut StringReader<'_>) -> Result<LootTableRef, Comma
     })
 }
 
-/// Vanilla `ResourceOrIdArgument.DialogArgument.parse`: a registry dialog
-/// by id, or a dialog written inline as SNBT.
-fn parse_dialog(reader: &mut StringReader<'_>) -> Result<CommandDialog, CommandSyntaxError> {
-    if reader.peek().is_some_and(is_allowed_in_identifier)
-        && let Ok(key) = parse_identifier(reader)
-    {
-        return REGISTRY
-            .dialogs
-            .by_key(&key)
-            .map(CommandDialog::Reference)
-            .ok_or_else(|| {
-                reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-                    translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
-                        .message([key.to_string(), "minecraft:dialog".to_owned()])
-                        .component(),
-                )))
-            });
-    }
-    let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
-        reader.advance_bytes(error.cursor());
-        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.component())))
-    })?;
-    let parsed = reader.advance_bytes(consumed);
-    let failed = |reader: &StringReader<'_>, message: String| {
-        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+/// Vanilla `ResourceOrIdArgument.DialogArgument.parse` for a dialog id. An
+/// inline dialog fails to parse, as an inline loot table does.
+fn parse_dialog(reader: &mut StringReader<'_>) -> Result<DialogRef, CommandSyntaxError> {
+    let inline = !reader.peek().is_some_and(is_allowed_in_identifier);
+    let key = parse_identifier(reader);
+    let (false, Ok(key)) = (inline, key) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
             translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
-                .message([message])
+                .message(["inline dialogs are not supported".to_owned()])
+                .component(),
+        ))));
+    };
+    REGISTRY.dialogs.by_key(&key).ok_or_else(|| {
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                .message([key.to_string(), "minecraft:dialog".to_owned()])
                 .component(),
         )))
-    };
-    if !parsed {
-        return Err(failed(reader, "Invalid dialog cursor".to_owned()));
-    }
-    let tag = normalize_nbt_tag(tag).ok_or_else(|| failed(reader, "Invalid string".to_owned()))?;
-    check_dialog(&tag).map_err(|error| failed(reader, error))?;
-    Ok(CommandDialog::Direct(tag))
+    })
 }
 
 /// Every vanilla template pool id, for `/place jigsaw` suggestions.
