@@ -31,6 +31,8 @@ pub struct BankConfig {
     pub invoice_seconds: u64,
     /// How far from a terminal or an ATM a player may use it.
     pub use_distance: f64,
+    /// Whether the spawn zones are open to players.
+    pub zones: bool,
 }
 
 impl Default for BankConfig {
@@ -45,6 +47,7 @@ impl Default for BankConfig {
             max_withdraw: 640,
             invoice_seconds: 120,
             use_distance: 6.0,
+            zones: true,
         }
     }
 }

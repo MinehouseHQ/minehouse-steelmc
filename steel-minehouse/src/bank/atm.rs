@@ -52,11 +52,11 @@ const CARD_MODEL: &str = "minehouse-bank:card";
 /// The model of the payment terminal, for buttons.
 const TERMINAL_MODEL: &str = "minehouse-bank:terminal";
 
-fn text<'a>(value: &'a Value, key: &str) -> &'a str {
+pub(super) fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or_default()
 }
 
-fn number(value: &Value, key: &str) -> i64 {
+pub(super) fn number(value: &Value, key: &str) -> i64 {
     value.get(key).and_then(Value::as_i64).unwrap_or_default()
 }
 
@@ -65,7 +65,7 @@ fn card_of(account: &Value) -> Option<&Value> {
 }
 
 /// «Личный» or the account's own name.
-fn title(account: &Value) -> String {
+pub(super) fn title(account: &Value) -> String {
     if personal(account) {
         return "Личный".to_owned();
     }
@@ -77,7 +77,7 @@ fn title(account: &Value) -> String {
 }
 
 /// The id of a non-personal account: the site picks the personal one itself.
-fn extra_id(account: &Value) -> Option<String> {
+pub(super) fn extra_id(account: &Value) -> Option<String> {
     (!personal(account)).then(|| text(account, "account_id").to_owned())
 }
 
@@ -902,7 +902,9 @@ impl MenuKind for MainKind {
 pub(super) trait Buttons: Send + Sync + 'static {
     /// The window is to be closed.
     fn closing(&self) -> bool;
-    fn pos(&self) -> BlockPos;
+    /// The block the window belongs to: it closes when the player walks away. None: a window
+    /// that is used from anywhere.
+    fn pos(&self) -> Option<BlockPos>;
     fn bank(&self) -> &Bank;
     fn clicked(self: Arc<Self>, slot: usize);
     fn renamed(&self, _name: String) {}
@@ -936,7 +938,11 @@ impl MenuKind for ButtonsKind {
     }
 
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        !self.0.closing() && near(self.0.bank(), player, self.0.pos())
+        !self.0.closing()
+            && self
+                .0
+                .pos()
+                .is_none_or(|pos| near(self.0.bank(), player, pos))
     }
 
     fn removed(&mut self, _behavior: &mut MenuBehavior, _player: &Player) {
@@ -1104,8 +1110,8 @@ impl Buttons for Amount {
         self.state.lock().2
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {
@@ -1247,8 +1253,8 @@ impl Buttons for AccountName {
         self.state.lock().2
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {

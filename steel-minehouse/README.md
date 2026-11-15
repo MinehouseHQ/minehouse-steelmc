@@ -321,7 +321,36 @@ blocks.
   it. Opening it is not limited, as on the Fabric server. These two checks are hooks in
   steel-core (`world::block_guard`).
 
-Not here yet: transfers, the banker and the spawn zones.
+**Transfers**: `/transfer` (every player, from anywhere, no card) opens a window with the
+account the money leaves (a click goes through the player's accounts), the ATM's amount picker up
+to the balance, and the recipient: a number typed in an anvil window that the site resolves
+before the transfer is offered. The player's own account and a frozen one are refused there. The
+owner of the receiving account is told if they are online. On the Fabric server the window was a
+line of the server menu, which Steel does not have yet.
+
+**Spawn zones** (`bank/zones/`): a shared circle in the middle of the spawn island and lots
+around it that go to auction and are rented for 7 days. A zone only says whose land it is, nothing
+is protected. The site keeps everything; the server asks for the list every 30 s.
+
+- The action bar names the zone a player walks into (free, the tenant, or the auction with its
+  bid) and says when they leave. Spectators see nothing.
+- Every 20 s, and at once when it changes, the site is told which lot each player stands in: it
+  takes a bid only from a player inside the zone.
+- Chat announces an auction that was scheduled, one that opened and one that ended; the winner
+  gets a line of their own.
+- `/zones` (every player) lists the zones. A lot opens its card: «Сделать ставку» while its
+  auction runs and the player stands in it, «Продлить на 7 дней» for the tenant in the last two
+  days of the lease. `/zones bid` opens the bid window of the zone the player stands in. A bid
+  comes from the personal account; the amount starts at the least bid and follows it while the
+  window is open (open windows ask the site again every 3 s). The player whose bid was beaten is
+  told if they are online.
+- On join a tenant whose lease ends within two days is reminded to renew.
+- `/zones auction <num> [hours] [price] [delay minutes]` (`minehouse.zones.auction` or
+  `minehouse.zones.admin`, and the console), `/zones delete <num>` and `/zones reload`
+  (`minehouse.zones.admin`, and the console).
+
+Not here yet: the banker, and of the zones the map, the borders, the boss bars, the BlueMap
+markers and the commands that mark a zone out.
 
 `config/minehouse/bank.toml`:
 
@@ -334,6 +363,7 @@ Not here yet: transfers, the banker and the spawn zones.
 | `max_withdraw` | `640` | Most ores one withdrawal hands out |
 | `invoice_seconds` | `120` | How long a till's invoice lives |
 | `use_distance` | `6.0` | How far from a terminal or an ATM a player may use it |
+| `zones` | `true` | Whether the spawn zones are open to players; closed, only `minehouse.zones.admin` opens `/zones` |
 
 Differences from the Fabric mod: the journal is in the data directory instead of the world
 folder, and its items are hex of their NBT, not SNBT, so a Fabric journal with items in it is not
