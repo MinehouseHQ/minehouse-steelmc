@@ -17,6 +17,11 @@ use crate::entity::ai::brain::Memories;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
 use crate::entity::pushing::EntityPush;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::{
+    BODY_SLOT, CHEST_SLOT, FEET_SLOT, HEAD_SLOT, LEGS_SLOT, MAINHAND_SLOT, OFFHAND_SLOT,
+    SADDLE_SLOT,
+};
 use steel_registry::damage_type::DamageType;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -2609,6 +2614,31 @@ pub trait LivingEntity: Entity {
         }
     }
 
+    /// Vanilla `LivingEntity.getSlot`: the equipment slot behind a command
+    /// slot id. Armor, body and saddle slots only take what fits there.
+    ///
+    /// Concrete [`Entity::get_slot`] overrides fall back to this like
+    /// vanilla's `super.getSlot`.
+    fn default_living_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        let equipment_slot = command_equipment_slot(slot)?;
+        let get = move || self.equipment_in_slot(equipment_slot);
+        if matches!(
+            equipment_slot,
+            EquipmentSlot::Head | EquipmentSlot::MainHand | EquipmentSlot::OffHand
+        ) {
+            return Some(SlotAccess::of(get, move |stack| {
+                self.set_item_slot(equipment_slot, stack);
+            }));
+        }
+        Some(SlotAccess::new(get, move |stack| {
+            if !stack.is_empty() && self.get_equipment_slot_for_item(&stack) != equipment_slot {
+                return false;
+            }
+            self.set_item_slot(equipment_slot, stack);
+            true
+        }))
+    }
+
     /// Returns vanilla `LivingEntity.canFreeze()` after concrete entity exemptions.
     ///
     /// Vanilla keeps the entity-type freeze immunity on `Entity` and the equipment
@@ -4148,4 +4178,20 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
         context = context.with_game_time(level.game_time());
     }
     loot_table.get_random_items(&mut context)
+}
+
+/// Vanilla `LivingEntity.getEquipmentSlot(int)`: the equipment slot a command
+/// slot id names.
+const fn command_equipment_slot(slot: i32) -> Option<EquipmentSlot> {
+    Some(match slot {
+        HEAD_SLOT => EquipmentSlot::Head,
+        CHEST_SLOT => EquipmentSlot::Chest,
+        LEGS_SLOT => EquipmentSlot::Legs,
+        FEET_SLOT => EquipmentSlot::Feet,
+        MAINHAND_SLOT => EquipmentSlot::MainHand,
+        OFFHAND_SLOT => EquipmentSlot::OffHand,
+        BODY_SLOT => EquipmentSlot::Body,
+        SADDLE_SLOT => EquipmentSlot::Saddle,
+        _ => return None,
+    })
 }

@@ -42,6 +42,7 @@ use crate::entity::{
     Mob, MobBase, MobEffectInstance, PathfinderMob, SharedEntity, SpawnGroupData, TamableAnimal,
     TamableAnimalBase, sync_dirty_mob_effects,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, ServerLevelAccessor, World};
@@ -210,6 +211,11 @@ impl TamableAnimal for ZombieNautilusEntity {
 }
 
 impl Entity for ZombieNautilusEntity {
+    /// Vanilla `AbstractNautilus.getSlot`.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        self.default_nautilus_slot(slot)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

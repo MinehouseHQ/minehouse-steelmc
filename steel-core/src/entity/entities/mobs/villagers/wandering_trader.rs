@@ -44,6 +44,8 @@ use crate::entity::{
     SpawnRule, sync_dirty_mob_effects,
 };
 use crate::inventory::container::SimpleContainer;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::MOB_INVENTORY_SLOT_OFFSET;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
@@ -464,6 +466,11 @@ impl Merchant for WanderingTraderEntity {
 }
 
 impl Entity for WanderingTraderEntity {
+    /// Vanilla `AbstractVillager.getSlot`: the inventory from slot 300.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        SlotAccess::for_container(&self.inventory, slot - MOB_INVENTORY_SLOT_OFFSET)
+            .or_else(|| self.default_living_slot(slot))
+    }
     /// Vanilla `AbstractVillager.teleport`: stops trading.
     fn on_teleported(&self) {
         Merchant::set_trading_player(self, None);

@@ -754,6 +754,32 @@ impl Player {
         self.fire_inventory_slot_changes();
     }
 
+    /// Vanilla `containerMenu.getCarried()`: what the cursor holds in the
+    /// open menu, or in the inventory menu when none is open.
+    #[must_use]
+    pub fn carried_item(&self) -> ItemStack {
+        if let Some(menu) = self.open_menu.lock().menu.as_ref() {
+            return menu.behavior().carried().clone();
+        }
+        self.inventory_menu.lock().behavior().carried().clone()
+    }
+
+    /// Vanilla `containerMenu.setCarried`.
+    pub fn set_carried_item(&self, stack: ItemStack) {
+        if let Some(menu) = self.open_menu.lock().menu.as_mut() {
+            *menu.behavior_mut().carried_mut() = stack;
+            return;
+        }
+        *self.inventory_menu.lock().behavior_mut().carried_mut() = stack;
+    }
+
+    /// Vanilla `inventoryMenu.getCraftSlots().setItem` followed by
+    /// `inventoryMenu.slotsChanged`, which recomputes the crafting result.
+    pub fn set_crafting_grid_item(&self, slot: usize, stack: ItemStack) {
+        self.crafting_container().lock().set_item(slot, stack);
+        self.inventory_menu.lock().refresh_slots(self);
+    }
+
     /// A shared handle to the 2x2 crafting grid of the always-open inventory
     /// menu.
     pub fn crafting_container(&self) -> Shared<CraftingContainer> {

@@ -27,6 +27,7 @@ use crate::entity::{
     ARROW_GRAVITY, AbstractArrow, ArrowBase, Entity, EntityBase, EntityBaseLoad, EntitySyncedData,
     LivingEntity, MobEffectInstance, Projectile, ProjectileBase, SharedEntity,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
@@ -40,6 +41,16 @@ const SPECTRAL_DEFAULT_DURATION: i32 = 200;
 /// The `Entity` / `Projectile` / `AbstractArrow` plumbing every arrow shares.
 macro_rules! arrow_entity_common {
     () => {
+        /// Vanilla `AbstractArrow.getSlot`: slot 0 is the item picked back up.
+        fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+            (slot == 0).then(|| {
+                SlotAccess::of(
+                    || self.pickup_item_stack(),
+                    |stack| self.set_pickup_item_stack(stack),
+                )
+            })
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }

@@ -29,6 +29,7 @@ use crate::entity::{
     SpawnRule, create_entity_instance, is_dark_enough_to_spawn, is_spawn_allowed_on_difficulty,
     start_riding_entities,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::player::Player;
 use crate::world::World;
 use steel_registry::vanilla_item_tags::ItemTag;
@@ -316,6 +317,11 @@ impl AbstractHorse for ZombieHorseEntity {
 impl_equine_entity!(
     ZombieHorseEntity, abstract_horse, abstract_horse_mut,
     entity {
+        /// Vanilla `AbstractHorse.getSlot`.
+        fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+            self.default_horse_slot(slot)
+        }
+
         /// Vanilla `ZombieHorse.interact`: any interaction keeps it around.
         fn interact(
             &self,

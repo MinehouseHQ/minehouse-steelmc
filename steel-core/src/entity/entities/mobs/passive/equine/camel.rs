@@ -63,6 +63,7 @@ use crate::entity::{
     LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
     sync_dirty_mob_effects,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::{CollisionWorld as _, MoveResult, WorldCollisionProvider};
 use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
@@ -1093,6 +1094,11 @@ macro_rules! camel_entity {
         impl DefaultEntityPush for $entity {}
 
         impl Entity for $entity {
+            /// Vanilla `AbstractHorse.getSlot`.
+            fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+                self.default_horse_slot(slot)
+            }
+
             fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
                 Some(self)
             }

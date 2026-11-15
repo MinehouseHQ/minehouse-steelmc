@@ -50,6 +50,7 @@ use crate::entity::{
     is_abstract_illager, next_entity_id,
 };
 use crate::entity::{SpawnRule, TamableAnimal};
+use crate::inventory::slot_access::SlotAccess;
 use crate::player::Player;
 use crate::world::World;
 
@@ -867,6 +868,11 @@ macro_rules! llama_entity {
         impl_equine_entity!(
             $entity, abstract_horse, abstract_horse_mut,
             entity {
+                /// Vanilla `AbstractChestedHorse.getSlot`.
+                fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+                    self.default_chested_horse_slot(slot)
+                }
+
                 fn llama_strength(&self) -> Option<i32> {
                     Some(self.strength())
                 }

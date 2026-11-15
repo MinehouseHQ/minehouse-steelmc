@@ -281,6 +281,13 @@ impl Menu {
         kind.slots_changed(behavior, guard, player);
     }
 
+    /// Vanilla `slotsChanged` after a container in this menu changed outside a
+    /// click, such as a command replacing a crafting-grid slot.
+    pub(crate) fn refresh_slots(&mut self, player: &Player) {
+        let mut guard = self.behavior().lock_all_containers();
+        self.slots_changed(&mut guard, player);
+    }
+
     /// Runs the kind's `on_open` hook, after contents are built but before they
     /// are sent to the client.
     pub fn on_open(&mut self, player: &Player) {

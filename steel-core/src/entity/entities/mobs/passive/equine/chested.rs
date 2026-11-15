@@ -29,6 +29,8 @@ use crate::entity::{
     EntitySpawnReason, LivingEntity, LivingEntityBase, Mob, MobBase, SharedEntity, SpawnGroupData,
 };
 use crate::inventory::container::Container as _;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::CURSOR_OR_HORSE_CHEST_SLOT;
 use crate::player::Player;
 use crate::world::World;
 
@@ -67,6 +69,37 @@ pub trait AbstractChestedHorse: AbstractHorse {
 
     /// Vanilla `setChest`.
     fn set_chest(&self, chest: bool);
+
+    /// Vanilla `AbstractChestedHorse.getSlot`: slot 499 is the chest itself,
+    /// which only takes a chest or nothing; the rest is the horse's slots.
+    fn default_chested_horse_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        if slot != CURSOR_OR_HORSE_CHEST_SLOT {
+            return self.default_horse_slot(slot);
+        }
+        Some(SlotAccess::new(
+            || {
+                if self.has_chest() {
+                    ItemStack::new(&vanilla_items::CHEST)
+                } else {
+                    ItemStack::empty()
+                }
+            },
+            |stack| {
+                let wants_chest = if stack.is_empty() {
+                    false
+                } else if stack.is(&vanilla_items::CHEST) {
+                    true
+                } else {
+                    return false;
+                };
+                if self.has_chest() != wants_chest {
+                    self.set_chest(wants_chest);
+                    self.create_inventory();
+                }
+                true
+            },
+        ))
+    }
 
     /// Vanilla `playChestEquipsSound`.
     fn play_chest_equips_sound(&self) {
@@ -352,7 +385,12 @@ macro_rules! chested_entity {
 
         impl_equine_entity!(
             $entity, abstract_horse, abstract_horse_mut,
-            entity {}
+            entity {
+                /// Vanilla `AbstractChestedHorse.getSlot`.
+                fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+                    self.default_chested_horse_slot(slot)
+                }
+            }
             living {}
             mob {}
         );

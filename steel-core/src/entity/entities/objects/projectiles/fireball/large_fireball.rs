@@ -20,6 +20,7 @@ use crate::entity::{
     AbstractHurtingProjectile, Entity, EntityBase, EntityBaseLoad, EntitySyncedData,
     HurtingProjectileBase, Projectile, ProjectileBase, ProjectileHit, RemovalReason, SharedEntity,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::world::World;
 use crate::world::explosion::{ExplosionInteraction, ExplosionOptions};
 
@@ -88,6 +89,10 @@ impl LargeFireballEntity {
 }
 
 impl Entity for LargeFireballEntity {
+    /// Vanilla `Fireball.getSlot`: slot 0 is the item it renders as.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        (slot == 0).then(|| SlotAccess::of(|| self.get_item(), |stack| self.set_item(&stack)))
+    }
     fn base(&self) -> &EntityBase {
         &self.base
     }

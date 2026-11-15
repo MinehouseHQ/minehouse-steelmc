@@ -31,6 +31,7 @@ use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntitySyncedData,
     HangingEntity, ItemFrame, SharedEntity,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::maps::{MapFrame, TRACKED_DECORATION_LIMIT};
@@ -460,6 +461,10 @@ impl ItemFrame for ItemFrameEntity {
 }
 
 impl Entity for ItemFrameEntity {
+    /// Vanilla `ItemFrame.getSlot`: slot 0 is the framed item.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        (slot == 0).then(|| SlotAccess::of(|| self.item(), |stack| self.set_item(stack)))
+    }
     /// Vanilla `BlockAttachedEntity.thunderHit` ignores lightning.
     fn thunder_hit(&self, _world: &World, _lightning: &LightningBoltEntity) {}
 

@@ -11,6 +11,7 @@ use crate::entity::entities::{Guardian, LightningBoltEntity, Squid};
 use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
+use crate::inventory::slot_access::SlotAccess;
 use crate::world::game_event::DynamicListenerAction;
 use crate::world::game_event::vibrations::VibrationSystem;
 use crate::world::ticking_world::LevelRef;
@@ -2436,6 +2437,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             || self.default_can_freeze(),
             LivingEntity::default_living_can_freeze,
         )
+    }
+
+    /// Vanilla `Entity.getSlot`: the item slot that a command slot id names on
+    /// this entity, or `None`. Living entities expose their equipment.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        self.as_living_entity()
+            .and_then(|living| living.default_living_slot(slot))
     }
 
     /// Returns the ticks of powder-snow exposure required before this entity

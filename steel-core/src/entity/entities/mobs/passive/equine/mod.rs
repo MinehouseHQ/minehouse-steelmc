@@ -58,6 +58,9 @@ use crate::entity::{
 };
 use crate::inventory::container::Container as _;
 use crate::inventory::container::SimpleContainer;
+use crate::inventory::lock::ContainerRef;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::HORSE_INVENTORY_SLOT_OFFSET;
 use crate::player::Player;
 use crate::world::World;
 
@@ -422,6 +425,14 @@ pub trait AbstractHorse: Animal + PathfinderMob {
             sound_type.volume * 0.15,
             sound_type.pitch,
         );
+    }
+
+    /// Vanilla `AbstractHorse.getSlot`: the inventory from slot 500, then the
+    /// living entity's equipment.
+    fn default_horse_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        let inventory = ContainerRef::from(self.horse_base().inventory());
+        SlotAccess::for_container_ref(inventory, slot - HORSE_INVENTORY_SLOT_OFFSET)
+            .or_else(|| self.default_living_slot(slot))
     }
 
     /// Vanilla `createInventory`: resizes the container, keeping what fits.

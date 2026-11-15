@@ -40,6 +40,8 @@ use crate::entity::{
 };
 use crate::inventory::container::SimpleContainer;
 use crate::inventory::prelude::EquipmentSlot;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::MOB_INVENTORY_SLOT_OFFSET;
 use crate::physics::MoveResult;
 use crate::world::{LevelReader, World, raid};
 use steel_utils::types::Difficulty;
@@ -247,6 +249,11 @@ impl PillagerEntity {
 impl DefaultEntityPush for PillagerEntity {}
 
 impl Entity for PillagerEntity {
+    /// Vanilla `Pillager.getSlot`: the inventory from slot 300.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        SlotAccess::for_container(&self.inventory, slot - MOB_INVENTORY_SLOT_OFFSET)
+            .or_else(|| self.default_living_slot(slot))
+    }
     fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
         Some(self)
     }

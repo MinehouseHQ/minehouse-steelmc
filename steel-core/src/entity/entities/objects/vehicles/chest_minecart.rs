@@ -32,6 +32,7 @@ use crate::entity::{
 };
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::menu::kinds::chest_with_kind;
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
@@ -174,6 +175,10 @@ impl AbstractMinecart for ChestMinecartEntity {
 }
 
 impl Entity for ChestMinecartEntity {
+    /// Vanilla `AbstractMinecartContainer.getSlot`: the chest slots, after any pending loot is rolled.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        SlotAccess::for_container_ref(self.container_ref(), slot)
+    }
     fn base(&self) -> &EntityBase {
         &self.base
     }
