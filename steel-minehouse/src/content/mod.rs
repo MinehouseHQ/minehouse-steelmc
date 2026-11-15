@@ -11,6 +11,7 @@ mod cloud;
 mod commands;
 mod couplings;
 mod herbs;
+mod map_markers;
 mod map_view;
 mod metro;
 mod papirosa;
@@ -379,6 +380,7 @@ pub fn start() {
         rail_graph::with(|graphs| graphs.count()) / 2,
         trains::count()
     );
+    map_markers::changed();
 }
 
 #[cfg(test)]

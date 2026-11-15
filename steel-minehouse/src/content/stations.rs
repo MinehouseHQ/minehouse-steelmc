@@ -143,8 +143,18 @@ impl Stations {
             .or_default()
     }
 
+    /// Every station, by its world and the `(x, y, z)` of its block.
+    #[must_use]
+    pub fn all(&self) -> BTreeMap<String, BTreeMap<(i32, i32, i32), Station>> {
+        self.worlds
+            .iter()
+            .map(|(world, stations)| (world.clone(), stations.clone()))
+            .collect()
+    }
+
     /// Writes through a temporary file, so a crash never leaves half a list.
     fn save(&self) {
+        super::map_markers::changed();
         let saved: BTreeMap<&str, Vec<Entry>> = self
             .worlds
             .iter()

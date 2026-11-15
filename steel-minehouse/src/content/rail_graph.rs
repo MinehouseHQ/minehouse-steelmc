@@ -440,9 +440,19 @@ impl RailGraphs {
         self.worlds.values().map(RailGraph::len).sum()
     }
 
+    /// Every edge, by its world.
+    #[must_use]
+    pub fn all(&self) -> BTreeMap<String, Vec<Edge>> {
+        self.worlds
+            .iter()
+            .map(|(world, graph)| (world.clone(), graph.edges.values().cloned().collect()))
+            .collect()
+    }
+
     /// Writes the file now.
     pub fn save(&mut self) {
         self.dirty = false;
+        super::map_markers::changed();
         let saved: BTreeMap<&str, Vec<Saved>> = self
             .worlds
             .iter()
