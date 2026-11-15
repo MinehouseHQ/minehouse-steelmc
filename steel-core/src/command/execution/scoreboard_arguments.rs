@@ -11,7 +11,7 @@ use crate::{
     command::brigadier::{
         CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
     },
-    scoreboard::{CustomCriteria, DisplaySlot, ObjectiveCriteria},
+    scoreboard::{CustomCriteria, DisplaySlot, ObjectiveCriteria, TeamColor},
 };
 
 /// Reads up to the next space, as the criteria and operation parsers do.
@@ -72,6 +72,24 @@ pub(super) fn parse_display_slot(
 /// Vanilla `ScoreboardSlotArgument.listSuggestions`.
 pub(super) fn suggest_display_slots(builder: &mut SuggestionsBuilder<'_>) {
     suggest_list(builder, DisplaySlot::ALL.map(DisplaySlot::name));
+}
+
+/// Vanilla `TeamColorArgument.parse`.
+pub(super) fn parse_team_color(
+    reader: &mut StringReader<'_>,
+) -> Result<TeamColor, CommandSyntaxError> {
+    let name = reader.read_unquoted_string();
+    TeamColor::by_name(name).ok_or_else(|| {
+        let message = translations::ARGUMENT_COLOR_INVALID
+            .message([name.to_owned()])
+            .component();
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message)))
+    })
+}
+
+/// Vanilla `TeamColorArgument.listSuggestions`.
+pub(super) fn suggest_team_colors(builder: &mut SuggestionsBuilder<'_>) {
+    suggest_list(builder, TeamColor::ALL.map(TeamColor::name));
 }
 
 /// Vanilla `OperationArgument.Operation`.

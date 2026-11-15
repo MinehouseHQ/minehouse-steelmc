@@ -20,7 +20,9 @@ use super::{
         ObjectiveValue, SlotSourceValue, SteelArgumentValue, TimeValue, TimelineValue,
         WorldClockValue,
     },
-    argument::{CriteriaValue, DisplaySlotValue, OperationValue, StyleValue},
+    argument::{
+        CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
+    },
     scoreboard_arguments::ScoreOperation,
     selector::EntitySelector,
 };
@@ -37,7 +39,10 @@ use crate::{
     entity::{EntityAnchor, SharedEntity},
     permission::{PermissionMetadataExpression, PermissionRuleExpression},
     player::Player,
-    scoreboard::{DisplaySlot, ObjectiveCriteria, ScoreHolder, Scoreboard, ScoreboardObjective},
+    scoreboard::{
+        DisplaySlot, ObjectiveCriteria, PlayerTeam, ScoreHolder, Scoreboard, ScoreboardObjective,
+        TeamColor,
+    },
 };
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
@@ -317,6 +322,17 @@ where
             .map(|value| &value.0)
     }
 
+    /// Vanilla `TeamColorArgument.getTeamColor`.
+    pub(crate) fn team_color(&self, name: &str) -> Result<TeamColor, CommandSyntaxError> {
+        self.typed_argument::<TeamColorValue>(name)
+            .map(|value| value.0)
+    }
+
+    fn team_name(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<TeamValue>(name)
+            .map(|value| value.0.as_ref())
+    }
+
     pub(crate) fn biome_or_tag(&self, name: &str) -> Result<&BiomeOrTag, CommandSyntaxError> {
         self.typed_argument(name)
     }
@@ -545,6 +561,18 @@ impl SteelCommandContext<CommandSource> {
             CommandSyntaxError::dynamic(
                 translations::ARGUMENTS_OBJECTIVE_NOT_FOUND
                     .message([objective_name.to_owned()])
+                    .component(),
+            )
+        })
+    }
+
+    /// Vanilla `TeamArgument.getTeam`.
+    pub(crate) fn team(&self, name: &str) -> Result<PlayerTeam, CommandSyntaxError> {
+        let team_name = self.team_name(name)?;
+        self.scoreboard()?.team(team_name).ok_or_else(|| {
+            CommandSyntaxError::dynamic(
+                translations::TEAM_NOT_FOUND
+                    .message([team_name.to_owned()])
                     .component(),
             )
         })

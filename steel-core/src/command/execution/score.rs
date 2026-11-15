@@ -188,7 +188,7 @@ pub(super) fn parse_int_range(
 }
 
 /// An entity as vanilla's `ScoreHolder`, with its display name.
-fn entity_holder(entity: &(impl Entity + ?Sized)) -> ScoreHolder {
+pub(crate) fn entity_holder(entity: &(impl Entity + ?Sized)) -> ScoreHolder {
     ScoreHolder::with_display_name(entity.scoreboard_name(), entity.display_name())
 }
 
