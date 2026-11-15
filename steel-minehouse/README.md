@@ -452,6 +452,12 @@ Both still work as before: the map updates, zooms out and locks, the template tr
 upgrades. The mark is `custom_data.minehouse_waxed`, as in the Fabric mod, plus a lore
 line. The core hook is `inventory::craft_observer::CraftObserver`.
 
+Merging experience orbs (`content/xp_orbs.rs`, the Fabric `XpOrbs`): every 10 ticks an
+orb folds the orbs within 2 blocks, of any value, into itself and becomes a single orb
+worth all of them, so the pile of a farm is picked up in one touch instead of one orb
+every 2 ticks. The total never changes; a sum above 32767 (an orb saves a short) is not
+merged. The core hook is `ExperienceOrbObserver`, called from the orb's tick.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
