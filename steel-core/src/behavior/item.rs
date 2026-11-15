@@ -11,15 +11,17 @@ use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, OMINOUS_BOTTLE_AMPLIFIER, USE_REMAINDER,
 };
 
-use steel_registry::data_components::vanilla_components::ITEM_NAME;
+use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME};
 use steel_registry::item_stack::ItemStack;
+use steel_registry::item_stack_template::ItemStackTemplate;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_game_events, vanilla_mob_effects,
 };
+use steel_utils::translations;
 use steel_utils::types::{InteractionHand, SignTextSlot};
-use text_components::TextComponent;
+use text_components::{Modifier as _, TextComponent};
 
 use crate::behavior::items::{
     BannerItem, BlockItem, DefaultItemBehavior, SpawnEggItem, block_transformer,
@@ -539,6 +541,27 @@ impl ItemBehaviorRegistry {
         stack
             .custom_name()
             .unwrap_or_else(|| self.get_behavior(stack.item()).get_name(stack))
+    }
+
+    /// Vanilla `ItemStack.getDisplayName`: the hover name in square brackets,
+    /// italic when custom, in the rarity's color and showing the item on hover.
+    #[must_use]
+    pub fn display_name(&self, stack: &ItemStack) -> TextComponent {
+        let mut hover_name = TextComponent::new().add_child(self.hover_name(stack).into_owned());
+        if stack.has(CUSTOM_NAME) {
+            hover_name = hover_name.italic(true);
+        }
+        let result = translations::CHAT_SQUARE_BRACKETS
+            .message([hover_name])
+            .component();
+        if stack.is_empty() {
+            return result;
+        }
+        let result = result.color(stack.rarity().color());
+        match ItemStackTemplate::from_stack(stack).and_then(|template| template.to_hover_event()) {
+            Ok(hover) => result.hover_event(hover),
+            Err(_) => result,
+        }
     }
 
     /// Get all behaviors.
