@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn score_store_creates_and_updates_each_holder() {
         let scoreboard = Scoreboard::new();
-        let Ok(objective) = scoreboard.add_objective("result") else {
+        let Ok(objective) = scoreboard.add_dummy_objective("result") else {
             panic!("objective should be created");
         };
         let holders = [ScoreHolder::new("one"), ScoreHolder::new("two")];

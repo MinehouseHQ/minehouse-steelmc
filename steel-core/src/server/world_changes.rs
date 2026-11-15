@@ -599,6 +599,9 @@ impl Server {
         };
         // The player leaves the source domain's boss bars like a disconnect.
         self.disconnect_player_from_boss_bars(&current_domain, &player);
+        // The client keeps its connection, so it forgets this domain's
+        // scoreboard before the target domain's arrives.
+        self.disconnect_player_from_scoreboard(&current_domain, &player);
         self.jobs.spawn(DomainSwitchJob::new(
             self,
             player,

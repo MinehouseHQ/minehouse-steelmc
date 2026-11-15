@@ -240,15 +240,15 @@ fn selector_entity_filters_use_command_identity_and_nbt_snapshot() {
 #[test]
 fn selector_score_and_team_filters_use_one_domain_scoreboard() {
     let scoreboard = Scoreboard::new();
-    let Ok(kills) = scoreboard.add_objective("kills") else {
+    let Ok(kills) = scoreboard.add_dummy_objective("kills") else {
         panic!("objective should be added");
     };
-    let Ok(red) = scoreboard.add_team("red") else {
+    let Ok(_red) = scoreboard.add_team("red") else {
         panic!("team should be added");
     };
     let holder = ScoreHolder::new("Steve");
     assert!(scoreboard.set_score(&holder, &kills, 5).is_ok());
-    assert!(scoreboard.add_holder_to_team(&holder, &red).is_ok());
+    assert!(scoreboard.add_holder_to_team(&holder, "red").is_ok());
 
     assert!(score_filter_matches(
         &[("kills".to_owned(), IntRange::exactly(5))],
