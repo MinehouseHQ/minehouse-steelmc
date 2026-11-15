@@ -74,6 +74,15 @@ pub fn button_with(item: ItemRef, name: &str, lore: Vec<TextComponent>) -> ItemS
     stack
 }
 
+/// Adds `lines` under the lore `stack` already has.
+pub fn add_lore(stack: &mut ItemStack, lines: Vec<TextComponent>) {
+    let mut lore: Vec<TextComponent> = stack.get(LORE).map_or_default(|lore| lore.lines().to_vec());
+    lore.extend(lines);
+    if let Ok(lore) = ItemLore::new(lore) {
+        stack.set(LORE, lore);
+    }
+}
+
 /// Draws `stack` with the item model `model` of the server pack.
 pub fn model(stack: &mut ItemStack, model: &'static str) {
     if let Some((namespace, path)) = model.split_once(':') {

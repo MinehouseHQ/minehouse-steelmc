@@ -14,6 +14,9 @@ pub mod gui;
 pub mod journal;
 pub mod ores;
 mod settings;
+pub mod terminal;
+pub mod terminal_block;
+pub mod terminals;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -29,6 +32,7 @@ use steel_core::{
         Server,
         jobs::{JobPoll, ServerJob, ServerJobContext},
     },
+    world::block_guard::set_block_guard,
 };
 use steel_utils::locks::SyncMutex;
 use tokio::runtime::Handle;
@@ -37,10 +41,13 @@ use uuid::Uuid;
 pub use settings::BankConfig;
 
 use crate::{config, moderation::format::render, site::SiteClient};
-use journal::{DELIVERED, DEPOSIT, Entry, Journal};
+use journal::{DELIVERED, DEPOSIT, Entry, Journal, VENDING};
+use terminals::Terminals;
 
 /// How often half-done operations are tried again, in ticks.
 const RETRY_TICKS: u64 = 20 * 30;
+/// How often the labels of terminals are looked after, in ticks.
+const LABEL_TICKS: u64 = 10;
 
 /// What runs on the server tick once the site has answered.
 type Done = Box<dyn FnOnce(&Arc<Server>) + Send>;
@@ -59,6 +66,8 @@ pub struct Bank {
     pub config: BankConfig,
     /// The half-done operations.
     pub journal: Journal,
+    /// What each payment terminal is set to.
+    pub terminals: Terminals,
     /// None without a secret: the bank is offline.
     site: Option<SiteClient>,
     runtime: Handle,
@@ -195,6 +204,7 @@ impl Bank {
         let bank = Arc::new(Self {
             config,
             journal,
+            terminals: Terminals::load(config::data_path("bank-terminals.json")),
             site,
             runtime,
             done: SyncMutex::new(Vec::new()),
@@ -204,15 +214,19 @@ impl Bank {
             log::error!("Bank: already started");
             return None;
         }
+        if !set_block_guard(&terminal::StockGuard) {
+            log::error!("Bank: another block guard is installed, stock chests are not kept");
+        }
         server.jobs.spawn(Tick {
             bank: Arc::clone(&bank),
             online: BTreeSet::new(),
         });
         bank.retry();
         log::info!(
-            "Bank: {} as {:?}",
+            "Bank: {} as {:?}, {} terminals",
             bank.config.api_url,
-            bank.config.server_id
+            bank.config.server_id,
+            bank.terminals.count()
         );
         Some(bank)
     }
@@ -344,11 +358,12 @@ impl Bank {
             return;
         }
         for entry in self.journal.all() {
-            // Vending purchases are retried by the terminal.
             if entry.kind == DELIVERED {
                 self.send_delivered(entry);
             } else if entry.kind == DEPOSIT {
                 atm::retry_deposit(self, entry);
+            } else if entry.kind == VENDING {
+                terminal::retry_vending(self, entry);
             }
         }
     }
@@ -441,6 +456,9 @@ impl ServerJob for Tick {
         }
         self.online = now;
 
+        if context.tick_count.is_multiple_of(LABEL_TICKS) {
+            terminal::tick_labels(&self.bank, &server);
+        }
         if context.tick_count.is_multiple_of(RETRY_TICKS) {
             self.bank.retry();
         }

@@ -367,6 +367,100 @@
             "age": "5"
           },
           "model": "minehouse-herbs:block/wild_magic_herb"
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "north",
+            "locked": "false"
+          },
+          "state": {
+            "age": "6"
+          },
+          "model": "minehouse-bank:block/terminal"
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "east",
+            "locked": "false"
+          },
+          "state": {
+            "age": "7"
+          },
+          "model": "minehouse-bank:block/terminal",
+          "y": 90
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "south",
+            "locked": "false"
+          },
+          "state": {
+            "age": "8"
+          },
+          "model": "minehouse-bank:block/terminal",
+          "y": 180
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "west",
+            "locked": "false"
+          },
+          "state": {
+            "age": "9"
+          },
+          "model": "minehouse-bank:block/terminal",
+          "y": 270
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "north",
+            "locked": "true"
+          },
+          "state": {
+            "age": "10"
+          },
+          "model": "minehouse-bank:block/terminal_locked"
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "east",
+            "locked": "true"
+          },
+          "state": {
+            "age": "11"
+          },
+          "model": "minehouse-bank:block/terminal_locked",
+          "y": 90
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "south",
+            "locked": "true"
+          },
+          "state": {
+            "age": "12"
+          },
+          "model": "minehouse-bank:block/terminal_locked",
+          "y": 180
+        },
+        {
+          "block": "minehouse-bank:terminal",
+          "when": {
+            "facing": "west",
+            "locked": "true"
+          },
+          "state": {
+            "age": "13"
+          },
+          "model": "minehouse-bank:block/terminal_locked",
+          "y": 270
         }
       ]
     }

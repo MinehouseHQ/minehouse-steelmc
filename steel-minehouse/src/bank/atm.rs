@@ -29,6 +29,7 @@ use super::{
     journal::{self, DEPOSIT, Entry},
     ok, online, ores, personal,
 };
+use crate::content::TERMINAL as TERMINAL_ITEM;
 
 const INFO: usize = 4;
 const ORE_SLOTS: [usize; 5] = [10, 11, 12, 13, 14];
@@ -36,6 +37,7 @@ const DEPOSIT_SLOT: usize = 16;
 const WITHDRAW: usize = 19;
 const CARD: usize = 21;
 const REISSUE: usize = 22;
+const TERMINAL: usize = 24;
 const CLOSE: usize = 26;
 const SWITCH: usize = 8;
 const NEW_ACCOUNT: usize = 0;
@@ -43,10 +45,12 @@ const NEW_ACCOUNT: usize = 0;
 const OPEN_PERSONAL: usize = 1;
 /// «Открыть счёт» of the window of a player without an account.
 const WELCOME_OPEN: usize = 13;
-const ROWS: usize = 27;
+pub(super) const ROWS: usize = 27;
 
 /// The model of the card, for buttons.
 const CARD_MODEL: &str = "minehouse-bank:card";
+/// The model of the payment terminal, for buttons.
+const TERMINAL_MODEL: &str = "minehouse-bank:terminal";
 
 fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or_default()
@@ -82,7 +86,7 @@ fn last4(number: &str) -> String {
     digits[digits.len().saturating_sub(4)..].iter().collect()
 }
 
-fn near(bank: &Bank, player: &Player, pos: BlockPos) -> bool {
+pub(super) fn near(bank: &Bank, player: &Player, pos: BlockPos) -> bool {
     let at = player.position().floor();
     let (dx, dy, dz) = (
         at.x - f64::from(pos.x()),
@@ -232,6 +236,20 @@ fn open_on(
     );
 }
 
+/// «Купить терминал».
+fn terminal_button(price: i32) -> ItemStack {
+    let mut terminal = gui::button(
+        &vanilla_items::STONE_BUTTON,
+        "Купить терминал",
+        &[
+            &format!("Цена: {} со счёта.", ar(i64::from(price))),
+            "Касса или автомат для магазина.",
+        ],
+    );
+    gui::model(&mut terminal, TERMINAL_MODEL);
+    terminal
+}
+
 /// What a click on the main window asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Action {
@@ -242,6 +260,7 @@ enum Action {
     Deposit,
     Withdraw,
     Card { reissue: bool },
+    BuyTerminal,
 }
 
 struct State {
@@ -255,6 +274,8 @@ struct State {
     close: bool,
     /// The window is gone.
     gone: bool,
+    /// What a payment terminal costs, АР.
+    terminal_price: i32,
 }
 
 impl State {
@@ -364,6 +385,8 @@ impl State {
             ),
             Some(Action::Card { reissue: true }),
         ));
+        let terminal = terminal_button(self.terminal_price);
+        layout.push((TERMINAL, terminal, Some(Action::BuyTerminal)));
         layout.push(close);
         layout
     }
@@ -407,6 +430,7 @@ impl Session {
                 busy: false,
                 close: false,
                 gone: false,
+                terminal_price: bank.config.terminal_price,
             }),
         });
         session.draw();
@@ -531,6 +555,7 @@ impl Session {
             Action::OpenAccount => self.open_account(&player),
             Action::Deposit => self.deposit(&player),
             Action::Card { reissue } => self.card(&player, reissue),
+            Action::BuyTerminal => self.buy_terminal(&player),
             Action::Switch(next) => {
                 if !self.state.lock().busy {
                     gui::click(&player);
@@ -607,6 +632,60 @@ impl Session {
                 session.reopen(account_id.map(str::to_owned));
             }
         });
+    }
+
+    /// Sells a payment terminal: the price goes from the account to the server treasury.
+    fn buy_terminal(self: &Arc<Self>, player: &Player) {
+        let card = {
+            let state = self.state.lock();
+            if state.busy {
+                return;
+            }
+            state
+                .account
+                .as_ref()
+                .and_then(card_of)
+                .map(|card| text(card, "id").to_owned())
+        };
+        let Some(card) = card else {
+            gui::error(player, &gui::error_text("no_card"));
+            return;
+        };
+        if !ores::fits(player, &TERMINAL_ITEM.stack(1), 1) {
+            gui::error(player, "В инвентаре нет места для терминала.");
+            return;
+        }
+        if !self.begin() {
+            return;
+        }
+        gui::click(player);
+        let price = self.bank.config.terminal_price;
+        let mut body = body(self.player);
+        body["op_id"] = json!(Uuid::new_v4().to_string());
+        body["card_id"] = json!(card);
+        body["amount"] = json!(price);
+        let session = Arc::clone(self);
+        self.bank
+            .call("buy_terminal", &body, move |server, answer| {
+                session.end();
+                let Some(player) = online(server, session.player) else {
+                    return;
+                };
+                if !ok(&answer) {
+                    gui::error(&player, &gui::error_text(error(&answer)));
+                    return;
+                }
+                ores::give_stack(&player, TERMINAL_ITEM.stack(1));
+                gui::ding(&player);
+                gui::info(
+                    &player,
+                    &format!(
+                        "Терминал куплен за {}. Поставь его на стол или на сундук.",
+                        ar(i64::from(price))
+                    ),
+                );
+                session.refresh(&answer);
+            });
     }
 
     fn card(self: &Arc<Self>, player: &Player, reissue: bool) {
@@ -820,7 +899,7 @@ impl MenuKind for MainKind {
 }
 
 /// A window of buttons only: what it shows and what a click does.
-trait Buttons: Send + Sync + 'static {
+pub(super) trait Buttons: Send + Sync + 'static {
     /// The window is to be closed.
     fn closing(&self) -> bool;
     fn pos(&self) -> BlockPos;
@@ -830,7 +909,7 @@ trait Buttons: Send + Sync + 'static {
     fn removed(&self) {}
 }
 
-struct ButtonsKind(Arc<dyn Buttons>);
+pub(super) struct ButtonsKind(pub(super) Arc<dyn Buttons>);
 
 // SAFETY: This key is owned by MineHouse and uniquely identifies `ButtonsKind`.
 unsafe impl DowncastType for ButtonsKind {
@@ -880,10 +959,11 @@ fn max_withdraw(config_max: i32, account: &Value) -> i32 {
 }
 
 /// The steps of the amount picker by slot: −64 −8 −1 on the left, +1 +8 +64 on the right.
-const STEPS: [(usize, i32); 6] = [(9, -64), (10, -8), (11, -1), (15, 1), (16, 8), (17, 64)];
-const AMOUNT_SHOWN: usize = 13;
-const AMOUNT_BACK: usize = 18;
-const AMOUNT_OK: usize = 22;
+pub(super) const STEPS: [(usize, i32); 6] =
+    [(9, -64), (10, -8), (11, -1), (15, 1), (16, 8), (17, 64)];
+pub(super) const AMOUNT_SHOWN: usize = 13;
+pub(super) const AMOUNT_BACK: usize = 18;
+pub(super) const AMOUNT_OK: usize = 22;
 
 /// The amount picker of a withdrawal.
 struct Amount {
@@ -1244,6 +1324,7 @@ mod tests {
             busy: false,
             close: false,
             gone: false,
+            terminal_price: 5,
         }
     }
 
@@ -1277,7 +1358,7 @@ mod tests {
         let mut slots: Vec<usize> = layout.iter().map(|(slot, _, _)| *slot).collect();
         slots.sort_unstable();
         // No switch with one account, no «Открыть личный счёт» with a personal one.
-        assert_eq!(slots, vec![0, 4, 16, 19, 21, 22, 26]);
+        assert_eq!(slots, vec![0, 4, 16, 19, 21, 22, 24, 26]);
         assert!(slots.iter().all(|slot| !ORE_SLOTS.contains(slot)));
     }
 
