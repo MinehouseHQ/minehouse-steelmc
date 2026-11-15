@@ -83,6 +83,7 @@ use text_components::TextComponent;
 
 use crate::{
     bank::{atm_block::ATM_BLOCK, banker, terminal_block::TERMINAL_BLOCK, transfer, zones},
+    guides,
     moderation::format::render,
 };
 
@@ -305,6 +306,8 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&cauldron::Broth)
     } else if id == PAPIROSA.id {
         Some(&papirosa::Papirosa)
+    } else if id == CARD.id {
+        Some(&guides::Opener)
     } else if id == ATM.id {
         Some(&ATM_ITEM)
     } else if id == TERMINAL.id {
@@ -340,8 +343,10 @@ impl CustomItem {
     pub fn stack(&self, count: i32) -> ItemStack {
         let mut stack = ItemStack::with_count(LazyLock::force(self.base), count);
         stack.set(ITEM_NAME, TextComponent::plain(self.name));
-        if !self.lore.is_empty()
-            && let Ok(lore) = ItemLore::new(self.lore.iter().map(|line| lore_line(line)).collect())
+        let guide = guides::lore_of(self);
+        let lines: Vec<&str> = self.lore.iter().copied().chain(guide.as_deref()).collect();
+        if !lines.is_empty()
+            && let Ok(lore) = ItemLore::new(lines.into_iter().map(lore_line).collect())
         {
             stack.set(LORE, lore);
         }
@@ -435,6 +440,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     transfer::register(registry)?;
     zones::commands::register(registry)?;
     banker::commands::register(registry)?;
+    guides::register(registry)?;
     commands::register(registry)
 }
 
@@ -447,6 +453,7 @@ pub fn start_jobs(server: &Server) {
     all_recipes::start(server);
     admin_mode::start(server);
     see::start(server);
+    guides::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
