@@ -82,7 +82,7 @@ use steel_utils::Identifier;
 use text_components::TextComponent;
 
 use crate::{
-    bank::{atm_block::ATM_BLOCK, terminal_block::TERMINAL_BLOCK, transfer, zones},
+    bank::{atm_block::ATM_BLOCK, banker, terminal_block::TERMINAL_BLOCK, transfer, zones},
     moderation::format::render,
 };
 
@@ -434,6 +434,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     see::register(registry)?;
     transfer::register(registry)?;
     zones::commands::register(registry)?;
+    banker::commands::register(registry)?;
     commands::register(registry)
 }
 
