@@ -59,6 +59,41 @@ pub(crate) fn suggest_resources<'a>(
     }
 }
 
+/// Vanilla `SharedSuggestionProvider.suggestResource` with a prefix: matches
+/// the input after its common prefix with `prefix`, and suggests each id with
+/// the prefix.
+pub(crate) fn suggest_resources_with_prefix<'a>(
+    resources: impl Iterator<Item = &'a Identifier>,
+    builder: &mut SuggestionsBuilder<'_>,
+    prefix: &str,
+) {
+    let contents = builder.remaining_lowercase();
+    let suggestions = if contents.is_empty() {
+        resources
+            .map(|resource| format!("{prefix}{resource}"))
+            .collect()
+    } else {
+        let common = contents
+            .chars()
+            .zip(prefix.chars())
+            .take_while(|(a, b)| a == b)
+            .map(|(a, _)| a.len_utf8())
+            .sum::<usize>();
+        if common == 0 {
+            Vec::new()
+        } else {
+            let stripped = &contents[common..];
+            resources
+                .filter(|resource| identifier_matches(stripped, resource))
+                .map(|resource| format!("{prefix}{resource}"))
+                .collect::<Vec<_>>()
+        }
+    };
+    for suggestion in suggestions {
+        builder.suggest(suggestion);
+    }
+}
+
 /// Suggests every value whose name matches the remaining input, keeping the
 /// values' own casing.
 pub(crate) fn suggest_list<T: AsRef<str>>(

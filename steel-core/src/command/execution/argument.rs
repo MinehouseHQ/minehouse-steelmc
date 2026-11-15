@@ -24,7 +24,10 @@ use super::{
     },
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
-    suggestions::{matches_substring_ignore_case, suggest_list, suggest_resources},
+    suggestions::{
+        matches_substring_ignore_case, suggest_list, suggest_resources,
+        suggest_resources_with_prefix,
+    },
     swing_animation::SwingAnimationParser,
     text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
@@ -492,6 +495,11 @@ impl SteelArgumentType {
         Self::new(IdentifierParser)
     }
 
+    /// Vanilla `FunctionArgument.functions` with `FunctionCommand.SUGGEST_FUNCTION`.
+    pub(crate) fn function() -> Self {
+        Self::new(FunctionParser)
+    }
+
     pub(crate) fn storage_key() -> Self {
         Self::new(StorageKeyParser)
     }
@@ -755,6 +763,20 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     IdentifierValue(Identifier),
     "steel:command/value/identifier"
+);
+
+/// A parsed vanilla `FunctionArgument`: a function id, or a function tag after `#`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FunctionReference {
+    /// Whether the input named a tag.
+    pub(crate) tag: bool,
+    /// The function or tag id.
+    pub(crate) id: Identifier,
+}
+
+argument_value_wrapper!(
+    FunctionValue(FunctionReference),
+    "steel:command/value/function"
 );
 argument_value_wrapper!(
     WorldClockValue(WorldClockRef),
@@ -1694,6 +1716,29 @@ unit_argument_parser!(
             identifier: "minecraft:worldgen/template_pool",
         },
         None,
+    )
+);
+unit_argument_parser!(
+    FunctionParser,
+    "steel:command/parser/function",
+    FunctionValue,
+    parse | reader,
+    _source | {
+        let tag = reader.peek() == Some('#');
+        if tag {
+            let _ = reader.skip();
+        }
+        parse_identifier(reader).map(|id| FunctionValue(FunctionReference { tag, id }))
+    },
+    suggest | context,
+    builder | {
+        let source = context.source();
+        suggest_resources_with_prefix(source.function_tag_ids().iter(), builder, "#");
+        suggest_resources(source.function_ids().iter(), builder);
+    },
+    protocol(
+        ProtocolArgumentType::Function,
+        Some(ProtocolSuggestionType::AskServer),
     )
 );
 unit_argument_parser!(

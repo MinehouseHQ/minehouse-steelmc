@@ -34,6 +34,7 @@ impl Server {
 
     /// Runs gameplay packets, game ticks, and chunk sending.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
+        self.reload_functions();
         self.packet_processor.open_after_tick();
         let packet_worker_count =
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
@@ -129,6 +130,7 @@ impl Server {
         }
 
         self.damage_history.clear();
+        self.functions.clear();
         log::info!("Saving world data...");
         let command_data = self.save_command_data().await;
         match command_data.scoreboards {
@@ -268,6 +270,7 @@ impl Server {
             watchdog.enter(TickStep::Commands);
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
+            self.tick_functions(&mut pending_command_executions, runs_normally);
             watchdog.enter(TickStep::Worlds);
             if let Err(error) = self
                 .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)

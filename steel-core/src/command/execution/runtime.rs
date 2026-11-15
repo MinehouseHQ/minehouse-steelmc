@@ -16,10 +16,10 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
-        EntityTypeValue, FeatureValue, GameModeValue, IdentifierValue, ItemSlotValue,
-        ItemStackValue, LootTableValue, NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue,
-        SteelArgumentValue, TemplateMirrorValue, TemplateRotationValue, TimeValue, TimelineValue,
-        WorldClockValue,
+        EntityTypeValue, FeatureValue, FunctionReference, FunctionValue, GameModeValue,
+        IdentifierValue, ItemSlotValue, ItemStackValue, LootTableValue, NbtPathValue, NbtTagValue,
+        ObjectiveValue, SlotSourceValue, SteelArgumentValue, TemplateMirrorValue,
+        TemplateRotationValue, TimeValue, TimelineValue, WorldClockValue,
     },
     argument::{
         CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
@@ -488,6 +488,15 @@ where
     /// Returns a parsed SNBT compound.
     pub(crate) fn compound_tag(&self, name: &str) -> Result<&NbtCompound, CommandSyntaxError> {
         self.typed_argument::<CompoundTagValue>(name)
+            .map(|value| &value.0)
+    }
+
+    /// Vanilla `FunctionArgument`'s parsed reference.
+    pub(crate) fn function_reference(
+        &self,
+        name: &str,
+    ) -> Result<&FunctionReference, CommandSyntaxError> {
+        self.typed_argument::<FunctionValue>(name)
             .map(|value| &value.0)
     }
 

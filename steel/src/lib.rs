@@ -2,6 +2,9 @@
 //!
 //! The main library for the Steel Minecraft server.
 
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
+
 use std::sync::atomic::Ordering;
 use std::{
     error::Error,

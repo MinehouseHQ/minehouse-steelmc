@@ -4,6 +4,9 @@
 //! work in `steel-core`. The modules talk to the site (`/api/mc/*`) with the same signed
 //! protocol as the Fabric mods, so the site, the Discord bot and Gate don't change.
 
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
+
 use std::{net::IpAddr, sync::Arc};
 
 use steel_core::{

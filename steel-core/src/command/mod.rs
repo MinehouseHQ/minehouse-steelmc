@@ -4,6 +4,7 @@ mod api;
 pub(crate) mod brigadier;
 mod builtins;
 pub(crate) mod execution;
+pub(crate) mod function;
 mod protocol;
 mod queue;
 pub mod rcon;

@@ -3067,6 +3067,7 @@ dependencies = [
  "tracing",
  "uuid",
  "wincode",
+ "zip",
  "zstd",
 ]
 
