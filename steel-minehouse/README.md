@@ -471,6 +471,13 @@ neighbor in its plane is obsidian or portal, so a hole in the frame puts the por
 block by block. Rectangles, linking and travel stay vanilla. The core asks through
 `steel_core::PortalShapeObserver` only after vanilla's own rectangle search found nothing.
 
+The AFK mark (`content/afk.rs`, the Fabric `AfkDisplay`): a player with no action for 5
+minutes is put into the scoreboard team `minehouse_afk`, whose prefix «[AFK]» the client
+draws over the head; on return they get back the team they were in. Checked every 10 ticks
+by a job of the server tick from `Player::idle_time`. A marked player who is not in bed
+does not count towards `playersSleepingPercentage` (`steel_core::world::SleepObserver`).
+`MINEHOUSE_AFK_SECONDS` shortens the wait for tests on a local server.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
