@@ -27,6 +27,7 @@ mod trains;
 mod transfers;
 mod waxed_frames;
 mod waxed_items;
+mod xp_orbs;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -38,7 +39,8 @@ use steel_core::{
     },
     command::{CommandRegistrationError, CommandRegistry},
     entity::entities::objects::{
-        display_ui::set_item_frame_observer, vehicles::set_minecart_observer,
+        display_ui::set_item_frame_observer, items::set_experience_orb_observer,
+        vehicles::set_minecart_observer,
     },
     inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
@@ -391,6 +393,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_experience_orb_observer(&xp_orbs::XP_ORBS) {
+        log::warn!("MineHouse orbs: experience orbs are already observed, they do not merge");
+    }
     if !set_craft_observer(&waxed_items::WAXED_ITEMS) {
         log::warn!("MineHouse wax: crafting is already observed, waxed items can be copied");
     }
