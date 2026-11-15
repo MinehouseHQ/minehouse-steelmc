@@ -7,6 +7,7 @@
 //! them to [`all`].
 
 pub mod book;
+pub mod menu;
 mod session;
 pub mod stage;
 
@@ -250,7 +251,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     registry.register(
         CommandRegistration::new(Identifier::new("minehouse", "guide"), tree).default_access(),
     )?;
-    Ok(())
+    menu::register(registry)
 }
 
 fn tree() -> CommandNode {

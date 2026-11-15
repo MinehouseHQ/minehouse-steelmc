@@ -939,6 +939,9 @@ impl PlayerInputObserver for Input {
     }
 
     fn custom_click(&self, player: &Player, id: &Identifier) {
+        if guides::menu::clicked(player, id) {
+            return;
+        }
         nametags::clicked(player, id);
     }
 

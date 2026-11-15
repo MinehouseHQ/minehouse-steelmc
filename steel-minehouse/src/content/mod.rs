@@ -436,6 +436,9 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     if !extend_registry(recipes::register) {
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
     }
+    if !extend_registry(guides::menu::register_dialog) {
+        log::warn!("MineHouse menu: the registry is already built, no button in the pause screen");
+    }
     ride::register(registry)?;
     nametags::register(registry)?;
     admin_mode::register(registry)?;
