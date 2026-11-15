@@ -9,6 +9,7 @@
 
 pub mod atm;
 pub mod atm_block;
+pub mod banker;
 pub mod card;
 pub mod gui;
 pub mod journal;
@@ -72,6 +73,8 @@ pub struct Bank {
     pub terminals: Terminals,
     /// The spawn zones.
     pub zones: zones::Zones,
+    /// The bankers.
+    pub bankers: banker::Bankers,
     /// None without a secret: the bank is offline.
     site: Option<SiteClient>,
     runtime: Handle,
@@ -210,6 +213,7 @@ impl Bank {
             journal,
             terminals: Terminals::load(config::data_path("bank-terminals.json")),
             zones: zones::Zones::new(),
+            bankers: banker::Bankers::load(),
             site,
             runtime,
             done: SyncMutex::new(Vec::new()),
@@ -427,6 +431,7 @@ impl Bank {
 
     fn on_leave(self: &Arc<Self>, player: Uuid) {
         self.leave_zones(player);
+        self.bankers.forget(player);
         // Sales while online were announced live; the join summary counts only the time away.
         if self.account_numbers.lock().remove(&player).is_some() {
             self.sales_seen(player);
@@ -469,6 +474,7 @@ impl ServerJob for Tick {
             terminal::tick_labels(&self.bank, &server);
         }
         self.bank.tick_zones(&server, context.tick_count);
+        self.bank.tick_bankers(&server, context.tick_count);
         if context.tick_count.is_multiple_of(RETRY_TICKS) {
             self.bank.retry();
         }
