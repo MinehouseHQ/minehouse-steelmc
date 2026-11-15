@@ -32,7 +32,7 @@ use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop, SteelArgumentType,
 };
-use crate::command::function::ServerFunctions;
+use crate::command::function::{DomainTimerQueues, ServerFunctions};
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
@@ -166,6 +166,8 @@ pub struct CommandDataSaveResults {
     pub boss_events: io::Result<usize>,
     /// Number of changed domain `/random` sequence sets written, or the save error.
     pub random_sequences: io::Result<usize>,
+    /// Number of changed domain `/schedule` queues written, or the save error.
+    pub scheduled_events: io::Result<usize>,
 }
 
 mod known_players;
@@ -225,6 +227,9 @@ pub async fn test_server_with_worlds_and_config(
     let random_sequences = DomainRandomSequences::load(&worlds)
         .await
         .map_err(|error| format!("test random sequences should load: {error}"))?;
+    let scheduled_events = DomainTimerQueues::load(&worlds)
+        .await
+        .map_err(|error| format!("test scheduled events should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -279,6 +284,7 @@ pub async fn test_server_with_worlds_and_config(
         command_storage,
         custom_boss_events,
         random_sequences,
+        scheduled_events,
         functions: ServerFunctions::default(),
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
@@ -540,6 +546,8 @@ pub struct Server {
     pub custom_boss_events: DomainCustomBossEvents,
     /// `/random` sequences isolated by Steel domain.
     pub random_sequences: DomainRandomSequences,
+    /// `/schedule` events isolated by Steel domain.
+    pub(crate) scheduled_events: DomainTimerQueues,
     /// Data pack functions isolated by Steel domain.
     pub(crate) functions: ServerFunctions,
     /// Saves and dispatches commands to appropriate handlers.
@@ -864,6 +872,9 @@ impl Server {
         let random_sequences = DomainRandomSequences::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain random sequences: {error}"))?;
+        let scheduled_events = DomainTimerQueues::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain scheduled events: {error}"))?;
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -902,6 +913,7 @@ impl Server {
             command_storage,
             custom_boss_events,
             random_sequences,
+            scheduled_events,
             functions: ServerFunctions::default(),
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
@@ -950,6 +962,7 @@ impl Server {
             storage: self.save_command_storage().await,
             boss_events: self.custom_boss_events.save(&self.worlds).await,
             random_sequences: self.random_sequences.save(&self.worlds).await,
+            scheduled_events: self.scheduled_events.save(&self.worlds).await,
         }
     }
 

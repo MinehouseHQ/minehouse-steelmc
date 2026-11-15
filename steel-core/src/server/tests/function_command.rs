@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 
 use super::scoreboard_command::{run, with_server_world};
 use crate::command::PendingCommandExecutionQueue;
+use crate::command::execution::CommandSource;
 use crate::datapack::find_packs;
 use crate::server::Server;
 use crate::world::World;
@@ -214,5 +215,108 @@ fn load_runs_once_and_tick_runs_every_tick() {
         server.tick_functions(&mut pending, false);
         assert_eq!(run(server, "scoreboard players get loads c"), Some(1));
         assert_eq!(run(server, "scoreboard players get ticks c"), Some(2));
+    });
+}
+
+/// One game tick's time advance and the `/schedule` events it fires.
+fn tick_time(server: &Arc<Server>, pending: &mut PendingCommandExecutionQueue<CommandSource>) {
+    server.advance_game_times(true);
+    server.tick_scheduled_functions(pending, true);
+}
+
+#[test]
+fn schedule_runs_functions_and_tags_when_their_tick_comes() {
+    with_server_world("function_schedule", |server, world| {
+        let root = datapacks(
+            "schedule",
+            &[
+                (
+                    "demo/function/inc.mcfunction",
+                    "scoreboard players add n c 1",
+                ),
+                (
+                    "demo/function/tagged.mcfunction",
+                    "scoreboard players add t c 10",
+                ),
+                ("demo/function/echo.mcfunction", "$return $(value)"),
+                (
+                    "demo/tags/function/all.json",
+                    r#"{"values": ["demo:inc", "demo:tagged"]}"#,
+                ),
+            ],
+        );
+        load(server, world, &root);
+        assert_eq!(run(server, "scoreboard objectives add c dummy"), Some(1));
+        let start = world.game_time();
+        let result = |delay: i64| i32::try_from(start + delay).expect("small game time");
+
+        // Zero ticks, a macro and an unknown function are refused.
+        assert_eq!(run(server, "schedule function demo:inc 0"), None);
+        assert_eq!(run(server, "schedule function demo:echo 1"), None);
+        assert_eq!(run(server, "schedule function demo:missing 1"), None);
+
+        // `append` keeps earlier events; the same tick is scheduled once.
+        assert_eq!(run(server, "schedule function demo:inc 1"), Some(result(1)));
+        assert_eq!(
+            run(server, "schedule function demo:inc 1 append"),
+            Some(result(1))
+        );
+        assert_eq!(
+            run(server, "schedule function demo:inc 2t append"),
+            Some(result(2))
+        );
+        assert_eq!(
+            run(server, "schedule function #demo:all 2"),
+            Some(result(2))
+        );
+        // An unknown tag is empty, not an error.
+        assert_eq!(
+            run(server, "schedule function #demo:none 1"),
+            Some(result(1))
+        );
+
+        let mut pending = PendingCommandExecutionQueue::new();
+        tick_time(server, &mut pending);
+        assert_eq!(run(server, "scoreboard players get n c"), Some(1));
+        tick_time(server, &mut pending);
+        assert_eq!(run(server, "scoreboard players get n c"), Some(3));
+        assert_eq!(run(server, "scoreboard players get t c"), Some(10));
+        tick_time(server, &mut pending);
+        assert_eq!(run(server, "scoreboard players get n c"), Some(3));
+    });
+}
+
+#[test]
+fn schedule_replace_and_clear_drop_earlier_events() {
+    with_server_world("function_schedule_clear", |server, world| {
+        let root = datapacks(
+            "schedule_clear",
+            &[(
+                "demo/function/inc.mcfunction",
+                "scoreboard players add n c 1",
+            )],
+        );
+        load(server, world, &root);
+        assert_eq!(run(server, "scoreboard objectives add c dummy"), Some(1));
+
+        assert!(run(server, "schedule function demo:inc 1").is_some());
+        assert!(run(server, "schedule function demo:inc 3 append").is_some());
+        // `replace`, the default, drops both before scheduling.
+        assert!(run(server, "schedule function demo:inc 2").is_some());
+        assert!(run(server, "schedule function demo:inc 4 append").is_some());
+        assert_eq!(run(server, "schedule clear demo:inc"), Some(2));
+        assert_eq!(run(server, "schedule clear demo:inc"), None);
+
+        assert!(run(server, "schedule function demo:inc 1").is_some());
+        // A tag's events are kept apart from the function's under `#<id>`.
+        assert!(run(server, "schedule function #demo:inc 1").is_some());
+        assert_eq!(run(server, "schedule clear demo:inc"), Some(1));
+        assert!(run(server, "schedule function demo:inc 1").is_some());
+
+        let mut pending = PendingCommandExecutionQueue::new();
+        for _ in 0..5 {
+            tick_time(server, &mut pending);
+        }
+        assert_eq!(run(server, "scoreboard players get n c"), Some(1));
     });
 }

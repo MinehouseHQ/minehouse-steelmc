@@ -37,6 +37,9 @@ pub mod names {
     /// Vanilla `RandomSequences.TYPE`, the `/random` sequences of a domain,
     /// persisted through the domain default world.
     pub const RANDOM_SEQUENCES: SavedDataName = SavedDataName::trusted("random_sequences");
+    /// Vanilla `TimerQueue.TYPE`, the `/schedule` events of a domain,
+    /// persisted through the domain default world.
+    pub const SCHEDULED_EVENTS: SavedDataName = SavedDataName::trusted("scheduled_events");
     /// Vanilla `MapIndex.TYPE`, persisted through the domain default world as `data/map_index.bin`.
     pub const MAP_INDEX: WincodeSavedDataName =
         WincodeSavedDataName::trusted("map_index", *b"STMI", 1);

@@ -3,6 +3,7 @@
 
 mod library;
 mod template;
+mod timer;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use super::execution::{CommandSource, SteelContextChain};
 use template::{StringTemplate, check_command_line_length};
 
 pub(crate) use library::{FunctionLibrary, ServerFunctions};
+pub(crate) use timer::{DomainTimerQueues, TimerCallback, TimerQueue};
 
 /// One compiled function line, run as if typed by the function's source.
 pub(crate) type FunctionEntry = SteelContextChain<CommandSource>;

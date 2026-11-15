@@ -149,6 +149,10 @@ impl Server {
             Ok(saved) => log::info!("Saved {saved} domain random sequence sets"),
             Err(error) => log::error!("Failed to save domain random sequences: {error}"),
         }
+        match command_data.scheduled_events {
+            Ok(saved) => log::info!("Saved {saved} domain scheduled event queues"),
+            Err(error) => log::error!("Failed to save domain scheduled events: {error}"),
+        }
         match self.worlds.save_maps() {
             Ok(saved) => log::info!("Saved {saved} maps"),
             Err(error) => log::error!("Failed to save maps: {error}"),
@@ -272,8 +276,10 @@ impl Server {
             self.tick_command_requests(&mut pending_command_executions);
             self.tick_functions(&mut pending_command_executions, runs_normally);
             watchdog.enter(TickStep::Worlds);
+            self.advance_game_times(runs_normally);
+            self.tick_scheduled_functions(&mut pending_command_executions, runs_normally);
             if let Err(error) = self
-                .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)
+                .tick_advanced_worlds(&world_tick_workers, tick_count, runs_normally)
                 .await
             {
                 log::error!("World game tick failed: {error}");
@@ -621,16 +627,35 @@ impl Server {
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
-    #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
+    /// Advances game time, then ticks every world, as one game tick without
+    /// the `/schedule` events the run loop fires in between.
+    #[cfg(test)]
     pub(super) async fn tick_worlds_game(
         &self,
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
     ) -> Result<(), WorldTickWorkerError> {
+        self.advance_game_times(runs_normally);
+        self.tick_advanced_worlds(workers, tick_count, runs_normally)
+            .await
+    }
+
+    /// Vanilla `ServerLevel.tickTime`'s first half: game time advances in a
+    /// tick that runs normally.
+    pub(super) fn advance_game_times(&self, runs_normally: bool) {
         if runs_normally {
             self.worlds.advance_domain_game_times();
         }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
+    pub(super) async fn tick_advanced_worlds(
+        &self,
+        workers: &WorldTickWorkers,
+        tick_count: u64,
+        runs_normally: bool,
+    ) -> Result<(), WorldTickWorkerError> {
         self.damage_history.expire();
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
