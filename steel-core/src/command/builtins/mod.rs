@@ -53,6 +53,7 @@ mod spawnpoint;
 mod spreadplayers;
 mod stop;
 mod stopsound;
+mod stopwatch;
 mod summon;
 mod swing;
 mod tag;
@@ -153,6 +154,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(spreadplayers::registration())?;
     builder.register(stop::registration())?;
     builder.register(stopsound::registration())?;
+    builder.register(stopwatch::registration())?;
     builder.register(summon::registration())?;
     builder.register(swing::registration())?;
     builder.register(tag::registration())?;
@@ -271,6 +273,7 @@ mod tests {
                 "spreadplayers",
                 "stop",
                 "stopsound",
+                "stopwatch",
                 "summon",
                 "swing",
                 "tag",

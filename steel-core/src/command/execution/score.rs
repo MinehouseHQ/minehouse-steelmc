@@ -1,5 +1,7 @@
 //! Deferred scoreboard command arguments.
 
+use std::str::FromStr;
+
 use uuid::Uuid;
 
 use super::{CommandArgumentSource, CommandSource};
@@ -103,6 +105,21 @@ impl IntRange {
     }
 }
 
+/// Vanilla `MinMaxBounds.Doubles`: inclusive bounds read by
+/// `RangeArgument.floatRange`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DoubleRange {
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+}
+
+impl DoubleRange {
+    pub(crate) fn matches(self, value: f64) -> bool {
+        self.minimum.is_none_or(|minimum| minimum <= value)
+            && self.maximum.is_none_or(|maximum| value <= maximum)
+    }
+}
+
 pub(super) fn parse_score_holder<S>(
     reader: &mut StringReader<'_>,
     source: &S,
@@ -146,6 +163,23 @@ where
 pub(super) fn parse_int_range(
     reader: &mut StringReader<'_>,
 ) -> Result<IntRange, CommandSyntaxError> {
+    let (minimum, maximum) = parse_bounds(reader, CommandSyntaxErrorKind::InvalidInt)?;
+    Ok(IntRange::new(minimum, maximum))
+}
+
+/// Vanilla `MinMaxBounds.Doubles.fromReader`.
+pub(super) fn parse_double_range(
+    reader: &mut StringReader<'_>,
+) -> Result<DoubleRange, CommandSyntaxError> {
+    let (minimum, maximum) = parse_bounds(reader, CommandSyntaxErrorKind::InvalidDouble)?;
+    Ok(DoubleRange { minimum, maximum })
+}
+
+/// Vanilla `MinMaxBounds.fromReader`: `min`, `min..`, `..max` or `min..max`.
+fn parse_bounds<T: FromStr + PartialOrd + Copy>(
+    reader: &mut StringReader<'_>,
+    invalid: fn(Box<str>) -> CommandSyntaxErrorKind,
+) -> Result<(Option<T>, Option<T>), CommandSyntaxError> {
     let start = reader.checkpoint();
     if !reader.can_read() {
         return Err(range_error(
@@ -155,14 +189,14 @@ pub(super) fn parse_int_range(
         ));
     }
 
-    let minimum = read_optional_integer(reader, start)?;
+    let minimum = read_optional_number(reader, start, invalid)?;
     let maximum = if reader.can_read_length(2)
         && reader.peek() == Some('.')
         && peek_next(reader) == Some('.')
     {
         reader.skip();
         reader.skip();
-        read_optional_integer(reader, start)?
+        read_optional_number(reader, start, invalid)?
     } else {
         minimum
     };
@@ -184,7 +218,7 @@ pub(super) fn parse_int_range(
             &translations::ARGUMENT_RANGE_SWAPPED,
         ));
     }
-    Ok(IntRange::new(minimum, maximum))
+    Ok((minimum, maximum))
 }
 
 /// An entity as vanilla's `ScoreHolder`, with its display name.
@@ -224,10 +258,11 @@ fn resolve_uuid(uuid: &Uuid, raw: &str, source: &CommandSource) -> Vec<ScoreHold
     }
 }
 
-fn read_optional_integer(
+fn read_optional_number<T: FromStr>(
     reader: &mut StringReader<'_>,
     range_start: ReaderCursor,
-) -> Result<Option<i32>, CommandSyntaxError> {
+    invalid: fn(Box<str>) -> CommandSyntaxErrorKind,
+) -> Result<Option<T>, CommandSyntaxError> {
     let start = reader.read_so_far().len();
     while reader
         .peek()
@@ -242,7 +277,7 @@ fn read_optional_integer(
     let Ok(value) = raw.parse() else {
         let raw = raw.into();
         reader.restore(range_start);
-        return Err(reader.error(CommandSyntaxErrorKind::InvalidInt(raw)));
+        return Err(reader.error(invalid(raw)));
     };
     Ok(Some(value))
 }

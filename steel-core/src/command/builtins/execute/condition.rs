@@ -20,6 +20,7 @@ use super::super::super::{
     },
 };
 use super::super::item::{AccessorKind, source_slot_items};
+use super::super::stopwatch::{elapsed_seconds, stopwatch_id};
 use super::function_condition::function_condition;
 use super::{objective, source_command_storage, source_scoreboard};
 use crate::{block_entity::SharedBlockEntity, command::missing_argument, world::World};
@@ -31,7 +32,6 @@ const MAX_BLOCKS_REGION: i64 = 32_768;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     // TODO: Add predicate after its runtime registry is ported.
-    // TODO: Restore Steel stopwatch conditions with the stopwatch command system.
     literal(name)
         .then(biome_condition(expected))
         .then(block_condition(expected))
@@ -44,6 +44,7 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(loaded_condition(expected))
         .then(score_condition(expected))
         .then(slots_condition(expected))
+        .then(stopwatch_condition(expected))
 }
 
 /// Vanilla `items <source> <slots> <item_predicate>`: the total count of
@@ -507,6 +508,31 @@ fn entity_condition(expected: bool) -> Builder {
                 execute_numeric_condition(context, expected, count)
             }),
     )
+}
+
+/// Vanilla `stopwatch <id> <range>`: whether the stopwatch's elapsed seconds
+/// fall in the range.
+fn stopwatch_condition(expected: bool) -> Builder {
+    literal("stopwatch").then(
+        stopwatch_id().then(
+            argument("range", SteelArgumentType::float_range())
+                .forks(EXECUTE_ROOT, move |context| {
+                    let matches = stopwatch_matches(context)?;
+                    Ok(conditional_sources(context.source(), expected, matches))
+                })
+                .executes(move |context| {
+                    execute_boolean_condition(context, expected, stopwatch_matches(context)?)
+                }),
+        ),
+    )
+}
+
+/// Vanilla `ExecuteCommand.checkStopwatch`.
+fn stopwatch_matches(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<bool, CommandSyntaxError> {
+    let range = context.float_range("range")?;
+    Ok(range.matches(elapsed_seconds(context)?))
 }
 
 fn loaded_condition(expected: bool) -> Builder {

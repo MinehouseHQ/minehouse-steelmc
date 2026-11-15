@@ -40,6 +40,9 @@ pub mod names {
     /// Vanilla `TimerQueue.TYPE`, the `/schedule` events of a domain,
     /// persisted through the domain default world.
     pub const SCHEDULED_EVENTS: SavedDataName = SavedDataName::trusted("scheduled_events");
+    /// Vanilla `Stopwatches.TYPE`, the `/stopwatch` stopwatches of a domain,
+    /// persisted through the domain default world.
+    pub const STOPWATCHES: SavedDataName = SavedDataName::trusted("stopwatches");
     /// Vanilla `MapIndex.TYPE`, persisted through the domain default world as `data/map_index.bin`.
     pub const MAP_INDEX: WincodeSavedDataName =
         WincodeSavedDataName::trusted("map_index", *b"STMI", 1);

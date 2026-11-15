@@ -10,6 +10,7 @@ mod queue;
 pub mod rcon;
 mod registration;
 pub mod sender;
+pub(crate) mod stopwatches;
 pub(crate) mod storage;
 
 pub use api::{

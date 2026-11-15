@@ -34,6 +34,7 @@ use crate::command::execution::{
 };
 use crate::command::function::{DomainTimerQueues, ServerFunctions};
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
+use crate::command::stopwatches::DomainStopwatches;
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
@@ -168,6 +169,8 @@ pub struct CommandDataSaveResults {
     pub random_sequences: io::Result<usize>,
     /// Number of changed domain `/schedule` queues written, or the save error.
     pub scheduled_events: io::Result<usize>,
+    /// Number of domain `/stopwatch` sets written, or the save error.
+    pub stopwatches: io::Result<usize>,
 }
 
 mod known_players;
@@ -230,6 +233,9 @@ pub async fn test_server_with_worlds_and_config(
     let scheduled_events = DomainTimerQueues::load(&worlds)
         .await
         .map_err(|error| format!("test scheduled events should load: {error}"))?;
+    let stopwatches = DomainStopwatches::load(&worlds)
+        .await
+        .map_err(|error| format!("test stopwatches should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -247,19 +253,7 @@ pub async fn test_server_with_worlds_and_config(
         .map_err(|error| format!("test chunk encoding pool should initialize: {error}"))?;
     let service_keys = ServiceKeyStore::new(None)
         .map_err(|error| format!("test services key store should initialize: {error}"))?;
-    let damage_history = loaded_worlds
-        .first()
-        .and_then(|world| world.damage_history.upgrade())
-        .ok_or("test worlds must have a live damage history owner")?;
-    let shares_history = loaded_worlds.iter().all(|world| {
-        world
-            .damage_history
-            .upgrade()
-            .is_some_and(|history| Arc::ptr_eq(&history, &damage_history))
-    });
-    if !shares_history {
-        return Err("test worlds must share the server's history owner".to_owned());
-    }
+    let damage_history = shared_damage_history(loaded_worlds)?;
 
     Ok(Arc::new(Server {
         damage_history,
@@ -285,6 +279,7 @@ pub async fn test_server_with_worlds_and_config(
         custom_boss_events,
         random_sequences,
         scheduled_events,
+        stopwatches,
         functions: ServerFunctions::default(),
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
@@ -307,6 +302,25 @@ pub async fn test_server_with_worlds_and_config(
         pending_domain_switches: SyncMutex::new(Vec::new()),
         player_idle_timeout: AtomicI32::new(0),
     }))
+}
+
+/// The damage history every test world shares, which the server owns.
+#[cfg(any(test, feature = "test-framework"))]
+fn shared_damage_history(loaded_worlds: &[Arc<World>]) -> Result<Arc<DamageHistory>, String> {
+    let damage_history = loaded_worlds
+        .first()
+        .and_then(|world| world.damage_history.upgrade())
+        .ok_or("test worlds must have a live damage history owner")?;
+    let shares_history = loaded_worlds.iter().all(|world| {
+        world
+            .damage_history
+            .upgrade()
+            .is_some_and(|history| Arc::ptr_eq(&history, &damage_history))
+    });
+    if !shares_history {
+        return Err("test worlds must share the server's history owner".to_owned());
+    }
+    Ok(damage_history)
 }
 
 fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: PreparedSpawn) {
@@ -548,6 +562,8 @@ pub struct Server {
     pub random_sequences: DomainRandomSequences,
     /// `/schedule` events isolated by Steel domain.
     pub(crate) scheduled_events: DomainTimerQueues,
+    /// `/stopwatch` stopwatches isolated by Steel domain.
+    pub(crate) stopwatches: DomainStopwatches,
     /// Data pack functions isolated by Steel domain.
     pub(crate) functions: ServerFunctions,
     /// Saves and dispatches commands to appropriate handlers.
@@ -875,6 +891,9 @@ impl Server {
         let scheduled_events = DomainTimerQueues::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain scheduled events: {error}"))?;
+        let stopwatches = DomainStopwatches::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain stopwatches: {error}"))?;
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -914,6 +933,7 @@ impl Server {
             custom_boss_events,
             random_sequences,
             scheduled_events,
+            stopwatches,
             functions: ServerFunctions::default(),
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
@@ -963,6 +983,7 @@ impl Server {
             boss_events: self.custom_boss_events.save(&self.worlds).await,
             random_sequences: self.random_sequences.save(&self.worlds).await,
             scheduled_events: self.scheduled_events.save(&self.worlds).await,
+            stopwatches: self.stopwatches.save(&self.worlds).await,
         }
     }
 

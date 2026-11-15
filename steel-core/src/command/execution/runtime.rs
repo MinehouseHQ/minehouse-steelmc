@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
-    Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
-    ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
+    Coordinates, DoubleRange, ExecutionCommandSource, ExecutionControl, GameProfileArgument,
+    IntRange, ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
@@ -305,6 +305,11 @@ where
 
     pub(crate) fn int_range(&self, name: &str) -> Result<IntRange, CommandSyntaxError> {
         self.typed_argument::<IntRange>(name).copied()
+    }
+
+    /// Vanilla `RangeArgument.Floats.getRange`.
+    pub(crate) fn float_range(&self, name: &str) -> Result<DoubleRange, CommandSyntaxError> {
+        self.typed_argument::<DoubleRange>(name).copied()
     }
 
     /// Vanilla `ObjectiveCriteriaArgument.getCriteria`.

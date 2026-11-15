@@ -4886,6 +4886,7 @@ mod place_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;
+mod stopwatch_command;
 mod world_log;
 
 use steel_registry::chat_type::ChatType;

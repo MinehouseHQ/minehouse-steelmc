@@ -50,7 +50,9 @@ pub(crate) use runtime::{
     SteelCommandContext, SteelCommandRuntime, SteelContextChain, SteelExecutor, SteelModifier,
     SteelSuggestionContext, argument, literal,
 };
-pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard, entity_holder};
+pub(crate) use score::{
+    DoubleRange, IntRange, ScoreHolderArgument, ScoreHolderWildcard, entity_holder,
+};
 pub(crate) use scoreboard_arguments::ScoreOperation;
 #[cfg(test)]
 pub(crate) use selector::parse_entity_selector_text;
