@@ -282,3 +282,27 @@ start how many of them the registry holds.
 
 Not there yet: turning the registry items of a Fabric world
 (`minehouse-tweaks:magnifier` as an item id) into these on load, our blocks.
+
+## Resource pack
+
+Our items and blocks are drawn by a resource pack. On the Fabric server Polymer builds it
+at startup; here it is built ahead of time from the same assets:
+
+```sh
+python3 steel-minehouse/pack/build_pack.py ../minehouse-landing minehouse-pack.zip
+```
+
+The script takes the assets of every mod that gives its assets to Polymer, merges the
+files several mods add to (atlases, fonts, languages, `sounds.json`), and refuses to build
+when two mods carry different versions of another file or when a model, texture or sound
+of ours is referenced but missing. The zip is reproducible, and the script prints its
+SHA-1. Put the address the pack is served at and that hash into `config/config.toml`:
+
+```toml
+[server.resource_pack]
+url = "https://example.com/minehouse-pack.zip"
+sha1 = "..."
+required = true
+```
+
+Block states of our own blocks are not in the pack yet.
