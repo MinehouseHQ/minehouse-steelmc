@@ -1,6 +1,6 @@
 //! Leaves block behavior implementation.
 //!
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use rand::Rng;
 
@@ -28,6 +28,33 @@ use super::MangrovePropaguleBlock;
 const DISTANCE: &IntProperty = &BlockStateProperties::DISTANCE;
 const PERSISTENT: &BoolProperty = &BlockStateProperties::PERSISTENT;
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
+/// What leaves do on a scheduled tick, as a [`LeafDecayObserver`] decides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeafTick {
+    /// Vanilla: only the distance to the nearest log is stored.
+    Vanilla,
+    /// The leaves fall now, as on a random tick of decaying leaves.
+    Fall,
+    /// The distance is stored and the leaves get another tick in this many game ticks.
+    Wait(i32),
+}
+
+/// Lets a content crate speed leaf decay up. With no observer leaves are vanilla.
+pub trait LeafDecayObserver: Send + Sync {
+    /// The leaves at `pos` got their scheduled tick. `decaying` says whether, with the
+    /// distance just computed, they have no log and are not persistent.
+    fn tick(&self, _world: &Arc<World>, _pos: BlockPos, _decaying: bool) -> LeafTick {
+        LeafTick::Vanilla
+    }
+}
+
+static LEAF_DECAY_OBSERVER: OnceLock<&'static dyn LeafDecayObserver> = OnceLock::new();
+
+/// Installs the leaf decay observer. Returns `false` if one is already installed.
+pub fn set_leaf_decay_observer(observer: &'static dyn LeafDecayObserver) -> bool {
+    LEAF_DECAY_OBSERVER.set(observer).is_ok()
+}
 
 /// Shared behavior for vanilla leaves blocks.
 pub(crate) struct LeavesBlock {
@@ -92,11 +119,31 @@ impl BlockBehavior for LeavesBlock {
         }
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        world.set_block(
-            pos,
-            Self::update_distance(state, world, pos),
-            UpdateFlags::UPDATE_ALL,
-        );
+        let updated = Self::update_distance(state, world, pos);
+        let decision = LEAF_DECAY_OBSERVER
+            .get()
+            .map_or(LeafTick::Vanilla, |observer| {
+                observer.tick(world, pos, Self::decaying(updated))
+            });
+        match decision {
+            LeafTick::Vanilla => {
+                world.set_block(pos, updated, UpdateFlags::UPDATE_ALL);
+            }
+            LeafTick::Fall => {
+                world.drop_resources(updated, pos);
+                world.set_block(
+                    pos,
+                    Self::decayed_replacement(updated),
+                    UpdateFlags::UPDATE_ALL,
+                );
+            }
+            LeafTick::Wait(delay) => {
+                if updated != state {
+                    world.set_block(pos, updated, UpdateFlags::UPDATE_ALL);
+                }
+                world.schedule_block_tick_default(pos, self.block, delay);
+            }
+        }
     }
     fn update_shape(
         &self,
