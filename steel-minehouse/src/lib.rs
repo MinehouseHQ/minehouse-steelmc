@@ -24,6 +24,7 @@ pub mod downtime;
 pub mod moderation;
 pub mod roles;
 pub mod site;
+pub mod tab;
 
 use auth::{Auth, AuthSetup};
 use chat::Chat;
@@ -90,6 +91,7 @@ impl Minehouse {
         if let Some(chat) = &setup.chat {
             chat.start(server);
         }
+        tab::Tab::start(server);
         let auth = setup.auth.map(|auth| Auth::start(server, auth));
         // One gate serves both: maintenance refuses first, then the login check asks the site.
         let gate = MinehouseGate {

@@ -64,6 +64,10 @@ impl Server {
 
     /// Broadcasts the tab list header/footer with current TPS and MSPT statistics.
     pub(super) fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
+        if let Some(provider) = self.tab_list_provider.get() {
+            provider.refresh(self);
+            return;
+        }
         let (header, footer) = Self::tab_list_components(tick_stats);
 
         self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
