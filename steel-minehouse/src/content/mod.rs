@@ -26,6 +26,7 @@ mod stations;
 mod trains;
 mod transfers;
 mod waxed_frames;
+mod waxed_items;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -39,6 +40,7 @@ use steel_core::{
     entity::entities::objects::{
         display_ui::set_item_frame_observer, vehicles::set_minecart_observer,
     },
+    inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
 };
 use steel_registry::{
@@ -373,8 +375,8 @@ pub fn start() {
     log::info!(
         "MineHouse items on: {} items, {} of {} recipes",
         ITEMS.len(),
-        recipes::registered(),
-        recipes::KEYS.len()
+        recipes::registered() + waxed_items::registered(),
+        recipes::KEYS.len() + waxed_items::RECIPES
     );
     if !set_minecart_observer(&ride::RIDE) {
         log::warn!("MineHouse metro: minecarts are already observed, the track is not learned");
@@ -389,6 +391,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_craft_observer(&waxed_items::WAXED_ITEMS) {
+        log::warn!("MineHouse wax: crafting is already observed, waxed items can be copied");
+    }
     if !set_item_frame_observer(&waxed_frames::WAXED_FRAMES) {
         log::warn!("MineHouse: item frames are already observed, waxed frames are off");
     }
