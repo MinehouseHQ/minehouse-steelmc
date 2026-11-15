@@ -33,6 +33,7 @@ mod commands;
 mod format;
 pub mod import;
 mod params;
+mod rollback;
 mod settings;
 pub mod store;
 

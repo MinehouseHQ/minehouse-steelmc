@@ -233,6 +233,8 @@ max_radius = 100    # the widest r:
 | `/co lookup <words>`, `/co l` | `u:Nick,Nick2` `t:3d` `r:10` (`r:#global`) `b:chest,tnt` `a:block`, `+block`, `-block`, `container`, `+container`, `-container`. Without `r:` the whole history is searched. |
 | `/co near` | Everything within `near_radius` blocks. |
 | `/co page <n>`, `/co p` | Another page of the last answer. |
+| `/co rollback <words>`, `/co rb` | Undoes what the words match: broken blocks come back, placed ones go, taken items return to the container, put ones leave it. Needs `t:` and `u:` or `r:`. |
+| `/co restore <words>`, `/co rs` | Redoes what a rollback undid. Same words. |
 | `/co status` | How much the log holds. |
 | `/co purge <age>` | Deletes rows older than `90d` (30 days at least). |
 | `/co import` | Imports `<data>/coreprotect-export`. |
@@ -244,7 +246,11 @@ log, and can be run again: it goes on after the last row it brought over. Nickna
 `#tnt` are causes that are not players. Item components of old container rows are not
 brought over, only the item and the amount.
 
-Not there yet: rollback and restore (the rows already keep the block state and the item
-NBT they need), blocks changed by anything but a player's hand (explosions, fire, fluids,
+A rollback reads its rows on the reader thread and changes the world on the tick, 1500
+rows a tick, without neighbour updates. Rows in chunks that are not loaded are left for
+another run, and so are items that have no container or no room; only what was really
+changed is marked as rolled back. One run takes at most 500 000 rows.
+
+Not there yet: blocks changed by anything but a player's hand (explosions, fire, fluids,
 buckets), signs, chat and sessions. The core hook is `WorldLog`
 (`steel-core/src/server/world_log.rs`).

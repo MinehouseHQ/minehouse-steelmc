@@ -127,6 +127,8 @@ pub struct Query {
     pub blocks: Option<Actions>,
     /// Which container events.
     pub containers: Option<Actions>,
+    /// Only rows that are (or are not) rolled back.
+    pub rolled_back: Option<bool>,
     /// Rows to skip, newest first.
     pub offset: u32,
     /// Rows to return.
@@ -140,6 +142,15 @@ pub struct Page {
     pub rows: Vec<Event>,
     /// How many rows match in all.
     pub total: u64,
+}
+
+/// A row with its place in its table, for a rollback to mark.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// The row id in `block`, or in `container` for items.
+    pub id: i64,
+    /// The row.
+    pub event: Event,
 }
 
 /// How much the log holds.
@@ -161,11 +172,15 @@ enum Write {
     Import(Vec<Event>, &'static str, i64),
     Flush(Sender<()>),
     Purge(i64, Reply<u64>),
+    /// Sets `rolled_back` on block rows and container rows.
+    Mark(Vec<i64>, Vec<i64>, bool),
     Stop,
 }
 
 enum Read {
     Lookup(Box<Query>, Reply<Page>),
+    /// Every matching row, oldest first if asked, for a rollback or a restore.
+    Changes(Box<Query>, bool, Reply<Vec<Row>>),
     Stats(Reply<Stats>),
     Imported(&'static str, Reply<i64>),
     Stop,
@@ -232,6 +247,27 @@ impl Store {
         let _ = self
             .reader
             .send(Read::Lookup(Box::new(query), Box::new(reply)));
+    }
+
+    /// Every row of `query` (its `limit` still caps them), oldest first if `oldest_first`.
+    pub fn changes(
+        &self,
+        query: Query,
+        oldest_first: bool,
+        reply: impl FnOnce(Result<Vec<Row>, String>) + Send + 'static,
+    ) {
+        let _ = self.reader.send(Read::Changes(
+            Box::new(query),
+            oldest_first,
+            Box::new(reply),
+        ));
+    }
+
+    /// Queues marking block rows and container rows as rolled back, or as not.
+    pub fn mark(&self, blocks: Vec<i64>, containers: Vec<i64>, rolled_back: bool) {
+        let _ = self
+            .writer
+            .send(Write::Mark(blocks, containers, rolled_back));
     }
 
     /// Counts the log on the reader thread.
@@ -337,6 +373,16 @@ impl Writer {
                              ON CONFLICT (key) DO UPDATE SET value = max(value, excluded.value)",
                             params![format!("import:{table}"), last_id],
                         )?;
+                    }
+                    Write::Mark(blocks, containers, rolled_back) => {
+                        for (table, ids) in [("block", blocks), ("container", containers)] {
+                            let mut update = self.connection.prepare_cached(&format!(
+                                "UPDATE {table} SET rolled_back = ?1 WHERE id = ?2"
+                            ))?;
+                            for id in ids {
+                                update.execute(params![rolled_back, id])?;
+                            }
+                        }
                     }
                     Write::Flush(done) => flushes.push(done),
                     Write::Purge(before, reply) => purges.push((before, reply)),
@@ -489,6 +535,14 @@ fn read_loop(file: &PathBuf, jobs: &Receiver<Read>, writer: &Sender<Write>) {
                     lookup(connection, &query).map_err(|error| error.to_string())
                 }));
             }
+            Read::Changes(query, oldest_first, reply) => {
+                flush(writer);
+                reply(connection.and_then(|connection| {
+                    select(connection, &query, oldest_first)
+                        .map(|(rows, _)| rows)
+                        .map_err(|error| error.to_string())
+                }));
+            }
             Read::Stats(reply) => reply(
                 connection
                     .and_then(|connection| stats(connection).map_err(|error| error.to_string())),
@@ -564,6 +618,10 @@ fn condition(query: &Query, actions: Actions) -> (String, Vec<Value>) {
         ));
         values.extend(query.kinds.iter().cloned().map(Value::Text));
     }
+    if let Some(rolled_back) = query.rolled_back {
+        clauses.push("t.rolled_back = ?".to_owned());
+        values.push(Value::Integer(i64::from(rolled_back)));
+    }
     if let Actions::Only(action) = actions {
         clauses.push("t.action = ?".to_owned());
         values.push(Value::Integer(i64::from(action)));
@@ -576,6 +634,19 @@ fn marks(count: usize) -> String {
 }
 
 fn lookup(connection: &Connection, query: &Query) -> rusqlite::Result<Page> {
+    let (rows, total) = select(connection, query, false)?;
+    Ok(Page {
+        rows: rows.into_iter().map(|row| row.event).collect(),
+        total,
+    })
+}
+
+fn select(
+    connection: &Connection,
+    query: &Query,
+    oldest_first: bool,
+) -> rusqlite::Result<(Vec<Row>, u64)> {
+    let order = if oldest_first { "ASC" } else { "DESC" };
     // Nothing chosen means both tables.
     let (blocks, containers) = match (query.blocks, query.containers) {
         (None, None) => (Some(Actions::Any), Some(Actions::Any)),
@@ -607,40 +678,43 @@ fn lookup(connection: &Connection, query: &Query) -> rusqlite::Result<Page> {
     values.push(Value::Integer(i64::from(query.limit)));
     values.push(Value::Integer(i64::from(query.offset)));
     let sql = format!(
-        "SELECT e.*, a.name, a.uuid, w.name, k.name FROM ({} ORDER BY 1 DESC, 10 DESC LIMIT ? OFFSET ?) e
+        "SELECT e.*, a.name, a.uuid, w.name, k.name FROM ({} ORDER BY 1 {order}, 10 {order} LIMIT ? OFFSET ?) e
          JOIN actor a ON a.id = e.actor JOIN world w ON w.id = e.world JOIN kind k ON k.id = e.kind
-         ORDER BY 1 DESC, 10 DESC",
+         ORDER BY 1 {order}, 10 {order}",
         selects.join(" UNION ALL ")
     );
     let rows = connection
         .prepare(&sql)?
         .query_map(params_from_iter(values.iter()), |row| {
             let items: bool = row.get(10)?;
-            Ok(Event {
-                time: row.get(0)?,
-                pos: (row.get(3)?, row.get(4)?, row.get(5)?),
-                action: row.get(7)?,
-                rolled_back: row.get(8)?,
-                subject: if items {
-                    Subject::Items {
-                        amount: row.get(12)?,
-                        data: row.get(13)?,
-                    }
-                } else {
-                    Subject::Block {
-                        state: row.get(11)?,
-                    }
+            Ok(Row {
+                id: row.get(9)?,
+                event: Event {
+                    time: row.get(0)?,
+                    pos: (row.get(3)?, row.get(4)?, row.get(5)?),
+                    action: row.get(7)?,
+                    rolled_back: row.get(8)?,
+                    subject: if items {
+                        Subject::Items {
+                            amount: row.get(12)?,
+                            data: row.get(13)?,
+                        }
+                    } else {
+                        Subject::Block {
+                            state: row.get(11)?,
+                        }
+                    },
+                    actor: Actor {
+                        name: row.get(14)?,
+                        uuid: row.get(15)?,
+                    },
+                    world: row.get(16)?,
+                    kind: row.get(17)?,
                 },
-                actor: Actor {
-                    name: row.get(14)?,
-                    uuid: row.get(15)?,
-                },
-                world: row.get(16)?,
-                kind: row.get(17)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(Page { rows, total })
+    Ok((rows, total))
 }
 
 #[cfg(test)]
@@ -834,6 +908,79 @@ mod tests {
                 .map(|event| event.time)
                 .collect::<Vec<_>>(),
             [4_000, 3_000]
+        );
+        store.stop();
+    }
+
+    fn changes(store: &Store, query: Query, oldest_first: bool) -> Vec<Row> {
+        let (answer, wait) = mpsc::channel();
+        store.changes(query, oldest_first, move |rows| {
+            let _ = answer.send(rows);
+        });
+        wait.recv()
+            .expect("the reader answers")
+            .expect("the lookup runs")
+    }
+
+    #[test]
+    fn rolled_back_rows_are_marked_and_found_apart() {
+        let file = scratch("mark");
+        let store = Store::open(&file, None).expect("the log opens");
+        store.record(block(1_000, "Steve", (1, 64, 1), "minecraft:stone", BREAK));
+        store.record(block(2_000, "Steve", (2, 64, 1), "minecraft:dirt", PLACE));
+        store.record(items(
+            3_000,
+            "Steve",
+            (3, 64, 1),
+            "minecraft:diamond",
+            5,
+            TAKE,
+        ));
+
+        let newest = changes(&store, all(), false);
+        let times: Vec<i64> = newest.iter().map(|row| row.event.time).collect();
+        assert_eq!(times, [3_000, 2_000, 1_000]);
+        let oldest = changes(&store, all(), true);
+        let times: Vec<i64> = oldest.iter().map(|row| row.event.time).collect();
+        assert_eq!(times, [1_000, 2_000, 3_000]);
+
+        // The break and the take are rolled back; the placement stays in force.
+        store.mark(vec![oldest[0].id], vec![oldest[2].id], true);
+        let in_force = changes(
+            &store,
+            Query {
+                rolled_back: Some(false),
+                ..all()
+            },
+            false,
+        );
+        assert_eq!(in_force.len(), 1);
+        assert_eq!(in_force[0].event.kind, "minecraft:dirt");
+        let undone = changes(
+            &store,
+            Query {
+                rolled_back: Some(true),
+                ..all()
+            },
+            true,
+        );
+        let kinds: Vec<&str> = undone.iter().map(|row| row.event.kind.as_str()).collect();
+        assert_eq!(kinds, ["minecraft:stone", "minecraft:diamond"]);
+        assert!(undone.iter().all(|row| row.event.rolled_back));
+
+        // A restore marks them back.
+        store.mark(vec![oldest[0].id], vec![oldest[2].id], false);
+        assert_eq!(
+            changes(
+                &store,
+                Query {
+                    rolled_back: Some(true),
+                    ..all()
+                },
+                true
+            )
+            .len(),
+            0
         );
         store.stop();
     }
