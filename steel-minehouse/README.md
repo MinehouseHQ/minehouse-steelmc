@@ -345,12 +345,37 @@ is protected. The site keeps everything; the server asks for the list every 30 s
   window is open (open windows ask the site again every 3 s). The player whose bid was beaten is
   told if they are online.
 - On join a tenant whose lease ends within two days is reminded to renew.
+- Boss bars: one per announced or running auction, the soonest three, with a countdown to
+  its start or end (red in the last ten minutes), redrawn every second. `/zones bossbar` hides
+  them for one player; who hid them is kept in `zones-hidden-bars.txt` of the data directory.
+- `/zones show [num]` (every player) draws the borders with dust particles for 30 seconds, in
+  the color of the zone's status, at the player's height and within 64 blocks.
+- `/zones map` (every player) gives «Карта зон спавна»: a filled map the server draws itself
+  and sends only as packets while it is held (no saved map data): the terrain of the loaded
+  chunks, the borders of the zones in the colors of their status, a banner with the number and
+  the tenant or the auction over every zone, and the holder's marker. The picture is sent again
+  when the zones change, the terrain is read again every two minutes.
 - `/zones auction <num> [hours] [price] [delay minutes]` (`minehouse.zones.auction` or
   `minehouse.zones.admin`, and the console), `/zones delete <num>` and `/zones reload`
   (`minehouse.zones.admin`, and the console).
+- Markup (`minehouse.zones.admin`): `/zones wand` gives the stick «Разметка зон». A right click
+  on a block adds a corner, with Shift the last one is taken back, a left click tells what the
+  draft holds and breaks nothing. While the stick is held the draft, its corners and every
+  saved zone are drawn. `/zones height <min> <max>`, `/zones circle <radius>` (a circle around
+  the admin), `/zones edit <num>` (a saved zone into the draft), `/zones clear`,
+  `/zones save <num> [title]` and `/zones savecommon <num> [title]` send the draft to the site.
 
-Not here yet: the banker, and of the zones the map, the borders, the boss bars, the BlueMap
-markers and the commands that mark a zone out.
+The Fabric server hands the shapes to the client mod, which draws lines and walls instead of
+particles. Steel does not know which channels a client listens to, so everyone gets particles.
+
+The zones are on the web map too (`bank/zones/bluemap.rs`, the Fabric `ZoneBlueMap`): the
+marker set `minehouse-zones` in the same `markers.json` files as the metro (see
+`content/map_markers.rs`), a shape for each zone in the color of its status. Its popup is the
+card of the lot: the area, the rent, the tenant or the bid, when the auction ends (Moscow
+time) and a button to the zone on the site. The set is rewritten when the site's list changes
+and taken off while the zones are closed.
+
+Not here yet: the banker, and of the zones the guides.
 
 `config/minehouse/bank.toml`:
 
@@ -533,7 +558,7 @@ same train, carts with a passenger and chest, hopper and other carts are left al
 directory has none of its own, a `settings.json` that lists the maps. The directory is
 `MINEHOUSE_METRO_MAP_DIR`, or `metro-map` in the data directory; point the site's
 `BLUEMAP_URL` at a web server that gives it out. Other marker sets in a `markers.json` are
-kept. The files are written by a thread of their own, at most every two seconds after a
+kept. Other modules put sets of their own through `map_markers::put_extra` (the spawn zones do). The files are written by a thread of their own, at most every two seconds after a
 station or the track changed. A line is the track the rail graph knows between two
 stations, through the forks on the way (the Fabric mod draws the trips its trains
 recorded).
