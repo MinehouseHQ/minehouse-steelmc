@@ -6,6 +6,7 @@
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
 mod commands;
+mod recipes;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -16,6 +17,7 @@ use steel_registry::{
         CustomData,
         vanilla_components::{CUSTOM_DATA, ITEM_MODEL, ITEM_NAME, ItemLore, LORE, MAX_STACK_SIZE},
     },
+    extend_registry,
     item_stack::ItemStack,
     items::Item,
     vanilla_items,
@@ -119,9 +121,23 @@ pub fn by_id(id: &str) -> Option<&'static CustomItem> {
         .find(|item| item.id == id || item.short_id() == id)
 }
 
-/// Registers `/mhgive`.
+/// Registers `/mhgive`, and our recipes if the registry is not built yet (it is not when the
+/// server starts; it may be in a test that built it first).
 pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistrationError> {
+    if !extend_registry(recipes::register) {
+        log::warn!("MineHouse items: the registry is already built, our recipes are off");
+    }
     commands::register(registry)
+}
+
+/// Says in the log what of ours the built registry holds.
+pub fn start() {
+    log::info!(
+        "MineHouse items on: {} items, {} of {} recipes",
+        ITEMS.len(),
+        recipes::registered(),
+        recipes::KEYS.len()
+    );
 }
 
 #[cfg(test)]

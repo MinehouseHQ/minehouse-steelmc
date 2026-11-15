@@ -90,6 +90,7 @@ impl Minehouse {
     /// Starts every enabled module. Call once the server is ready for players.
     #[must_use]
     pub fn start(server: &Arc<Server>, setup: Setup) -> Self {
+        content::start();
         if let Some(moderation) = &setup.moderation {
             moderation.start(server);
         }
