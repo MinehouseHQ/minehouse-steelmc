@@ -16,7 +16,7 @@ pub use crafting::{
     MapExtendingRecipe, MapRecipeData, PositionedCraftingInput, RepairItemRecipe, ShapedRecipe,
     ShapelessRecipe, ShieldDecorationRecipe, TransmuteRecipe,
 };
-pub use ingredient::Ingredient;
+pub use ingredient::{ExtensionItemId, Ingredient, set_extension_item_id};
 pub use properties::{
     CookingBookCategory, CraftingBookCategory, PlacementInfo, RecipeBookCategory,
     RecipeBookCategoryKind, RecipeBookCategoryRef, RecipeBookCategoryRegistry,

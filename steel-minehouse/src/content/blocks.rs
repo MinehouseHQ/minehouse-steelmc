@@ -26,8 +26,9 @@ use steel_registry::{
 use steel_utils::{BlockStateId, Identifier};
 
 use super::{
-    CustomItem, JUNCTION, STATION,
+    CustomItem, JUNCTION, LEAF_BLOCK as LEAF_BLOCK_ITEM, STATION,
     cloud::{self, CLOUD_BLOCK},
+    herbs::{self, LEAF_BLOCK},
     metro::{self, JUNCTION_BLOCK, STATION_BLOCK},
 };
 
@@ -152,6 +153,16 @@ impl ItemBehavior for PlacesBlock {
 
 /// The blocks a pickaxe mines. The tag stays on the server: clients do not have the blocks.
 const PICKAXE: &[&Block] = &[&STATION_BLOCK, &JUNCTION_BLOCK];
+/// The blocks a hoe mines faster.
+const HOE: &[&Block] = &[&LEAF_BLOCK];
+
+/// Adds `added` to the vanilla block tag `tag`.
+fn tag(blocks: &mut BlockRegistry, tag: &'static str, added: &[&Block]) {
+    blocks.modify_tag(&Identifier::vanilla_static(tag), |mut keys| {
+        keys.extend(added.iter().map(|block| block.key.clone()));
+        keys
+    });
+}
 
 /// Adds our blocks to the registry and says what clients see for them. Given to
 /// [`steel_registry::extend_registry`].
@@ -176,19 +187,20 @@ pub(super) fn register(registry: &mut Registry) {
     blocks.register(&STATION_BLOCK);
     blocks.register(&JUNCTION_BLOCK);
     metro::show_to_clients(blocks);
-    blocks.modify_tag(
-        &Identifier::vanilla_static("mineable/pickaxe"),
-        |mut keys| {
-            keys.extend(PICKAXE.iter().map(|block| block.key.clone()));
-            keys
-        },
-    );
+    blocks.register(&LEAF_BLOCK);
+    herbs::show_to_clients(blocks);
+    tag(blocks, "mineable/pickaxe", PICKAXE);
+    tag(blocks, "mineable/hoe", HOE);
 }
 
 /// Sets the behaviors of our blocks. Given to [`steel_core::behavior::extend_block_behaviors`].
 pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     behaviors.set_behavior(&CLOUD_BLOCK, Box::new(cloud::CloudBehavior));
-    for (block, item) in [(&STATION_BLOCK, &STATION), (&JUNCTION_BLOCK, &JUNCTION)] {
+    for (block, item) in [
+        (&STATION_BLOCK, &STATION),
+        (&JUNCTION_BLOCK, &JUNCTION),
+        (&LEAF_BLOCK, &LEAF_BLOCK_ITEM),
+    ] {
         behaviors.set_behavior(block, Box::new(OwnBlock { block, item }));
     }
 }
@@ -288,6 +300,12 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 18);
+        // The block of leaves has one more, and breaks like the wart block it is without it.
+        let leaves = blocks.get_base_state_id(&LEAF_BLOCK);
+        let sent = shown[usize::from(leaves.0)];
+        assert!(slots.contains(&sent) && sent != default.0 && !seen.contains(&sent));
+        let wart = blocks.get_default_state_id(&vanilla_blocks::WARPED_WART_BLOCK);
+        assert_eq!(broken[usize::from(leaves.0)], wart.0);
 
         let quartz = blocks.get_default_state_id(&vanilla_blocks::SMOOTH_QUARTZ);
         let cut = blocks.get_default_state_id(&vanilla_blocks::WAXED_CUT_COPPER);
@@ -327,6 +345,15 @@ mod tests {
         // The tag still has what vanilla put into it.
         assert!(blocks.is_in_tag(&vanilla_blocks::STONE, &pickaxe));
         assert!(!blocks.is_in_tag(&CLOUD_BLOCK, &pickaxe));
+        // The block of leaves is mined by hand, and faster with a hoe.
+        assert_eq!(
+            LEAF_BLOCK.key.to_string(),
+            "minehouse-herbs:magic_leaf_block"
+        );
+        assert!(!LEAF_BLOCK.config.requires_correct_tool_for_drops);
+        let hoe = Identifier::vanilla_static("mineable/hoe");
+        assert!(blocks.is_in_tag(&LEAF_BLOCK, &hoe));
+        assert!(!blocks.is_in_tag(&LEAF_BLOCK, &pickaxe));
     }
 
     #[test]
