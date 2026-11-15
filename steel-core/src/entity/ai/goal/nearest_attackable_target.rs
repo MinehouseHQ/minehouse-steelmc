@@ -1,4 +1,5 @@
 use glam::DVec3;
+use steel_utils::WorldAabb;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
@@ -13,6 +14,10 @@ const DEFAULT_RANDOM_INTERVAL: i32 = 10;
 /// method references on the mob (such as `this::isAngryAt`).
 pub(crate) type MobTargetSelector = fn(&dyn PathfinderMob, &dyn LivingEntity, &World) -> bool;
 
+/// Vanilla `getTargetSearchArea` overrides: the box to search around the mob
+/// for a follow distance.
+pub(crate) type TargetSearchArea = fn(&dyn PathfinderMob, f64) -> WorldAabb;
+
 enum TargetSearch {
     Players,
     Entities,
@@ -24,6 +29,7 @@ pub(crate) struct NearestAttackableTargetGoal {
     target: Option<SharedEntity>,
     target_conditions: TargetingConditions,
     mob_selector: Option<MobTargetSelector>,
+    search_area: Option<TargetSearchArea>,
     search: TargetSearch,
 }
 
@@ -109,6 +115,7 @@ impl NearestAttackableTargetGoal {
             target: None,
             target_conditions: TargetingConditions::for_combat().selector(selector),
             mob_selector: None,
+            search_area: None,
             search,
         }
     }
@@ -146,6 +153,14 @@ impl NearestAttackableTargetGoal {
         self
     }
 
+    /// Replaces the entity search box, like vanilla subclasses overriding
+    /// `getTargetSearchArea`. The player search never reads it.
+    #[must_use]
+    pub(crate) const fn with_search_area(mut self, search_area: TargetSearchArea) -> Self {
+        self.search_area = Some(search_area);
+        self
+    }
+
     fn passes_mob_selector(
         &self,
         mob: &dyn PathfinderMob,
@@ -176,7 +191,10 @@ impl NearestAttackableTargetGoal {
                 })
                 .map(|player| -> SharedEntity { player }),
             TargetSearch::Entities => {
-                let search_box = mob.bounding_box().inflate_xyz(follow, follow, follow);
+                let search_box = self.search_area.map_or_else(
+                    || mob.bounding_box().inflate_xyz(follow, follow, follow),
+                    |search_area| search_area(mob, follow),
+                );
                 level.nearest_entity_in_aabb_matching(&search_box, origin, |entity| {
                     entity.as_living_entity().is_some_and(|target| {
                         target_conditions.test(level, Some(mob), target)

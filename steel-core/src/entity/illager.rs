@@ -15,14 +15,17 @@ pub trait AbstractIllager: Raider {
         self.default_can_attack_mob(target)
     }
 
-    /// Vanilla `AbstractIllager.considersEntityAsAlly`: illagers side with
-    /// `illager_friends` when neither is on a team.
-    // TODO: Steel has no scoreboard teams yet, so the `getTeam() == null` checks
-    // always pass.
+    /// Vanilla `AbstractIllager.considersEntityAsAlly`: the team, and
+    /// otherwise `illager_friends` when neither is on a team.
     fn illager_is_allied_to(&self, other: &dyn Entity) -> bool {
+        if self.is_allied_to_team(other.team().as_ref()) {
+            return true;
+        }
         REGISTRY
             .entity_types
             .is_in_tag(other.entity_type(), &EntityTypeTag::ILLAGER_FRIENDS)
+            && self.team().is_none()
+            && other.team().is_none()
     }
 }
 

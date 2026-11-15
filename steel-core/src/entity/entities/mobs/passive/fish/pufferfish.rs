@@ -209,8 +209,9 @@ impl PufferfishEntity {
 
     /// Vanilla `Pufferfish.touch`.
     fn touch(&self, world: &World, this: &SharedEntity, mob: &SharedEntity) {
-        // TODO(teams): vanilla checks `doTeamsAllowDamage`; Steel teams have
-        // no friendly-fire flag yet, so damage is always allowed.
+        if !self.do_teams_allow_damage(mob.as_ref()) {
+            return;
+        }
         let puff_state = self.puff_state();
         if mob.hurt(
             world,
@@ -297,7 +298,9 @@ impl Entity for PufferfishEntity {
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
 
     fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
-        // TODO(teams): vanilla checks `doTeamsAllowDamage` here as well.
+        if !self.do_teams_allow_damage(player.as_ref()) {
+            return;
+        }
         let puff_state = self.puff_state();
         if puff_state <= 0 {
             return;

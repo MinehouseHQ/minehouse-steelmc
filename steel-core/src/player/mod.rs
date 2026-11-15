@@ -81,7 +81,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FORGIVE_DEAD_PLAYERS, FREEZE_DAMAGE,
-    IMMEDIATE_RESPAWN, KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
+    IMMEDIATE_RESPAWN, KEEP_INVENTORY, PVP, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
@@ -887,6 +887,25 @@ impl Player {
         if LivingEntity::is_invulnerable_to(self, world, source) {
             return false;
         }
+        // Vanilla `ServerPlayer.hurtServer`: the attacking player, or the
+        // player who shot the attacking arrow, must be able to harm this one.
+        if let Some(entity) = source.causing_entity() {
+            if entity
+                .as_player()
+                .is_some_and(|attacker| !attacker.can_harm_player(self))
+            {
+                return false;
+            }
+            if entity.is_abstract_arrow()
+                && entity.projectile_owner().is_some_and(|owner| {
+                    owner
+                        .as_player()
+                        .is_some_and(|shooter| !shooter.can_harm_player(self))
+                })
+            {
+                return false;
+            }
+        }
 
         {
             let abilities = self.abilities.lock();
@@ -924,6 +943,13 @@ impl Player {
         }
 
         LivingEntity::hurt_server(self, world, source, amount)
+    }
+
+    /// Vanilla `ServerPlayer.canHarmPlayer`: the `pvp` game rule, then
+    /// `Player.canHarmPlayer`'s team friendly fire check.
+    #[must_use]
+    pub fn can_harm_player(&self, target: &Self) -> bool {
+        self.get_world().get_game_rule(&PVP) && self.do_teams_allow_damage(target)
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {

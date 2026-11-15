@@ -610,9 +610,11 @@ impl TamableAnimal for WolfEntity {
                     .owner()
                     .is_none_or(|wolf_owner| wolf_owner.uuid() != owner.uuid());
         }
-        // Vanilla also spares players their owner's team protects from
-        // friendly fire; Steel's teams carry no friendly-fire setting, so
-        // `Player.canHarmPlayer` always allows the attack.
+        if let (Some(target), Some(owner)) = (target.as_player(), owner.as_player())
+            && !owner.can_harm_player(target)
+        {
+            return false;
+        }
         if target.is_tamed_horse() {
             return false;
         }

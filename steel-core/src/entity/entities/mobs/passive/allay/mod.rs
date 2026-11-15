@@ -398,8 +398,9 @@ impl Entity for AllayEntity {
     ) {
     }
 
+    /// Vanilla `Allay.considersEntityAsAlly`: the liked player, then the team.
     fn considers_entity_as_ally(&self, other: &dyn Entity) -> bool {
-        self.is_liked_player(Some(other))
+        self.is_liked_player(Some(other)) || self.is_allied_to_team(other.team().as_ref())
     }
 
     fn as_vibration_system(&self) -> Option<&dyn VibrationSystem> {

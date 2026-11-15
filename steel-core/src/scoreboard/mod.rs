@@ -40,7 +40,7 @@ use sync::{
     Viewers, display_packet, objective_packet, team_add_or_modify_packet, team_player_packet,
     team_remove_packet,
 };
-pub use team::{PlayerTeam, TeamProperty};
+pub use team::{PlayerTeam, TeamProperty, TeamRules};
 
 /// Vanilla `ScoreHolder`: a scoreboard name and, for entities, the display
 /// name objectives with `displayAutoUpdate` copy.
@@ -1054,6 +1054,24 @@ impl Scoreboard {
             .teams_by_player
             .get(holder)
             .and_then(|team| state.teams.get(team).cloned())
+    }
+
+    /// Vanilla `getPlayersTeam`, only the settings entity checks read.
+    #[must_use]
+    pub fn holder_team_rules(&self, holder: &str) -> Option<TeamRules> {
+        let state = self.state.read();
+        state
+            .teams_by_player
+            .get(holder)
+            .and_then(|team| state.teams.get(team))
+            .map(PlayerTeam::rules)
+    }
+
+    /// Whether any holder is on a team, so entity checks can skip building
+    /// their scoreboard name.
+    #[must_use]
+    pub fn has_team_members(&self) -> bool {
+        !self.state.read().teams_by_player.is_empty()
     }
 
     /// Vanilla `addPlayerToTeam`: leaves any other team first, and is

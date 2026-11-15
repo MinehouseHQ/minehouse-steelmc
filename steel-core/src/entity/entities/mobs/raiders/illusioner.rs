@@ -240,7 +240,7 @@ impl Entity for IllusionerEntity {
         Monster::swim_splash_sound_monster(self)
     }
 
-    fn is_allied_to(&self, other: &dyn Entity) -> bool {
+    fn considers_entity_as_ally(&self, other: &dyn Entity) -> bool {
         self.illager_is_allied_to(other)
     }
 

@@ -1,6 +1,7 @@
 //! Vanilla `PlayerTeam`.
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use steel_protocol::packets::game::{TeamCollisionRule, TeamParameters, TeamVisibility};
 use steel_utils::translations;
@@ -9,9 +10,19 @@ use text_components::{Modifier as _, TextComponent};
 
 use super::criteria::TeamColor;
 
+/// Hands out [`PlayerTeam::id`]s.
+static NEXT_TEAM_ID: AtomicU64 = AtomicU64::new(0);
+
 /// Vanilla `PlayerTeam`, as the scoreboard stores it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Equality compares the settings and members, not [`Self::id`], so a
+/// saved and reloaded team still equals the original.
+#[derive(Clone, Debug)]
 pub struct PlayerTeam {
+    /// Stands in for vanilla's object identity: entity checks such as
+    /// `getTeam() == otherTeam` hold only for the same team object, so a
+    /// team removed and added again under its old name is a different team.
+    pub(super) id: u64,
     pub(super) name: String,
     pub(super) players: BTreeSet<String>,
     pub(super) display_name: TextComponent,
@@ -23,6 +34,87 @@ pub struct PlayerTeam {
     pub(super) death_message_visibility: TeamVisibility,
     pub(super) color: Option<TeamColor>,
     pub(super) collision_rule: TeamCollisionRule,
+}
+
+impl PartialEq for PlayerTeam {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.players == other.players
+            && self.display_name == other.display_name
+            && self.player_prefix == other.player_prefix
+            && self.player_suffix == other.player_suffix
+            && self.allow_friendly_fire == other.allow_friendly_fire
+            && self.see_friendly_invisibles == other.see_friendly_invisibles
+            && self.name_tag_visibility == other.name_tag_visibility
+            && self.death_message_visibility == other.death_message_visibility
+            && self.color == other.color
+            && self.collision_rule == other.collision_rule
+    }
+}
+
+impl Eq for PlayerTeam {}
+
+/// The parts of a team that entity checks read, cheap to copy out of the
+/// scoreboard on hot paths such as entity pushing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TeamRules {
+    id: u64,
+    allow_friendly_fire: bool,
+    see_friendly_invisibles: bool,
+    name_tag_visibility: TeamVisibility,
+    death_message_visibility: TeamVisibility,
+    color: Option<TeamColor>,
+    collision_rule: TeamCollisionRule,
+}
+
+impl TeamRules {
+    /// Vanilla `PlayerTeam.isAlliedTo`: only the same team object.
+    #[must_use]
+    pub fn is_allied_to(&self, other: Option<&Self>) -> bool {
+        other.is_some_and(|other| self.is_same_team(other))
+    }
+
+    /// Vanilla `team == otherTeam`.
+    #[must_use]
+    pub const fn is_same_team(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+
+    /// Vanilla `isAllowFriendlyFire`.
+    #[must_use]
+    pub const fn allows_friendly_fire(&self) -> bool {
+        self.allow_friendly_fire
+    }
+
+    /// Vanilla `canSeeFriendlyInvisibles`.
+    #[must_use]
+    pub const fn can_see_friendly_invisibles(&self) -> bool {
+        self.see_friendly_invisibles
+    }
+
+    /// The name tag visibility.
+    #[must_use]
+    pub const fn name_tag_visibility(&self) -> TeamVisibility {
+        self.name_tag_visibility
+    }
+
+    /// The death message visibility.
+    #[must_use]
+    pub const fn death_message_visibility(&self) -> TeamVisibility {
+        self.death_message_visibility
+    }
+
+    /// The color.
+    #[must_use]
+    pub const fn color(&self) -> Option<TeamColor> {
+        self.color
+    }
+
+    /// The collision rule.
+    #[must_use]
+    pub const fn collision_rule(&self) -> TeamCollisionRule {
+        self.collision_rule
+    }
 }
 
 /// One property `/team modify` and save data can set.
@@ -54,6 +146,7 @@ impl PlayerTeam {
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
+            id: NEXT_TEAM_ID.fetch_add(1, Ordering::Relaxed),
             display_name: TextComponent::plain(name.clone()),
             name,
             players: BTreeSet::new(),
@@ -82,6 +175,20 @@ impl PlayerTeam {
                 self.death_message_visibility = visibility;
             }
             TeamProperty::CollisionRule(rule) => self.collision_rule = rule,
+        }
+    }
+
+    /// The settings entity checks read, see [`TeamRules`].
+    #[must_use]
+    pub const fn rules(&self) -> TeamRules {
+        TeamRules {
+            id: self.id,
+            allow_friendly_fire: self.allow_friendly_fire,
+            see_friendly_invisibles: self.see_friendly_invisibles,
+            name_tag_visibility: self.name_tag_visibility,
+            death_message_visibility: self.death_message_visibility,
+            color: self.color,
+            collision_rule: self.collision_rule,
         }
     }
 

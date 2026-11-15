@@ -223,8 +223,8 @@ pub trait AbstractCubeMob: AgeableMob {
 
     /// Vanilla `dealDamage`: contact damage against a player or iron golem.
     fn deal_damage(&self, world: &World, attacker: &SharedEntity, target: &dyn LivingEntity) {
-        // TODO: vanilla also checks `doTeamsAllowDamage` once teams carry friendly fire.
         if !LivingEntity::is_alive(self)
+            || !self.do_teams_allow_damage(target.as_entity_event_source())
             || !self.is_within_melee_attack_range(target)
             || !self.has_line_of_sight(target.as_entity_event_source())
         {
