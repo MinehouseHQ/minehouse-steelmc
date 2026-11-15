@@ -11,7 +11,7 @@ use steel_registry::{
     recipe::{SmithingRecipe, SmithingRecipeInput, vanilla_recipe_types},
     trim_pattern::TrimPatternRef,
 };
-use steel_utils::{BlockPos, locks::Shared};
+use steel_utils::{BlockPos, Identifier, locks::Shared};
 
 use crate::{
     inventory::{
@@ -36,20 +36,31 @@ pub fn assemble_smithing(
     base: &ItemStack,
     addition: &ItemStack,
 ) -> ItemStack {
+    assemble_smithing_with_recipe(template, base, addition).0
+}
+
+/// [`assemble_smithing`] with the matched recipe, which vanilla records as used.
+#[must_use]
+pub fn assemble_smithing_with_recipe(
+    template: &ItemStack,
+    base: &ItemStack,
+    addition: &ItemStack,
+) -> (ItemStack, Option<Identifier>) {
     let input = SmithingRecipeInput::new(template.clone(), base.clone(), addition.clone());
     let Some(recipe) = REGISTRY
         .recipes
         .find_match(&vanilla_recipe_types::SMITHING, &input)
     else {
-        return ItemStack::empty();
+        return (ItemStack::empty(), None);
     };
-    match recipe.data() {
+    let result = match recipe.data() {
         // Vanilla `TransmuteRecipe.createWithOriginalComponents`.
         SmithingRecipe::Transform(recipe) => recipe
             .result
             .apply(recipe.result.count(), input.base.components_patch()),
         SmithingRecipe::Trim(recipe) => apply_trim(&input.base, &input.addition, recipe.pattern),
-    }
+    };
+    (result, Some(recipe.key().clone()))
 }
 
 /// Vanilla `SmithingTrimRecipe.applyTrim`.
@@ -96,6 +107,27 @@ impl SmithingResultHandler {
     }
 }
 
+impl SmithingResultHandler {
+    /// Vanilla `resultSlots.awardUsedRecipes(player, getRelevantItems())`, with the
+    /// template, base and addition as the used items, run with the containers unlocked.
+    fn award_used_recipe(&self, guard: &mut ContainerLockGuard, player: &Player) {
+        let Some(items) = guard
+            .get(ContainerId::from_arc(&self.input_container))
+            .map(|input| {
+                [TEMPLATE_SLOT, BASE_SLOT, ADDITIONAL_SLOT].map(|slot| input.get_item(slot).clone())
+            })
+        else {
+            return;
+        };
+        let recipe = guard
+            .get_typed_mut::<ResultContainer>(ContainerId::from_arc(&self.result_container))
+            .and_then(ResultContainer::take_recipe_to_award);
+        if let Some(recipe) = recipe {
+            guard.run_unlocked(|| player.award_used_recipe(recipe, &items));
+        }
+    }
+}
+
 impl ResultHandler for SmithingResultHandler {
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result_container))
@@ -111,26 +143,28 @@ impl ResultHandler for SmithingResultHandler {
             log::warn!("input container not locked while creating the smithing result");
             return;
         };
-        let result = assemble_smithing(
+        let (result, recipe) = assemble_smithing_with_recipe(
             input.get_item(TEMPLATE_SLOT),
             input.get_item(BASE_SLOT),
             input.get_item(ADDITIONAL_SLOT),
         );
-        let Some(result_container) = guard.get_mut(ContainerId::from_arc(&self.result_container))
+        let Some(result_container) =
+            guard.get_typed_mut::<ResultContainer>(ContainerId::from_arc(&self.result_container))
         else {
             log::warn!("result container not locked while creating the smithing result");
             return;
         };
+        result_container.set_recipe_used(recipe);
         result_container.set_item(0, result);
     }
 
     /// Vanilla `SmithingMenu.onTake`.
-    // TODO: Award the used recipe once player recipe books exist.
     fn on_result_taken(
         &self,
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) -> Option<ItemStack> {
+        self.award_used_recipe(guard, player);
         {
             let Some(input) = guard.get_mut(ContainerId::from_arc(&self.input_container)) else {
                 log::warn!("input container not locked while taking the smithing result");

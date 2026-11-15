@@ -13,7 +13,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, FrontA
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{level_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, Identifier, WorldAabb, translations};
 use text_components::TextComponent;
 
 use crate::behavior::ITEM_BEHAVIORS;
@@ -27,6 +27,7 @@ use crate::block_entity::entities::{
     CRAFTER_GRID_SIZE, CrafterBlockEntity, CrafterContainer, HopperBlockEntity, add_item,
 };
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker, SharedBlockEntity};
+use crate::entity::Entity as _;
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::crafter;
 use crate::inventory::recipe_manager::{
@@ -43,6 +44,8 @@ const CRAFTING_TICK_DELAY: i32 = 4;
 const SPAWN_SPEED: f64 = 6.0;
 /// How far in front of the crafter's center a crafted item appears.
 const SPAWN_OFFSET: f64 = 0.7;
+/// Side of the box around the crafter whose players get `crafter_recipe_crafted`.
+const CRAFTER_TRIGGER_BOX: f64 = 17.0;
 
 /// Vanilla `CrafterBlock`.
 #[block_behavior]
@@ -94,11 +97,15 @@ impl CrafterBlock {
         ITEM_BEHAVIORS
             .get_behavior(result.item())
             .on_crafted_post_process(&mut result, world);
-        Self::dispense_item(world, pos, state, &block_entity, result);
+        let crafted_recipe = CraftedRecipe {
+            recipe: recipe.key(),
+            items: crafter.items(),
+        };
+        Self::dispense_item(world, pos, state, &block_entity, result, &crafted_recipe);
 
         for remainder in recipe_remainders(recipe, &input) {
             if !remainder.is_empty() {
-                Self::dispense_item(world, pos, state, &block_entity, remainder);
+                Self::dispense_item(world, pos, state, &block_entity, remainder, &crafted_recipe);
             }
         }
 
@@ -113,6 +120,7 @@ impl CrafterBlock {
         state: BlockStateId,
         block_entity: &SharedBlockEntity,
         result: ItemStack,
+        crafted: &CraftedRecipe,
     ) {
         let direction = front(state);
         let mut remaining = result.clone();
@@ -133,8 +141,7 @@ impl CrafterBlock {
             z + f64::from(step_z) * SPAWN_OFFSET,
         );
         spawn_item(world, remaining, SPAWN_SPEED, direction, spawn_at);
-        // TODO(advancements): trigger CRAFTER_RECIPE_CRAFTED for players within
-        // a 17-block box once that trigger exists.
+        crafted.trigger_nearby(world, DVec3::new(x, y, z));
         world.level_event(level_events::SOUND_CRAFTER_CRAFT, pos, 0, None);
         world.level_event(
             level_events::PARTICLES_SHOOT_WHITE_SMOKE,
@@ -392,6 +399,36 @@ impl BlockBehavior for CrafterBlock {
                     .map(CrafterBlockEntity::redstone_signal)
             })
             .unwrap_or(0)
+    }
+}
+
+/// The recipe a crafter crafted and the grid it used, for
+/// `crafter_recipe_crafted`.
+struct CraftedRecipe {
+    recipe: &'static Identifier,
+    items: Vec<ItemStack>,
+}
+
+impl CraftedRecipe {
+    /// Vanilla `CRAFTER_RECIPE_CRAFTED.trigger` for every non-spectator player in
+    /// the 17-block box around the crafter.
+    fn trigger_nearby(&self, world: &World, center: DVec3) {
+        let area = WorldAabb::of_size(
+            center,
+            CRAFTER_TRIGGER_BOX,
+            CRAFTER_TRIGGER_BOX,
+            CRAFTER_TRIGGER_BOX,
+        );
+        let mut players = Vec::new();
+        world.players.iter_players(|_, player| {
+            if !player.is_spectator() && player.bounding_box().intersects(area) {
+                players.push(Arc::clone(player));
+            }
+            true
+        });
+        for player in players {
+            player.trigger_crafter_recipe_crafted(self.recipe, &self.items);
+        }
     }
 }
 

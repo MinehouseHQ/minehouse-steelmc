@@ -24,22 +24,8 @@ use steel_registry::{
 use crate::inventory::container::CraftingContainer;
 use crate::world::World;
 
-use super::container::Container;
-
 /// Typed reference to one registered crafting recipe.
 pub type CraftingRecipeRef = TypedRecipeRef<CraftingRecipe, CraftingInput>;
-
-/// Updates a result container from the first matching crafting recipe.
-pub fn slot_changed_crafting_grid<R: Container>(
-    crafting: &CraftingContainer,
-    world: &World,
-    result: &mut R,
-) {
-    result.set_item(
-        0,
-        assemble_for_container(crafting, world).unwrap_or_else(ItemStack::empty),
-    );
-}
 
 /// Vanilla `CraftingContainer.asPositionedCraftInput`, with the saved data of every filled map
 /// in the grid attached the way vanilla recipes read it through `Level.getMapData`.

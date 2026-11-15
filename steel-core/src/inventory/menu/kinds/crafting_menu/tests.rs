@@ -222,3 +222,69 @@ fn maps_at_the_widest_zoom_do_not_extend() {
     let map = create_map(world, 0, 0, 4, true, false);
     assert!(extend_map_in_grid(&mut menu, &player, map).is_empty());
 }
+
+/// Puts one oak log in the grid by clicking it in and returns the offered result.
+fn craft_planks(menu: &mut Menu, player: &Arc<Player>) -> ItemStack {
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::OAK_LOG);
+    menu.clicked(
+        Click::Pickup {
+            slot: 1,
+            button: MouseButton::Left,
+        },
+        player,
+    );
+    let Some(kind) = menu.kind().downcast_ref::<CraftingKind>() else {
+        panic!("crafting builder should create a crafting menu");
+    };
+    menu.behavior()
+        .lock_all_containers()
+        .get(kind.handler.result_id())
+        .expect("result container is registered with the menu")
+        .get_item(0)
+        .clone()
+}
+
+#[test]
+fn taking_a_crafted_result_unlocks_its_recipe_and_limited_crafting_needs_it() {
+    use steel_registry::vanilla_game_rules::LIMITED_CRAFTING;
+    use steel_utils::Identifier;
+
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("crafting_menu_recipe_unlock");
+    let world = &world_fixture.world;
+    let pos = BlockPos::new(0, 64, 0);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::CRAFTING_TABLE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
+    player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
+    let planks = Identifier::vanilla_static("oak_planks");
+
+    // With limitedCrafting on, a locked recipe shows nothing.
+    assert!(world.set_game_rule(&LIMITED_CRAFTING, true));
+    let mut menu = crafting(Arc::clone(&player.inventory), 1, pos);
+    assert!(craft_planks(&mut menu, &player).is_empty());
+
+    // Unlocked, it crafts; taking the result keeps it unlocked.
+    assert!(world.set_game_rule(&LIMITED_CRAFTING, false));
+    let mut menu = crafting(Arc::clone(&player.inventory), 2, pos);
+    assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
+    assert!(!player.knows_recipe(&planks));
+    menu.clicked(
+        Click::Pickup {
+            slot: 0,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    assert!(menu.behavior().carried().is(&vanilla_items::OAK_PLANKS));
+    assert!(player.knows_recipe(&planks));
+
+    assert!(world.set_game_rule(&LIMITED_CRAFTING, true));
+    let mut menu = crafting(Arc::clone(&player.inventory), 3, pos);
+    assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
+}

@@ -545,6 +545,53 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn taking_smelted_items_unlocks_the_recipe() {
+        use steel_utils::ChunkPos;
+
+        use crate::entity::Entity as _;
+        use crate::inventory::click::{Click, MouseButton};
+        use crate::inventory::menu::kinds::furnace_menu;
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("furnace_recipe_unlock");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Smelter", 1).build();
+        player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
+
+        let mut furnace = FurnaceContainer::new(FurnaceKind::Furnace);
+        furnace.set_item(SLOT_INPUT, ItemStack::new(&vanilla_items::IRON_ORE));
+        furnace.set_item(SLOT_FUEL, ItemStack::new(&vanilla_items::COAL));
+        for _ in 0..200 {
+            furnace.tick();
+        }
+        let recipe = furnace
+            .recipes_used
+            .keys()
+            .next()
+            .cloned()
+            .expect("the furnace remembers the smelted recipe");
+        assert!(!player.knows_recipe(&recipe));
+
+        let mut menu = furnace_menu(
+            Arc::clone(&player.inventory),
+            1,
+            ContainerRef::from(furnace.into_shared()),
+            FurnaceKind::Furnace,
+        );
+        menu.clicked(
+            Click::Pickup {
+                slot: SLOT_RESULT,
+                button: MouseButton::Left,
+            },
+            &player,
+        );
+        assert!(menu.behavior().carried().is(&vanilla_items::IRON_INGOT));
+        assert!(player.knows_recipe(&recipe));
+    }
+
     fn cook_iron(kind: FurnaceKind, expected_ticks: usize, expected_fuel_time: i32) {
         init_vanilla_registry();
         let mut furnace = FurnaceContainer::new(kind);

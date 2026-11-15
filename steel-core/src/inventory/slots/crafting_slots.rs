@@ -1,11 +1,13 @@
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
+use steel_registry::REGISTRY;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::Shared;
 
 use crate::behavior::on_crafted_by;
 use crate::inventory::container::{CraftingContainer, ResultContainer};
+use crate::inventory::recipe_crafting_holder::may_use_recipe;
 use crate::{
     inventory::{
         container::Container,
@@ -55,6 +57,23 @@ impl CraftingHandler {
     pub fn result_id(&self) -> ContainerId {
         ContainerId::from_arc(&self.result_container)
     }
+
+    /// Vanilla `ResultSlot.checkTakeAchievements`' recipe award, with the grid as the
+    /// used items. It reaches the player, so it runs with the containers unlocked.
+    fn award_used_recipe(&self, guard: &mut ContainerLockGuard, player: &Player) {
+        let items = guard
+            .get_typed::<CraftingContainer>(self.crafting_id())
+            .expect("crafting container not locked")
+            .items()
+            .to_vec();
+        let recipe = guard
+            .get_typed_mut::<ResultContainer>(self.result_id())
+            .expect("result container not locked")
+            .take_recipe_to_award();
+        if let Some(recipe) = recipe {
+            guard.run_unlocked(|| player.award_used_recipe(recipe, &items));
+        }
+    }
 }
 
 impl ResultHandler for CraftingHandler {
@@ -66,18 +85,30 @@ impl ResultHandler for CraftingHandler {
         vec![ContainerRef::from(Arc::clone(&self.crafting_container))]
     }
 
+    /// Vanilla `CraftingMenu.slotChangedCraftingGrid`.
     fn update_result(&self, guard: &mut ContainerLockGuard, player: &Player) {
-        // TODO: Enforce limited crafting and retain the recipe once player recipe books exist.
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())
             .expect("crafting container not locked");
+        let positioned = recipe_manager::positioned_input(crafting, &player.get_world());
 
-        let result_stack = recipe_manager::assemble_for_container(crafting, &player.get_world())
-            .unwrap_or_else(ItemStack::empty);
+        let mut result_stack = ItemStack::empty();
+        let mut recipe_used = None;
+        if let Some(recipe) = recipe_manager::find_recipe(&positioned.input)
+            && let Some(untyped) = REGISTRY.recipes.by_key(recipe.key())
+            && may_use_recipe(player, untyped)
+        {
+            recipe_used = Some(recipe.key().clone());
+            result_stack = recipe_manager::assemble_recipe(recipe, &positioned.input);
+        }
 
         let result_container = guard
             .get_typed_mut::<ResultContainer>(self.result_id())
             .expect("result container not locked");
+        // Vanilla keeps the last used recipe when nothing matches or it may not be used.
+        if recipe_used.is_some() {
+            result_container.set_recipe_used(recipe_used);
+        }
         result_container.set_item(0, result_stack);
         result_container.set_changed();
     }
@@ -87,7 +118,7 @@ impl ResultHandler for CraftingHandler {
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Unlock the recipe and trigger RECIPE_CRAFTED once their foundations exist.
+        self.award_used_recipe(guard, player);
         let mut remainder_overflow: Vec<ItemStack> = Vec::new();
 
         let remainders_and_positioned = {
