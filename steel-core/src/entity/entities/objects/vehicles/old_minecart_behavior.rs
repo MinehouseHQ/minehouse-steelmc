@@ -15,7 +15,7 @@ use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::BlockPos;
 
 use super::abstract_minecart::{
-    AbstractMinecart, come_off_track, exits, follows, is_rail, passes_through,
+    AbstractMinecart, come_off_track, drive, exits, follows, is_rail, passes_through,
 };
 use crate::entity::selector::EntitySelector;
 use crate::entity::{Entity, SharedEntity};
@@ -42,7 +42,9 @@ pub(super) fn tick<M: AbstractMinecart>(minecart: &Arc<M>) {
     let on_rails = is_rail(state);
     minecart.set_on_rails(on_rails);
     if on_rails {
-        move_along_track(minecart);
+        if !drive(&**minecart, &world, &mut || move_along_track(minecart)) {
+            move_along_track(minecart);
+        }
         if state.get_block() == &vanilla_blocks::ACTIVATOR_RAIL {
             minecart.activate_minecart(
                 &world,

@@ -382,7 +382,17 @@ through mobs and players. Coupled carts roll like ridden ones. The couplings are
 the Fabric `CartLinks`). `steel-core` asks the observer for all of this: `interact`,
 `passes_through`, `follows`, `rolls_freely` and `removed`.
 
-Not ported yet: the faster speed on straights, a train with a player knocking empty carts
+`content/speed.rs` is the speed (the Fabric `MinecartSpeed`). A cart with a player, or a
+train with a player in any of its carts, goes up to 80 blocks a second on straight flat
+track; an empty cart is the vanilla one. The server moves such a cart several times a tick,
+each time less than a block, so it reads every rail it passes: it turns in curves, climbs
+slopes, runs activator rails, stops at its station and is followed by the rail graph. On
+straight flat track it does not lose speed to rolling, so one stretch of powered rails
+carries it a long way, and every powered rail adds 6 blocks a second. It stops moving this
+tick where the chunks ahead are not ticking. `steel-core` asks the observer for `max_speed`
+and gives it `drive`, the move along the track to make as many times as it wants.
+
+Not ported yet: a train with a player knocking empty carts
 off the line, the station map in the cart (`/metro` stands in for it), transfers, and the
 lines on the web map.
 

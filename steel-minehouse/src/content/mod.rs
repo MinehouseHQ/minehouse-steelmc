@@ -16,6 +16,7 @@ mod papirosa;
 mod rail_graph;
 mod recipes;
 mod ride;
+mod speed;
 mod stations;
 mod trains;
 
