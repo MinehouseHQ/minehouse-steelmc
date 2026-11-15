@@ -12,6 +12,7 @@ steel-utils.workspace = true
 steel-protocol.workspace = true
 steel-registry.workspace = true
 steel-crypto.workspace = true
+glam.workspace = true
 
 tokio = { workspace = true, features = ["time", "sync", "macros", "net"] }
 tokio-util.workspace = true

@@ -26,6 +26,7 @@ pub enum PathType {
     OnTopOfPowderSnow,
     Fence,
     Lava,
+    /// Swimming.
     Water,
     WaterBorder,
     Rail,
@@ -49,8 +50,11 @@ pub enum PathType {
 /// Which medium a path is being computed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathComputationType {
+    /// Walking.
     Land,
+    /// Swimming.
     Water,
+    /// Flying.
     Air,
 }
 

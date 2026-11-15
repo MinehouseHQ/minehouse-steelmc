@@ -1,8 +1,9 @@
 use super::{
-    Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
-    World, adventure_mode, wrap_degrees,
+    Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, InteractionHand, InteractionResult,
+    InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext, World, adventure_mode,
+    wrap_degrees,
 };
+use crate::behavior::use_behavior_of;
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{BlockPos, BlockStateId};
@@ -68,7 +69,6 @@ pub fn use_item_on(
 
     // Get behavior registries
     let block_behaviors = &*BLOCK_BEHAVIORS;
-    let item_behaviors = &*ITEM_BEHAVIORS;
 
     // Try block interaction first (if not suppressed).
     // No inventory lock held — block behaviors may need inventory access (e.g. opening chests).
@@ -133,7 +133,7 @@ pub fn use_item_on(
             world,
             Arc::clone(&player.inventory),
         );
-        let item_behavior = item_behaviors.get_behavior(item_ref);
+        let item_behavior = use_behavior_of(&stack_before_use);
         let result = item_behavior.use_on(&mut context);
 
         if result.should_apply_item_use_side_effects() {
@@ -186,8 +186,8 @@ pub fn use_item(
     }
 
     let inventory_access = InventoryAccess::new(Arc::clone(&player.inventory), hand);
-    let (is_empty, item_ref, stack_before_use) =
-        inventory_access.with_item(|item| (item.is_empty(), item.item, item.clone()));
+    let (is_empty, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.clone()));
 
     if !is_empty {
         if player.is_item_on_cooldown(&stack_before_use) {
@@ -201,9 +201,7 @@ pub fn use_item(
             Arc::clone(&player.inventory),
         );
 
-        // Get behavior registries
-        let item_behaviors = &*ITEM_BEHAVIORS;
-        let item_behavior = item_behaviors.get_behavior(item_ref);
+        let item_behavior = use_behavior_of(&stack_before_use);
         let is_instantly_used =
             item_behavior.get_use_duration(&stack_before_use, player.as_ref()) <= 0;
 

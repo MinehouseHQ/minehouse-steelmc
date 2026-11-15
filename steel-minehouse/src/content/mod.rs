@@ -5,13 +5,18 @@
 //! a lore, an item model of the server resource pack, and its id in `custom_data`. The id and
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
+mod blocks;
+mod cloud;
 mod commands;
 mod recipes;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
 use simdnbt::owned::NbtCompound;
-use steel_core::command::{CommandRegistrationError, CommandRegistry};
+use steel_core::{
+    behavior::{ItemBehavior, extend_block_behaviors, set_item_behavior_override},
+    command::{CommandRegistrationError, CommandRegistry},
+};
 use steel_registry::{
     data_components::{
         CustomData,
@@ -58,8 +63,25 @@ pub static MAGNIFIER: CustomItem = CustomItem {
     max_stack: 1,
 };
 
+/// «Облачко»: the cloud block in a hand.
+pub static CLOUD: CustomItem = CustomItem {
+    id: "minehouse-tweaks:cloud",
+    base: &vanilla_items::WHITE_WOOL,
+    name: "Облачко",
+    lore: &[],
+    max_stack: 64,
+};
+
 /// Every item of ours.
-pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER];
+pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD];
+
+/// What using `stack` does when it is an item of ours that does not behave as its vanilla
+/// item: clouds are white wool to the client, and must not be placed as wool.
+fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
+    CLOUD
+        .is(stack)
+        .then_some(&cloud::CLOUD_ITEM as &dyn ItemBehavior)
+}
 
 impl CustomItem {
     /// The part of the id after the namespace: `magnifier`.
@@ -73,7 +95,9 @@ impl CustomItem {
     pub fn stack(&self, count: i32) -> ItemStack {
         let mut stack = ItemStack::with_count(LazyLock::force(self.base), count);
         stack.set(ITEM_NAME, TextComponent::plain(self.name));
-        if let Ok(lore) = ItemLore::new(self.lore.iter().map(|line| lore_line(line)).collect()) {
+        if !self.lore.is_empty()
+            && let Ok(lore) = ItemLore::new(self.lore.iter().map(|line| lore_line(line)).collect())
+        {
             stack.set(LORE, lore);
         }
         if let Ok(model) = Identifier::from_str(self.id) {
@@ -121,9 +145,14 @@ pub fn by_id(id: &str) -> Option<&'static CustomItem> {
         .find(|item| item.id == id || item.short_id() == id)
 }
 
-/// Registers `/mhgive`, and our recipes if the registry is not built yet (it is not when the
-/// server starts; it may be in a test that built it first).
+/// Registers `/mhgive`, and our blocks and recipes if the registry is not built yet (it is
+/// not when the server starts; it may be in a test that built it first).
 pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistrationError> {
+    if !extend_registry(blocks::register) || !extend_block_behaviors(blocks::register_behaviors) {
+        log::warn!("MineHouse blocks: the registry is already built, our blocks are off");
+    } else if !set_item_behavior_override(use_behavior) {
+        log::warn!("MineHouse blocks: another extension decides what our items do when used");
+    }
     if !extend_registry(recipes::register) {
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
     }

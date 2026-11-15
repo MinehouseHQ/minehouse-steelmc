@@ -11,6 +11,7 @@ reproducible: the same assets give the same bytes, so the printed SHA-1 only
 changes when the pack does.
 """
 import hashlib
+import itertools
 import json
 import sys
 import zipfile
@@ -72,6 +73,34 @@ def collect(landing):
     return files, conflicts
 
 
+def client_blocks(files):
+    """Draws our blocks over the vanilla states the server sends for them.
+
+    client_blocks.json, next to this script, says which note block state is whose; the
+    server reads the same file. Every other note block state keeps the vanilla model: a
+    blockstate file has to name them all.
+    """
+    table = json.loads((Path(__file__).parent / "client_blocks.json").read_text())
+    properties = table["note_block_properties"]
+    names = sorted(properties)
+    models = {}
+    for slot in table["note_block"]:
+        key = tuple(slot["state"][name] for name in names)
+        if key in models or set(slot["state"]) != set(names):
+            sys.exit(f"client_blocks.json: bad or repeated state for {slot['block']}")
+        models[key] = slot["model"]
+    variants = {}
+    for key in itertools.product(*(properties[name] for name in names)):
+        state = ",".join(f"{name}={value}" for name, value in zip(names, key))
+        variants[state] = {"model": models.pop(key, "minecraft:block/note_block")}
+    if models:
+        sys.exit(f"client_blocks.json: no such note block state: {sorted(models)}")
+    path = "minecraft/blockstates/note_block.json"
+    if path in files:
+        sys.exit(f"{path}: a mod ships its own, it would be replaced")
+    files[path] = (json.dumps({"variants": variants}, separators=(",", ":")) + "\n").encode()
+
+
 def resource(reference, kind, extension):
     """The pack path of a `namespace:path` reference, e.g. a model or a texture."""
     namespace, _, path = reference.rpartition(":")
@@ -116,6 +145,10 @@ def check(files):
             for key, value in references(content):
                 if key == "model" and ":" in value:
                     need(path, value, "models", ".json")
+        elif parts[1] == "blockstates":
+            for key, value in references(content):
+                if key == "model":
+                    need(path, value, "models", ".json")
         elif parts[1] == "models":
             if isinstance(content.get("parent"), str):
                 need(path, content["parent"], "models", ".json")
@@ -152,6 +185,7 @@ def main():
         sys.exit(__doc__)
     landing, out = Path(sys.argv[1]), Path(sys.argv[2])
     files, conflicts = collect(landing)
+    client_blocks(files)
     problems = conflicts + check(files)
     for problem in problems:
         print(f"error: {problem}", file=sys.stderr)

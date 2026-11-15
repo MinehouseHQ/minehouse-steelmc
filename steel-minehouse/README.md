@@ -305,4 +305,24 @@ sha1 = "..."
 required = true
 ```
 
-Block states of our own blocks are not in the pack yet.
+## Our blocks
+
+A block of ours is a real block of the registry under the id the Fabric mod gave it
+(`minehouse-tweaks:cloud`), so a world saved by the Fabric server loads as it is. A vanilla
+client does not have the block: the server sends it a vanilla state in its place, and the
+pack draws that state with our model.
+
+Full blocks borrow note block states. A client draws every note block alike, so a real
+note block always goes out as its default state, and each of the other 1349 states is free
+for a block of ours. `pack/client_blocks.json` says which state is whose. The server and
+`build_pack.py` both read it: the script writes `blockstates/note_block.json` from it, and
+a test checks that the file lists the note block properties of the game.
+
+To add a full block: define the `Block` and its behavior in `src/content/`, register both
+in `content/blocks.rs`, and give it a state in `pack/client_blocks.json`.
+
+An item of ours is a vanilla item with components, so using it would run the behavior of
+the vanilla item (clouds would be placed as white wool). `content::use_behavior` names the
+items that behave differently.
+
+The blocks so far: the cloud («Облачко»), with its recipe.

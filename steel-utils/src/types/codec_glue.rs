@@ -59,6 +59,8 @@ pub struct BlockStateId(pub u16);
 struct ClientBlockStates {
     /// The state shown for each server state, indexed by server state id.
     shown: Box<[u16]>,
+    /// The state whose break each server state is shown as, indexed the same way.
+    broken: Box<[u16]>,
     /// How many block states the client's game has.
     count: u16,
 }
@@ -68,10 +70,17 @@ static CLIENT_BLOCK_STATES: OnceLock<ClientBlockStates> = OnceLock::new();
 /// Makes every block state go to clients as `shown[state]`, for a server whose block
 /// registry is larger than the client's. `count` is the number of states the client has.
 ///
+/// `broken[state]` is the state the client plays the break of `state` as (its sound and
+/// particles), which may differ from the one it draws.
+///
 /// Returns `false` if the table was already set; it can be set once.
-pub fn set_client_block_states(shown: Box<[u16]>, count: u16) -> bool {
+pub fn set_client_block_states(shown: Box<[u16]>, broken: Box<[u16]>, count: u16) -> bool {
     CLIENT_BLOCK_STATES
-        .set(ClientBlockStates { shown, count })
+        .set(ClientBlockStates {
+            shown,
+            broken,
+            count,
+        })
         .is_ok()
 }
 
@@ -90,6 +99,16 @@ impl BlockStateId {
             .get()
             .and_then(|states| states.shown.get(usize::from(self.0)))
             .map_or(self, |shown| Self(*shown))
+    }
+
+    /// The state a client is told was broken when this one is, see
+    /// [`set_client_block_states`].
+    #[must_use]
+    pub fn to_client_break(self) -> Self {
+        CLIENT_BLOCK_STATES
+            .get()
+            .and_then(|states| states.broken.get(usize::from(self.0)))
+            .map_or(self, |broken| Self(*broken))
     }
 }
 
