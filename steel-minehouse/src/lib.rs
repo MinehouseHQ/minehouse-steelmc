@@ -20,6 +20,7 @@ use steel_core::{
 use text_components::TextComponent;
 
 pub mod auth;
+pub mod bank;
 pub mod blocklog;
 pub mod chat;
 pub mod config;
@@ -114,6 +115,8 @@ impl Minehouse {
             blocklog.start(server);
         }
         let voice = voice::Voice::start(server);
+        // Lives in a static: the ATM and the terminals find it from block callbacks.
+        let _bank = bank::Bank::start(server);
         let auth = setup.auth.map(|auth| Auth::start(server, auth));
         // One gate serves both: maintenance refuses first, then the login check asks the site.
         let gate = MinehouseGate {
