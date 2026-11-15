@@ -178,10 +178,14 @@ impl MinecartObserver for Ride {
             state.last_step = cart.position() - start;
         }
         after_move(state, cart, world, rail);
+        let step = state.last_step;
         if now % FORGET_AFTER == 0 {
             carts.retain(|_, state| (now - state.seen).abs() < FORGET_AFTER);
         }
         drop(carts_guard);
+        if trains::carries_player(cart) {
+            trains::smash_empty(cart, world, step);
+        }
         station_menu::tick(cart, world);
     }
 
