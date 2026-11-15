@@ -478,6 +478,16 @@ by a job of the server tick from `Player::idle_time`. A marked player who is not
 does not count towards `playersSleepingPercentage` (`steel_core::world::SleepObserver`).
 `MINEHOUSE_AFK_SECONDS` shortens the wait for tests on a local server.
 
+Names over players' heads (`content/nametags.rs`, the Fabric `Nametags`): each player
+chooses whether they see them. A player who has not chosen gets a vanilla dialog 40 ticks
+after joining; `/nametags` toggles, `/nametags show|hide` sets, `/nametags menu` opens the
+dialog again. For a player who hides names every team packet goes out with
+`nametagVisibility=never` (`steel_core::scoreboard::TeamPacketObserver`; the scoreboard
+itself does not change), and players in no team are put, on that client only, into the
+private team `!minehouse_names`. The choices are in `nametags.properties` of the data
+directory, in the format of the Fabric `minehouse-nametags.properties`. The dialog needs
+the play `CShowDialog` and the click of its buttons, `PlayerInputObserver::custom_click`.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

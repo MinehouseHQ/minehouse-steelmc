@@ -35,7 +35,7 @@ use crate::{
 pub use criteria::{CustomCriteria, DisplaySlot, ObjectiveCriteria, TeamColor};
 use persistence::PersistentScoreboard;
 use steel_utils::saved_data::names as saved_data_names;
-pub use sync::ScoreboardPacket;
+pub use sync::{ScoreboardPacket, TeamPacketObserver, set_team_packet_observer};
 use sync::{
     Viewers, display_packet, objective_packet, team_add_or_modify_packet, team_player_packet,
     team_remove_packet,
@@ -418,6 +418,15 @@ impl Scoreboard {
     pub fn connect_player(&self, player: &Arc<Player>) {
         let packets = self.state.read().entire_scoreboard_packets();
         self.viewers.lock().add(player);
+        for packet in &packets {
+            packet.send_to(player);
+        }
+    }
+
+    /// Sends a player every team's settings again, through the team packet observer.
+    /// For when what that player should see of teams has changed.
+    pub fn resend_team_settings(&self, player: &Player) {
+        let packets = self.state.read().team_settings_packets();
         for packet in &packets {
             packet.send_to(player);
         }
