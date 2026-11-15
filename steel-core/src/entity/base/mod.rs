@@ -1167,6 +1167,24 @@ impl EntityBase {
         self.set_position_local_unchecked(pos);
     }
 
+    /// Vanilla `setPosRaw` while loading saved data: a local write before
+    /// the entity joins a world, and a move through the world's entity
+    /// manager once it is live, as `/data merge entity` loads into it.
+    ///
+    /// Vanilla has no rejected moves; Steel's manager can refuse one, for
+    /// example into an unloaded chunk, and then the entity stays put.
+    pub(crate) fn set_loaded_position(&self, pos: DVec3) {
+        let callback = self.level_callback.lock().clone();
+        if callback.allows_local_position_update() {
+            self.set_position_local_unchecked(pos);
+        } else if let Err(error) = self.try_set_position(pos) {
+            log::warn!(
+                "entity {} kept its position instead of loading {pos:?}: {error}",
+                self.id
+            );
+        }
+    }
+
     fn set_position_local_unchecked(&self, pos: DVec3) {
         require_finite_position(pos, "position");
         {
