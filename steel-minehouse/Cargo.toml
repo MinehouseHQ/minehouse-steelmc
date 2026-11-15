@@ -11,8 +11,9 @@ steel-core.workspace = true
 steel-utils.workspace = true
 steel-protocol.workspace = true
 steel-registry.workspace = true
+steel-crypto.workspace = true
 
-tokio = { workspace = true, features = ["time", "sync", "macros"] }
+tokio = { workspace = true, features = ["time", "sync", "macros", "net"] }
 tokio-util.workspace = true
 
 serde.workspace = true
@@ -23,6 +24,7 @@ reqwest.workspace = true
 sha2.workspace = true
 hmac = "0.13.0"
 hex.workspace = true
+rsa.workspace = true
 rand.workspace = true
 uuid.workspace = true
 chrono.workspace = true

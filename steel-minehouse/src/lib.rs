@@ -25,6 +25,7 @@ pub mod moderation;
 pub mod roles;
 pub mod site;
 pub mod tab;
+pub mod voice;
 
 use auth::{Auth, AuthSetup};
 use chat::Chat;
@@ -49,6 +50,7 @@ pub struct Minehouse {
     moderation: Option<Arc<Moderation>>,
     downtime: Option<Arc<Downtime>>,
     roles: Option<Roles>,
+    voice: Option<Arc<voice::Voice>>,
 }
 
 impl Minehouse {
@@ -92,6 +94,7 @@ impl Minehouse {
             chat.start(server);
         }
         tab::Tab::start(server);
+        let voice = voice::Voice::start(server);
         let auth = setup.auth.map(|auth| Auth::start(server, auth));
         // One gate serves both: maintenance refuses first, then the login check asks the site.
         let gate = MinehouseGate {
@@ -107,6 +110,7 @@ impl Minehouse {
             moderation: setup.moderation,
             downtime: setup.downtime,
             roles,
+            voice,
         }
     }
 
@@ -120,6 +124,9 @@ impl Minehouse {
         }
         if let Some(roles) = &self.roles {
             roles.stop();
+        }
+        if let Some(voice) = &self.voice {
+            voice.stop();
         }
         if let Some(console) = &self.console {
             console.stop().await;
