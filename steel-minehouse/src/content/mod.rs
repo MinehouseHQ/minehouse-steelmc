@@ -8,6 +8,7 @@
 mod blocks;
 mod cloud;
 mod commands;
+mod metro;
 mod recipes;
 
 use std::{str::FromStr as _, sync::LazyLock};
@@ -72,15 +73,43 @@ pub static CLOUD: CustomItem = CustomItem {
     max_stack: 64,
 };
 
+/// «Станция метро»: the station block in a hand.
+pub static STATION: CustomItem = CustomItem {
+    id: "minehouse-tweaks:metro_station",
+    base: &vanilla_items::WAXED_CHISELED_COPPER,
+    name: "Станция метро",
+    lore: &[],
+    max_stack: 64,
+};
+
+/// «Стрелка метро»: the junction block in a hand.
+pub static JUNCTION: CustomItem = CustomItem {
+    id: "minehouse-tweaks:metro_junction",
+    base: &vanilla_items::WAXED_CUT_COPPER,
+    name: "Стрелка метро",
+    lore: &[],
+    max_stack: 64,
+};
+
 /// Every item of ours.
-pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD];
+pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD, &STATION, &JUNCTION];
+
+static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
+static JUNCTION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::JUNCTION_BLOCK);
 
 /// What using `stack` does when it is an item of ours that does not behave as its vanilla
 /// item: clouds are white wool to the client, and must not be placed as wool.
 fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
-    CLOUD
-        .is(stack)
-        .then_some(&cloud::CLOUD_ITEM as &dyn ItemBehavior)
+    let id = id_of(stack)?;
+    if id == CLOUD.id {
+        Some(&cloud::CLOUD_ITEM)
+    } else if id == STATION.id {
+        Some(&STATION_ITEM)
+    } else if id == JUNCTION.id {
+        Some(&JUNCTION_ITEM)
+    } else {
+        None
+    }
 }
 
 impl CustomItem {

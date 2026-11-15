@@ -319,10 +319,18 @@ for a block of ours. `pack/client_blocks.json` says which state is whose. The se
 a test checks that the file lists the note block properties of the game.
 
 To add a full block: define the `Block` and its behavior in `src/content/`, register both
-in `content/blocks.rs`, and give it a state in `pack/client_blocks.json`.
+in `content/blocks.rs`, and give it a state in `pack/client_blocks.json`. A block whose own
+states look different takes a note block state for each: the entry names the state of ours
+under `when` (a metro station has one per line). `blocks::show_full_block` then tells
+clients what to draw, and what the block breaks like: a note block crumbles like wood.
+
+A block that needs a tool is added to the vanilla tag (`mineable/pickaxe`) on the server
+only. Clients are sent the tags without our blocks, whose ids their game does not have.
 
 An item of ours is a vanilla item with components, so using it would run the behavior of
 the vanilla item (clouds would be placed as white wool). `content::use_behavior` names the
 items that behave differently.
 
-The blocks so far: the cloud («Облачко»), with its recipe.
+The blocks so far, each with its recipe: the cloud («Облачко»), the metro station («Станция
+метро») and the metro junction («Стрелка метро»). The two metro blocks are only blocks for
+now: naming a station, its line and the trains are not ported yet.
