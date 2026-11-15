@@ -7,6 +7,7 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use super::UniformInt;
+use super::utils::set_walk_and_look_target_memories;
 use crate::entity::ai::brain::behavior::OneShot;
 use crate::entity::ai::brain::memory::{MemoryModuleType, MemoryRequirement, MemoryValue};
 use crate::entity::ai::brain::memory_types::{
@@ -399,6 +400,43 @@ where
                     );
                     break;
                 }
+            }
+            true
+        },
+    )
+}
+
+/// Walks toward the position in `location_memory` until within
+/// `close_enough_dist`, aiming at a random block next to it (vanilla
+/// `GoToTargetLocation.create`).
+pub fn go_to_target_location<E: LivingEntity + ?Sized>(
+    location_memory: &'static MemoryModuleType<BlockPos>,
+    close_enough_dist: i32,
+    speed_modifier: f32,
+) -> impl BehaviorControl<E> {
+    OneShot::new(
+        vec![
+            MemoryRequirement::new(location_memory, MemoryStatus::ValuePresent),
+            MemoryRequirement::new(&ATTACK_TARGET, MemoryStatus::ValueAbsent),
+            MemoryRequirement::new(&WALK_TARGET, MemoryStatus::ValueAbsent),
+            MemoryRequirement::new(&LOOK_TARGET, MemoryStatus::Registered),
+        ],
+        move |_world: &Arc<World>, body: &E, _time: i64| {
+            let Some(memories) = body.brain_memories() else {
+                return false;
+            };
+            let Some(location) = memories.lock().get(location_memory) else {
+                return false;
+            };
+            if !location.closer_than(body.block_position(), f64::from(close_enough_dist)) {
+                let nearby =
+                    location.offset(rand::random_range(-1..=1), 0, rand::random_range(-1..=1));
+                set_walk_and_look_target_memories(
+                    body,
+                    PositionTracker::block(nearby),
+                    speed_modifier,
+                    close_enough_dist,
+                );
             }
             true
         },

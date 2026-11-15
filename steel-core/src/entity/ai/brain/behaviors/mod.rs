@@ -34,7 +34,7 @@ pub use door::{close_doors_that_i_have_opened_or_passed_through, interact_with_d
 pub use fight::{
     erase_memory_if, is_breeding, melee_attack, melee_attack_when,
     set_walk_target_from_attack_target_if_target_out_of_reach, stop_attacking_if_target_invalid,
-    stop_attacking_if_target_invalid_when,
+    stop_attacking_if_target_invalid_full, stop_attacking_if_target_invalid_when,
 };
 pub use find_land::{try_find_land, try_find_land_near_liquid, try_lay_spawn_on_fluid_near_land};
 pub use gate::{run_one, trigger_one_shuffled};
@@ -63,8 +63,8 @@ pub use stroll::{
 pub use swim::Swim;
 pub use temptation::FollowTemptation;
 pub use walk::{
-    baby_follow_adult, random_fly, random_stroll, random_swim, set_walk_target_away_from_pos,
-    set_walk_target_from_look_target, try_find_liquid,
+    baby_follow_adult, go_to_target_location, random_fly, random_stroll, random_swim,
+    set_walk_target_away_from_pos, set_walk_target_from_look_target, try_find_liquid,
 };
 
 /// An inclusive tick range sampled uniformly (vanilla `UniformInt`).

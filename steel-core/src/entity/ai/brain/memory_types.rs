@@ -482,3 +482,31 @@ pub static BREEZE_JUMP_TARGET: MemoryModuleType<BlockPos> =
     MemoryModuleType::with_codec("breeze_jump_target", block_pos_codec());
 pub static BREEZE_LEAVING_WATER: MemoryModuleType<()> =
     MemoryModuleType::with_codec("breeze_leaving_water", unit_codec());
+
+pub static NEAREST_VISIBLE_NEMESIS: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_visible_nemesis");
+pub static ROAR_TARGET: MemoryModuleType<SharedEntity> = MemoryModuleType::new("roar_target");
+pub static DISTURBANCE_LOCATION: MemoryModuleType<BlockPos> =
+    MemoryModuleType::new("disturbance_location");
+pub static RECENT_PROJECTILE: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("recent_projectile", unit_codec());
+pub static IS_SNIFFING: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("is_sniffing", unit_codec());
+pub static IS_EMERGING: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("is_emerging", unit_codec());
+pub static ROAR_SOUND_DELAY: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("roar_sound_delay", unit_codec());
+pub static DIG_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("dig_cooldown", unit_codec());
+pub static ROAR_SOUND_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("roar_sound_cooldown", unit_codec());
+pub static TOUCH_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("touch_cooldown", unit_codec());
+pub static VIBRATION_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("vibration_cooldown", unit_codec());
+pub static SONIC_BOOM_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("sonic_boom_cooldown", unit_codec());
+pub static SONIC_BOOM_SOUND_COOLDOWN: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("sonic_boom_sound_cooldown", unit_codec());
+pub static SONIC_BOOM_SOUND_DELAY: MemoryModuleType<()> =
+    MemoryModuleType::with_codec("sonic_boom_sound_delay", unit_codec());

@@ -9,6 +9,7 @@ pub use mobs::golems::{IronGolemEntity, SnowGolemEntity};
 pub use mobs::hostile::BreezeEntity;
 pub use mobs::hostile::CreakingEntity;
 pub use mobs::hostile::EndermanEntity;
+pub use mobs::hostile::WardenEntity;
 pub use mobs::hostile::{
     BlazeEntity, BoggedEntity, CaveSpiderEntity, CreeperEntity, DrownedEntity, EndermiteEntity,
     GhastEntity, GiantEntity, HuskEntity, MagmaCubeEntity, ParchedEntity, PhantomEntity,
