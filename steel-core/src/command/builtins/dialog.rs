@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use steel_protocol::packets::common::CClearDialog;
 use steel_protocol::packets::game::CShowDialog;
-use steel_registry::dialog::DialogRef;
 use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -12,8 +11,8 @@ use text_components::TextComponent;
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandSource, ElementType, ResponseTracker, SteelArgumentType, SteelCommandContext,
-        SteelCommandRuntime, argument, literal,
+        CommandDialog, CommandSource, ElementType, ResponseTracker, SteelArgumentType,
+        SteelCommandContext, SteelCommandRuntime, argument, literal,
     },
     registration::CommandRegistration,
 };
@@ -43,20 +42,26 @@ fn command() -> Builder {
         )
 }
 
-/// Vanilla `showDialog`, with `ServerPlayer.openDialog` sending the dialog by
-/// its registry id.
-fn show_dialog(context: &Context, dialog: DialogRef) -> Result<i32, CommandSyntaxError> {
+/// Vanilla `showDialog`, with `ServerPlayer.openDialog` sending the dialog's
+/// holder: a registry dialog by id, an inline one as its NBT.
+fn show_dialog(context: &Context, dialog: CommandDialog) -> Result<i32, CommandSyntaxError> {
     let players = context.players("targets")?;
-    let Some(id) = REGISTRY
-        .dialogs
-        .id_from_key(&dialog.key)
-        .and_then(|id| i32::try_from(id).ok())
-    else {
-        unreachable!("parsed dialogs come from the registry")
+    let packet = match dialog {
+        CommandDialog::Reference(dialog) => {
+            let Some(id) = REGISTRY
+                .dialogs
+                .id_from_key(&dialog.key)
+                .and_then(|id| i32::try_from(id).ok())
+            else {
+                unreachable!("parsed dialogs come from the registry")
+            };
+            CShowDialog::reference(id)
+        }
+        CommandDialog::Direct(dialog) => CShowDialog::new(dialog),
     };
     let mut tracker = ResponseTracker::default();
     for player in &players {
-        player.send_packet(CShowDialog::reference(id));
+        player.send_packet(packet.clone());
         tracker.track_one(player);
     }
     tracker.send_feedback(
