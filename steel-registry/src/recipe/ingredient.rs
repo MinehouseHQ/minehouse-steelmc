@@ -38,6 +38,29 @@ fn is_vanilla_stack(stack: &ItemStack) -> bool {
     !stack.is_empty() && extension_item_id(stack).is_none()
 }
 
+/// An item as recipe placement counts it, vanilla `ItemStack.typeHolder()`: the item and,
+/// for an item of a registry extension, the id the extension gave it. Vanilla has no
+/// extension items; keeping their id keeps an extension's item apart from the vanilla item
+/// it is made of, as [`Ingredient::test`] does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IngredientItem {
+    /// The item.
+    pub item: ItemRef,
+    /// The registry extension's id for the item, if it is one of theirs.
+    pub extension: Option<&'static str>,
+}
+
+impl IngredientItem {
+    /// The item of a non-empty `stack`.
+    #[must_use]
+    pub fn of(stack: &ItemStack) -> Self {
+        Self {
+            item: stack.item,
+            extension: extension_item_id(stack),
+        }
+    }
+}
+
 /// Represents what items can satisfy a recipe slot.
 /// Matches Java's `Ingredient` class.
 #[derive(Debug, Clone)]
@@ -72,6 +95,19 @@ impl Ingredient {
             Self::Extension { item, id } => {
                 !stack.is_empty() && *item == stack.item && extension_item_id(stack) == Some(*id)
             }
+        }
+    }
+
+    /// Vanilla `Ingredient.acceptsItem`: whether a stack of `item` satisfies this
+    /// ingredient, whatever its components.
+    #[must_use]
+    pub fn accepts_item(&self, item: IngredientItem) -> bool {
+        match self {
+            Self::Empty => false,
+            Self::Item(expected) => item.extension.is_none() && *expected == item.item,
+            Self::Tag(tag) => item.extension.is_none() && REGISTRY.items.is_in_tag(item.item, tag),
+            Self::Choice(items) => item.extension.is_none() && items.contains(&item.item),
+            Self::Extension { item: base, id } => *base == item.item && item.extension == Some(*id),
         }
     }
 

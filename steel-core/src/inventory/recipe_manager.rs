@@ -91,7 +91,13 @@ pub fn assemble_for_container(crafting: &CraftingContainer, world: &World) -> Op
 /// Interprets passive vanilla crafting data for a concrete input snapshot.
 #[must_use]
 pub fn assemble_recipe(recipe: CraftingRecipeRef, input: &CraftingInput) -> ItemStack {
-    match recipe.data() {
+    assemble_crafting(recipe.data(), input)
+}
+
+/// Vanilla `CraftingRecipe.assemble`: the result `recipe` makes from `input`.
+#[must_use]
+pub fn assemble_crafting(recipe: &CraftingRecipe, input: &CraftingInput) -> ItemStack {
+    match recipe {
         CraftingRecipe::Shaped(recipe) => recipe.result.create(),
         CraftingRecipe::Shapeless(recipe) => recipe.result.create(),
         CraftingRecipe::Transmute(recipe) => {

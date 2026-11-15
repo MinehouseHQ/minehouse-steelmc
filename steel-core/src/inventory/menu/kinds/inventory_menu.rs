@@ -15,6 +15,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::{IntoShared, Shared};
 
 use crate::inventory::container::{CraftingContainer, ResultContainer};
+use crate::inventory::place_recipe::{PostPlaceAction, RecipePlacement};
 use crate::inventory::prelude::*;
 use crate::inventory::slots::{ArmorSlot, CraftingHandler};
 use crate::player::Player;
@@ -330,6 +331,22 @@ impl MenuKind for InventoryKind {
         player: &Player,
     ) {
         self.handler.update_result(guard, player);
+    }
+
+    /// Vanilla `InventoryMenu` recomputes the result whenever a grid slot is set while
+    /// placing, without a hint; recomputing once afterwards ends the same.
+    fn handle_placement(
+        &mut self,
+        behavior: &mut MenuBehavior,
+        placement: RecipePlacement,
+        player: &Player,
+    ) -> Option<PostPlaceAction> {
+        let mut guard = behavior.lock_all_containers();
+        let action =
+            self.handler
+                .handle_placement(behavior.slots(), &mut guard, player, placement)?;
+        self.handler.update_result(&mut guard, player);
+        Some(action)
     }
 }
 

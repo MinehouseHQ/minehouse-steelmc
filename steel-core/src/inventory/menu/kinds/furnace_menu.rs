@@ -3,15 +3,21 @@
 use crate::player::player_inventory::Prediction;
 use std::array::from_fn;
 
-use steel_registry::recipe::SingleItemRecipeInput;
+use steel_registry::recipe::{
+    CookingRecipe, RecipeMatches as _, SingleItemRecipeInput, UntypedRecipeRef,
+};
 use steel_registry::{REGISTRY, menu_type::MenuTypeRef, vanilla_menu_types};
 use steel_utils::{DowncastType, DowncastTypeKey, locks::Shared};
 
 use crate::block_entity::entities::{FurnaceContainer, FurnaceKind};
 use crate::inventory::fuel_values::VANILLA_FUEL_VALUES;
 use crate::inventory::menu::builder::SectionKind;
+use crate::inventory::place_recipe::{
+    CraftingMenuAccess, PlacementGrid, PostPlaceAction, RecipePlacement, place_recipe,
+};
 use crate::inventory::prelude::*;
 use crate::inventory::slots::{FurnaceFuelSlot, FurnaceResultSlot};
+use crate::inventory::stacked_contents::StackedItemContents;
 use crate::player::player_inventory::PlayerInventory;
 
 /// Builds the three-slot Vanilla menu for one furnace-family block entity.
@@ -213,6 +219,87 @@ impl MenuKind for FurnaceMenuKind {
 
     fn can_take_item_for_pick_all(&self, _carried: &ItemStack, slot_index: usize) -> bool {
         !self.result.contains(slot_index)
+    }
+
+    /// Vanilla `AbstractFurnaceMenu.handlePlacement`: a 1x1 grid on the input slot,
+    /// clearing the input and the result. Any cooking recipe goes, as in vanilla.
+    fn handle_placement(
+        &mut self,
+        behavior: &mut MenuBehavior,
+        placement: RecipePlacement,
+        player: &Player,
+    ) -> Option<PostPlaceAction> {
+        placement.recipe.downcast_data::<CookingRecipe>()?;
+        let mut guard = behavior.lock_all_containers();
+        let input_slots = [self.input.start()];
+        let slots_to_clear = [self.input.start(), self.result.start()];
+        let access = FurnaceAccess {
+            container: self.container.container_id(),
+        };
+        let grid = PlacementGrid {
+            width: 1,
+            height: 1,
+            input_slots: &input_slots,
+            slots_to_clear: &slots_to_clear,
+        };
+        Some(place_recipe(
+            &mut guard,
+            player,
+            &access,
+            behavior.slots(),
+            grid,
+            placement,
+        ))
+    }
+}
+
+/// The `CraftingMenuAccess` vanilla `AbstractFurnaceMenu.handlePlacement` builds.
+struct FurnaceAccess {
+    container: ContainerId,
+}
+
+impl FurnaceAccess {
+    const INPUT_SLOT: usize = 0;
+    const RESULT_SLOT: usize = 2;
+}
+
+impl CraftingMenuAccess for FurnaceAccess {
+    /// Vanilla `AbstractFurnaceBlockEntity.fillStackedContents`: every slot, fuel and
+    /// result included, whatever its components.
+    fn fill_craft_slots_stacked_contents(
+        &self,
+        guard: &ContainerLockGuard,
+        contents: &mut StackedItemContents,
+    ) {
+        if let Some(container) = guard.get(self.container) {
+            for stack in container.items() {
+                contents.account_stack(stack);
+            }
+        }
+    }
+
+    fn clear_crafting_content(&self, guard: &mut ContainerLockGuard) {
+        if let Some(container) = guard.get_mut(self.container) {
+            for slot in [Self::INPUT_SLOT, Self::RESULT_SLOT] {
+                container.set_item(slot, ItemStack::empty());
+                container.set_changed();
+            }
+        }
+    }
+
+    fn recipe_matches(
+        &self,
+        guard: &ContainerLockGuard,
+        _player: &Player,
+        recipe: UntypedRecipeRef,
+    ) -> bool {
+        let Some(container) = guard.get(self.container) else {
+            return false;
+        };
+        let input = SingleItemRecipeInput::new(container.get_item(Self::INPUT_SLOT).clone());
+        recipe
+            .downcast_data::<CookingRecipe>()
+            .is_some_and(|data| data.matches(&input))
     }
 }
 

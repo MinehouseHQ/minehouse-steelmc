@@ -17,10 +17,10 @@ use steel_protocol::packets::game::{
     SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SEditBook, SInteract, SMovePlayer, SMovePlayerPos,
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
-    SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
-    SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SRenameItem, SSeenAdvancement,
-    SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction,
-    SUseItem, SUseItemOn,
+    SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
+    SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
+    SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot,
+    SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -108,6 +108,7 @@ enum ScheduledPlayPacketKind {
     RenameItem(SRenameItem),
     SelectTrade(SSelectTrade),
     RecipeBookSeenRecipe(SRecipeBookSeenRecipe),
+    PlaceRecipe(SPlaceRecipe),
     RecipeBookChangeSettings(SRecipeBookChangeSettings),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
@@ -224,6 +225,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::PaddleBoat(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::PlaceRecipe(_)
             | ScheduledPlayPacketKind::RenameItem(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
@@ -322,6 +324,7 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::RenameItem(packet) => player.handle_rename_item(packet),
             ScheduledPlayPacketKind::SelectTrade(packet) => player.handle_select_trade(packet),
+            ScheduledPlayPacketKind::PlaceRecipe(packet) => player.handle_place_recipe(&packet),
             ScheduledPlayPacketKind::RecipeBookSeenRecipe(packet) => {
                 player.handle_recipe_book_seen_recipe(&packet);
             }
@@ -817,6 +820,9 @@ impl JavaConnection {
             )),
             play::S_SELECT_TRADE => scheduled(ScheduledPlayPacketKind::SelectTrade(
                 SSelectTrade::read_packet(data)?,
+            )),
+            play::S_PLACE_RECIPE => scheduled(ScheduledPlayPacketKind::PlaceRecipe(
+                SPlaceRecipe::read_packet(data)?,
             )),
             play::S_RECIPE_BOOK_SEEN_RECIPE => {
                 scheduled(ScheduledPlayPacketKind::RecipeBookSeenRecipe(

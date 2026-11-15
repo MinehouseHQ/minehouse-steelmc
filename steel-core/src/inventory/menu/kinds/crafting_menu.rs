@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 use crate::inventory::container::{CraftingContainer, ResultContainer};
+use crate::inventory::place_recipe::{PostPlaceAction, RecipePlacement};
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
 use crate::player::player_inventory::PlayerInventory;
@@ -103,6 +104,23 @@ impl MenuKind for CraftingKind {
         player: &Player,
     ) {
         self.handler.update_result(guard, player);
+    }
+
+    /// Vanilla `CraftingMenu` places, then recomputes the result with the placed
+    /// recipe as the hint (`finishPlacingRecipe`).
+    fn handle_placement(
+        &mut self,
+        behavior: &mut MenuBehavior,
+        placement: RecipePlacement,
+        player: &Player,
+    ) -> Option<PostPlaceAction> {
+        let mut guard = behavior.lock_all_containers();
+        let action =
+            self.handler
+                .handle_placement(behavior.slots(), &mut guard, player, placement)?;
+        self.handler
+            .update_result_with_hint(&mut guard, player, Some(placement.recipe));
+        Some(action)
     }
 }
 
