@@ -5,6 +5,7 @@
 //! a lore, an item model of the server resource pack, and its id in `custom_data`. The id and
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
+mod admin_mode;
 mod afk;
 mod all_recipes;
 mod anvil_repair;
@@ -28,6 +29,7 @@ mod papirosa;
 mod rail_graph;
 mod recipes;
 mod ride;
+mod see;
 mod silent_tags;
 mod speed;
 mod station_menu;
@@ -53,7 +55,9 @@ use steel_core::{
         vehicles::set_minecart_observer,
     },
     inventory::craft_observer::set_craft_observer,
-    player::input_observer::set_player_input_observer,
+    player::{
+        death_observer::set_player_death_observer, input_observer::set_player_input_observer,
+    },
     scoreboard::set_team_packet_observer,
     server::Server,
     set_portal_shape_observer,
@@ -384,6 +388,8 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     }
     ride::register(registry)?;
     nametags::register(registry)?;
+    admin_mode::register(registry)?;
+    see::register(registry)?;
     commands::register(registry)
 }
 
@@ -394,6 +400,8 @@ pub fn start_jobs(server: &Server) {
     nametags::start(server);
     end_lock::start(server);
     all_recipes::start(server);
+    admin_mode::start(server);
+    see::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
@@ -422,6 +430,9 @@ pub fn start() {
     }
     if !set_team_packet_observer(&nametags::NAMETAGS) {
         log::warn!("MineHouse nametags: team packets are already observed, names can't be hidden");
+    }
+    if !set_player_death_observer(&admin_mode::DEATH) {
+        log::warn!("MineHouse admin mode: deaths are already observed, admin items drop on death");
     }
     if !set_leaf_decay_observer(&leaf_decay::LEAF_DECAY) {
         log::warn!("MineHouse leaves: leaf decay is already observed, leaves fall as in vanilla");
