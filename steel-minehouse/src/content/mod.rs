@@ -6,6 +6,7 @@
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
 mod afk;
+mod all_recipes;
 mod anvil_repair;
 mod any_shape_portals;
 mod blocks;
@@ -392,6 +393,7 @@ pub fn start_jobs(server: &Server) {
     afk::start(server);
     nametags::start(server);
     end_lock::start(server);
+    all_recipes::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.

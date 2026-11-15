@@ -511,6 +511,10 @@ portal leads (the Fabric mod used the player's own respawn point). A spectator w
 `minehouse.end.bypass` may stay. `message` is what the player is told. The setting is read at
 start. The core gets `Player::leave_end`.
 
+The whole recipe book (`content/all_recipes.rs`, the Fabric `RecipeBookAll`): on joining a
+player's book is filled with every vanilla recipe a book can show, quietly, and sent again.
+Recipes of ours still unlock the vanilla way.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
