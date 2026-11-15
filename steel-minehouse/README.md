@@ -345,8 +345,18 @@ The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), 
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
 is a `steel_core` `CropLike`, so light, farmland, trampling and bone meal are the vanilla
-ones. The wild plant is not generated in the world yet, and the cauldron brew, the broth
-and the papirosa are not ported.
+ones. The wild plant is not generated in the world yet: on the Fabric server it grows only
+in the biomes of Paradise, which is not ported.
+
+The brew (`content/cauldron.rs`): three buckets of milk into a cauldron, then ten magic
+leaves with a lit campfire under it make five bowls of «Магический отвар». The cauldrons of
+milk and broth are blocks of ours that need no pack: clients see powder snow and water
+cauldrons (`blocks::show_as`). A bucket of milk is the one vanilla item that behaves
+differently in `content::use_behavior`: on an empty cauldron it is poured. «Магическая
+папироса» (`content/papirosa.rs`) is two leaves and paper, lit with a flint and steel in
+the other hand. A consumed item of ours says how in `CustomItem::consume`; what it does
+when finished is its `ItemBehavior::finish_using`, which a player's active use now takes
+from the stack (`use_behavior_of`) and not from the vanilla item.
 
 To a recipe an item of ours is not the vanilla item it is made of: `content::recipe_id`
 tells them apart (`steel_registry::recipe::set_extension_item_id`), so vanilla ingredients

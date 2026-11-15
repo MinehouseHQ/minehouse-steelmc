@@ -103,8 +103,8 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::items::synchronize_map_updates;
 use crate::behavior::{
-    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
-    ItemBehavior, apply_use_remainder,
+    BlockStateBehaviorExt as _, InteractionResult, InventoryTickContext, ItemBehavior,
+    apply_use_remainder, use_behavior_of,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -413,9 +413,7 @@ impl Player {
             let item = inventory.get_item_in_hand(hand);
             item.clone()
         };
-        let duration = ITEM_BEHAVIORS
-            .get_behavior(item.item())
-            .get_use_duration(&item, self);
+        let duration = use_behavior_of(&item).get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
@@ -452,12 +450,18 @@ impl Player {
             .set(flags & !Self::USING_ITEM_FLAG);
     }
 
+    /// The behavior of the stack in `hand` while it is in use: the one its use started
+    /// with, which an extension may have picked for the stack.
+    fn active_use_behavior(&self, hand: InteractionHand) -> &'static dyn ItemBehavior {
+        use_behavior_of(self.inventory.lock().get_item_in_hand(hand))
+    }
+
     /// Releases the currently used item and invokes its release hook.
     pub fn release_using_item(&self, entity: &SharedEntity) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
-        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        let behavior = self.active_use_behavior(active.hand());
         self.release_using_item_with_behavior(entity, behavior, active);
     }
 
@@ -505,7 +509,7 @@ impl Player {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
-        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        let behavior = self.active_use_behavior(active.hand());
         self.tick_active_item_use_with_behavior(entity, behavior, active);
     }
 
