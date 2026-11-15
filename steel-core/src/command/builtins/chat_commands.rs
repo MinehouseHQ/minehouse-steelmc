@@ -43,6 +43,9 @@ fn msg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("me").then(
         argument("action", SteelArgumentType::message()).executes(|context| {
+            if !may_send_command_message(context.source()) {
+                return Ok(0);
+            }
             let message = context
                 .message("action")?
                 .resolve_chat_message("action", context.source())?;
@@ -59,6 +62,9 @@ fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn say_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("say").then(
         argument("message", SteelArgumentType::message()).executes(|context| {
+            if !may_send_command_message(context.source()) {
+                return Ok(0);
+            }
             let message = context
                 .message("message")?
                 .resolve_chat_message("message", context.source())?;
@@ -66,6 +72,17 @@ fn say_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             Ok(1)
         }),
     )
+}
+
+/// An installed chat interceptor may keep a player's `/me` and `/say` from going out.
+fn may_send_command_message(source: &CommandSource) -> bool {
+    let Some(player) = source.player() else {
+        return true;
+    };
+    source
+        .server()
+        .chat_interceptor()
+        .is_none_or(|interceptor| interceptor.allow_command_message(player))
 }
 
 /// Vanilla `MsgCommand.sendMessage`: the sender sees an outgoing line per

@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{config, site::SiteClient};
 
 pub mod api;
-mod commands;
+pub(crate) mod commands;
 pub mod format;
 pub mod settings;
 pub mod wipe;

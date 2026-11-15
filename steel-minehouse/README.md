@@ -125,3 +125,32 @@ joining and then every `sync_seconds`. Only the groups listed here are added and
 every other group of a player stays. A player who left the Discord server loses all of them;
 when the site does not answer, nothing changes. A listed group that does not exist is skipped
 with a warning. The sync runs only while the login check is on.
+
+## Chat
+
+`src/chat/`: the Fabric mod `minehouse-chat`.
+
+| What | How |
+| --- | --- |
+| Local chat | A plain message reaches players of the same world within `local.radius` blocks. |
+| Global chat | `!text`, `/g text`, or `/g` to switch the channel (`/l` switches back). |
+| Private messages | `/msg <ник> <текст>` (`/tell`, `/w`, `/m`), `/r <текст>` answers the last partner. |
+| Ignore | `/ignore <ник>` toggles, `/ignore` lists. Applies to chat and private messages. |
+| Mentions | A nickname in a message plays a sound to that player. |
+| Role badges | `{prefix}`: the first group of `role.order` the player is in. |
+| Announcements | `$$text` from a player with `minehouse.announce`: everyone gets it, framed, with a sound. |
+| Mutes | `/mute <ник> [причина]`, `/tempmute <ник> <срок> [причина]`, `/unmute <ник>`, `/mutelist`. A muted player can't use chat, private messages, `/me` or `/say`. |
+
+The channel and private message commands are open to every player; the mute commands and
+`/chat reload` need `minehouse.command.<name>`. Our `/msg`, `/tell` and `/w` replace the
+vanilla ones, which stay reachable as `/minecraft:msg`.
+
+Every text and option is in `config/minehouse/chat.toml`, flat keys such as `local.format`;
+the commented defaults are `src/chat/default.toml`. A key missing from the file keeps its
+default, an empty value switches it off, `/chat reload` re-reads the file. Mutes and ignore
+lists are `chat-mutes.json` and `chat-ignores.json` in the data directory; the mute file has
+the shape of the mod's `minehouse-chat-mutes.json`, so it can be copied from the old server.
+
+Like the mod, chat lines go out as system messages, so nothing depends on signed chat. The
+core hook is `ChatInterceptor` (`steel-core/src/server/chat_interceptor.rs`). Not ported:
+the `{lp_prefix}` and `{lp_suffix}` placeholders of `LuckPerms`.

@@ -275,6 +275,14 @@ impl Player {
             }
         }
 
+        let server = self.server();
+        if let Some(interceptor) = server.chat_interceptor()
+            && interceptor.player_chat(&server, self, &chat_message)
+        {
+            self.detect_chat_rate_spam();
+            return;
+        }
+
         let signature = if matches!(verification_result, Some(Ok(_))) {
             packet.signature.map(|sig| Box::new(sig) as Box<[u8]>)
         } else {

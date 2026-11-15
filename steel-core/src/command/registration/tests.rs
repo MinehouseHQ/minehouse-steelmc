@@ -173,17 +173,30 @@ fn unique_commands_do_not_pollute_the_root_with_namespaced_variants() {
 #[test]
 fn collisions_keep_the_first_root_and_expose_both_namespaced_commands() {
     let dispatcher = build([
-        command(Identifier::new_static("minecraft", "home"), "vanilla"),
+        command(Identifier::new_static("first", "home"), "vanilla"),
         command(Identifier::new_static("example", "home"), "plugin"),
     ]);
 
     assert_eq!(
         root_names(&dispatcher),
-        ["home", "minecraft:home", "example:home"]
+        ["home", "first:home", "example:home"]
     );
     assert_eq!(child_names(&dispatcher, "home"), ["vanilla"]);
-    assert_eq!(child_names(&dispatcher, "minecraft:home"), ["vanilla"]);
+    assert_eq!(child_names(&dispatcher, "first:home"), ["vanilla"]);
     assert_eq!(child_names(&dispatcher, "example:home"), ["plugin"]);
+}
+
+#[test]
+fn extensions_take_over_vanilla_roots_and_aliases() {
+    let dispatcher = build([
+        command(Identifier::new_static("minecraft", "msg"), "vanilla").alias("tell"),
+        command(Identifier::new_static("example", "msg"), "plugin").alias("tell"),
+    ]);
+
+    assert_eq!(child_names(&dispatcher, "msg"), ["plugin"]);
+    assert_eq!(child_names(&dispatcher, "tell"), ["plugin"]);
+    assert_eq!(child_names(&dispatcher, "minecraft:msg"), ["vanilla"]);
+    assert_eq!(child_names(&dispatcher, "example:msg"), ["plugin"]);
 }
 
 #[test]
