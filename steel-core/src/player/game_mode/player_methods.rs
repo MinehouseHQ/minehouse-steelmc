@@ -346,6 +346,19 @@ impl Player {
         );
     }
 
+    /// Sends the player out of the End to where its exit portal leads, at once and without
+    /// the credits. Does nothing in any other world or while a world change is pending.
+    /// Returns whether the way out was asked for; the player arrives once the chunks there
+    /// are loaded.
+    pub fn leave_end(self: &Arc<Self>) -> bool {
+        let world = self.get_world();
+        if !world.is_end_dimension_type() || self.is_world_change_pending() {
+            return false;
+        }
+        self.use_portal_as_spectator(&world, PortalKind::End, self.block_position());
+        true
+    }
+
     /// Returns true if player is sneaking (secondary use active).
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
