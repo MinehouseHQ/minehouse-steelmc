@@ -6,6 +6,7 @@
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
 mod afk;
+mod anvil_repair;
 mod any_shape_portals;
 mod blocks;
 mod cauldron;

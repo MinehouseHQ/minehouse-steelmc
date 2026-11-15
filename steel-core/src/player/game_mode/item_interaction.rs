@@ -4,6 +4,7 @@ use super::{
     wrap_degrees,
 };
 use crate::behavior::use_behavior_of;
+use crate::player::input_observer::player_input_observer;
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{BlockPos, BlockStateId};
@@ -101,6 +102,12 @@ pub fn use_item_on(
 
     if player.game_mode() == GameType::Spectator {
         return spectator_use_item_on(player, world, pos, state);
+    }
+
+    if let Some(result) = player_input_observer()
+        .and_then(|observer| observer.use_on_block(player, world, hand, hit_result))
+    {
+        return result;
     }
 
     // Check if block interaction should be suppressed (sneaking + holding items in either hand)
