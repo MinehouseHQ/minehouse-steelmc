@@ -81,7 +81,10 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::{bank::atm_block::ATM_BLOCK, moderation::format::render};
+use crate::{
+    bank::{atm_block::ATM_BLOCK, terminal_block::TERMINAL_BLOCK},
+    moderation::format::render,
+};
 
 /// The key in `custom_data` that holds the id of an item of ours.
 pub const ID_KEY: &str = "minehouse_item";
@@ -179,6 +182,16 @@ pub static ATM: CustomItem = CustomItem {
     consume: None,
 };
 
+/// «Терминал оплаты»: the terminal block in a hand.
+pub static TERMINAL: CustomItem = CustomItem {
+    id: "minehouse-bank:terminal",
+    base: &vanilla_items::STONE_BUTTON,
+    name: "Терминал оплаты",
+    lore: &[],
+    max_stack: 64,
+    consume: None,
+};
+
 /// «Семена магического растения»: fall from the wild plant and from the crop, and sow it.
 pub static SEEDS: CustomItem = CustomItem {
     id: "minehouse-herbs:magic_seeds",
@@ -260,9 +273,11 @@ pub static ITEMS: &[&CustomItem] = &[
     &PAPIROSA,
     &CARD,
     &ATM,
+    &TERMINAL,
 ];
 
 static ATM_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&ATM_BLOCK);
+static TERMINAL_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&TERMINAL_BLOCK);
 static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
 static JUNCTION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::JUNCTION_BLOCK);
 static LEAF_BLOCK_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::LEAF_BLOCK);
@@ -292,6 +307,8 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&papirosa::Papirosa)
     } else if id == ATM.id {
         Some(&ATM_ITEM)
+    } else if id == TERMINAL.id {
+        Some(&TERMINAL_ITEM)
     } else {
         None
     }

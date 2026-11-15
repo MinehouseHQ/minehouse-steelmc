@@ -27,7 +27,10 @@ use steel_registry::{
 };
 use steel_utils::{BlockStateId, Identifier};
 
-use crate::bank::atm_block::{self, ATM_BLOCK};
+use crate::bank::{
+    atm_block::{self, ATM_BLOCK},
+    terminal_block::{self, TERMINAL_BLOCK},
+};
 
 use super::{
     CustomItem, LEAF_BLOCK as LEAF_BLOCK_ITEM,
@@ -121,7 +124,7 @@ fn slot_of(
 /// gives for it when `pack/client_blocks.json` has none, and its break as what `broken`
 /// gives: a carrier breaks like itself (a note block like wood), which few of our blocks
 /// are.
-pub(super) fn show_block(
+pub(crate) fn show_block(
     blocks: &mut BlockRegistry,
     block: &'static Block,
     fallback: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
@@ -247,6 +250,8 @@ pub(super) fn register(registry: &mut Registry) {
     blocks.register(&BROTH_CAULDRON);
     blocks.register(&ATM_BLOCK);
     atm_block::show_to_clients(blocks);
+    blocks.register(&TERMINAL_BLOCK);
+    terminal_block::show_to_clients(blocks);
     cauldron::show_to_clients(blocks);
     herbs::show_to_clients(blocks);
     tag(blocks, "mineable/pickaxe", PICKAXE);
@@ -270,6 +275,7 @@ pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     behaviors.set_behavior(&MILK_CAULDRON, Box::new(cauldron::MilkCauldron));
     behaviors.set_behavior(&BROTH_CAULDRON, Box::new(cauldron::BrothCauldron));
     behaviors.set_behavior(&ATM_BLOCK, Box::new(atm_block::Atm));
+    behaviors.set_behavior(&TERMINAL_BLOCK, Box::new(terminal_block::Terminal));
 }
 
 #[cfg(test)]
