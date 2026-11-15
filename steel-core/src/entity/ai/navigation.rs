@@ -334,6 +334,12 @@ impl PathNavigation {
         self.can_float
     }
 
+    /// Makes the path finder measure steps between nodes horizontally only,
+    /// as the warden's navigation does.
+    pub const fn set_horizontal_step_distance(&mut self, horizontal: bool) {
+        self.path_finder.set_horizontal_step_distance(horizontal);
+    }
+
     pub const fn set_can_float(&mut self, can_float: bool) {
         // `WaterBoundPathNavigation.setCanFloat` ignores the request.
         if matches!(

@@ -23,6 +23,9 @@ pub struct PathRequest<'a> {
 pub struct PathFinder {
     max_visited_nodes: i32,
     open_set: NodeHeap,
+    /// Measures steps between nodes horizontally only, as the warden's
+    /// path finder overrides `PathFinder.distance` with `Node.distanceToXZ`.
+    horizontal_step_distance: bool,
 }
 
 impl PathFinder {
@@ -31,7 +34,14 @@ impl PathFinder {
         Self {
             max_visited_nodes,
             open_set: NodeHeap::new(),
+            horizontal_step_distance: false,
         }
+    }
+
+    /// Measures steps between nodes horizontally only (the warden's
+    /// `PathFinder.distance` override).
+    pub const fn set_horizontal_step_distance(&mut self, horizontal: bool) {
+        self.horizontal_step_distance = horizontal;
     }
 
     #[must_use]
@@ -103,7 +113,11 @@ impl PathFinder {
                 else {
                     continue;
                 };
-                let distance = current_data.point.distance_to(neighbor_data.point);
+                let distance = if self.horizontal_step_distance {
+                    current_data.point.distance_to_xz(neighbor_data.point)
+                } else {
+                    current_data.point.distance_to(neighbor_data.point)
+                };
                 let walked_distance = current_data.walked_distance + distance;
                 let tentative_g_score = current_data.g + distance + neighbor_data.cost_malus;
                 if walked_distance >= request.max_path_length {
@@ -308,6 +322,13 @@ impl NodePoint {
         let yd = (other.y - self.y) as f32;
         let zd = (other.z - self.z) as f32;
         xd.mul_add(xd, yd.mul_add(yd, zd * zd)).sqrt()
+    }
+
+    /// Vanilla `Node.distanceToXZ`.
+    fn distance_to_xz(self, other: Self) -> f32 {
+        let xd = (other.x - self.x) as f32;
+        let zd = (other.z - self.z) as f32;
+        xd.mul_add(xd, zd * zd).sqrt()
     }
 
     fn manhattan_to_node(self, other: &Node) -> f32 {

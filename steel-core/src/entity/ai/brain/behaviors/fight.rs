@@ -79,8 +79,20 @@ pub fn stop_attacking_if_target_invalid<E: Mob + ?Sized>(
 /// passed (vanilla `StopAttackingIfTargetInvalid.create(stopAttackingWhen,
 /// onTargetErased, true)`).
 pub fn stop_attacking_if_target_invalid_when<E: Mob + ?Sized>(
+    stop_attacking_when: impl FnMut(&Arc<World>, &E, &dyn LivingEntity) -> bool + Send + 'static,
+    on_target_erased: impl FnMut(&Arc<World>, &E, &SharedEntity) + Send + 'static,
+) -> impl BehaviorControl<E> {
+    stop_attacking_if_target_invalid_full(stop_attacking_when, on_target_erased, true)
+}
+
+/// [`stop_attacking_if_target_invalid_when`] where `can_grow_tired_of_waiting`
+/// false keeps a target the body cannot reach (vanilla
+/// `StopAttackingIfTargetInvalid.create(stopAttackingWhen, onTargetErased,
+/// canGrowTiredOfWaiting)`).
+pub fn stop_attacking_if_target_invalid_full<E: Mob + ?Sized>(
     mut stop_attacking_when: impl FnMut(&Arc<World>, &E, &dyn LivingEntity) -> bool + Send + 'static,
     mut on_target_erased: impl FnMut(&Arc<World>, &E, &SharedEntity) + Send + 'static,
+    can_grow_tired_of_waiting: bool,
 ) -> impl BehaviorControl<E> {
     OneShot::new(
         vec![
@@ -95,9 +107,10 @@ pub fn stop_attacking_if_target_invalid_when<E: Mob + ?Sized>(
                 return false;
             };
             let cant_reach_since = memories.lock().get(&CANT_REACH_WALK_TARGET_SINCE);
-            let tired = cant_reach_since.is_some_and(|since| {
-                world.game_time() - since > TIMEOUT_TO_GET_WITHIN_ATTACK_RANGE
-            });
+            let tired = can_grow_tired_of_waiting
+                && cant_reach_since.is_some_and(|since| {
+                    world.game_time() - since > TIMEOUT_TO_GET_WITHIN_ATTACK_RANGE
+                });
             let same_level = match (target.level(), body.level()) {
                 (Some(target_level), Some(body_level)) => Arc::ptr_eq(&target_level, &body_level),
                 _ => false,

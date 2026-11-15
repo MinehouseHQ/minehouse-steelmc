@@ -17,7 +17,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_game_event_tags::GameEventTag;
 use steel_registry::{
     level_events, sound_events, vanilla_block_entity_types, vanilla_entities, vanilla_game_events,
-    vanilla_game_rules, vanilla_mob_effects, vanilla_position_source_types,
+    vanilla_game_rules, vanilla_position_source_types,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, UpdateFlags};
@@ -27,9 +27,9 @@ use steel_utils::{
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::entities::ItemEntity;
-use crate::entity::mob_effect::add_effect_to_players_around;
+use crate::entity::entities::mobs::hostile::WardenEntity;
 use crate::entity::spawn_util::{on_top_of_collider, try_spawn_mob};
-use crate::entity::{Entity, EntitySpawnReason, MobEffectInstance, SharedEntity};
+use crate::entity::{Entity, EntitySpawnReason, SharedEntity};
 use crate::player::Player;
 use crate::player::warden_spawn_tracker::{MAX_WARNING_LEVEL, WardenSpawnTracker};
 use crate::world::World;
@@ -58,11 +58,6 @@ const DARKNESS_RADIUS: i32 = 40;
 pub(crate) const SHRIEKING_TICKS: i32 = 90;
 /// Vanilla `VibrationUser.LISTENER_RADIUS`.
 const LISTENER_RADIUS: i32 = 8;
-
-/// Vanilla `Warden.applyDarknessAround`'s darkness duration.
-const DARKNESS_DURATION: i32 = 260;
-/// Vanilla `Warden.applyDarknessAround`'s display limit.
-const DARKNESS_DISPLAY_LIMIT: i32 = 200;
 
 /// Vanilla `SOUND_BY_LEVEL`: the warden's reply to each warning level.
 fn sound_for_warning_level(warning_level: i32) -> Option<SoundEventRef> {
@@ -102,21 +97,6 @@ pub(crate) fn try_get_player(world: &World, source: Option<&dyn Entity>) -> Opti
     let item = source.downcast_ref::<ItemEntity>()?;
     let thrower = world.get_entity_by_uuid(&item.get_thrower()?)?;
     player_of(thrower.as_ref())
-}
-
-/// Vanilla `Warden.applyDarknessAround`.
-fn apply_darkness_around(world: &World, position: DVec3, source: Option<&dyn Entity>, radius: i32) {
-    add_effect_to_players_around(
-        world,
-        source,
-        position,
-        f64::from(radius),
-        &MobEffectInstance::with_duration(vanilla_mob_effects::DARKNESS, DARKNESS_DURATION, 0)
-            .with_ambient(false)
-            .with_visible(false)
-            .with_show_icon(false),
-        DARKNESS_DISPLAY_LIMIT,
-    );
 }
 
 /// The shrieker's state that its vibration listener reaches, vanilla
@@ -180,7 +160,7 @@ impl Shrieker {
             self.play_warden_reply_sound(world);
         }
         let (x, y, z) = self.pos.get_center();
-        apply_darkness_around(world, DVec3::new(x, y, z), None, DARKNESS_RADIUS);
+        WardenEntity::apply_darkness_around(world, DVec3::new(x, y, z), None, DARKNESS_RADIUS);
     }
 
     /// Vanilla `playWardenReplySound`: somewhere within ten blocks.
@@ -401,6 +381,7 @@ mod tests {
     use crate::test_support::{
         TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
     };
+    use steel_registry::vanilla_mob_effects;
 
     const SHRIEKER: BlockPos = BlockPos::new(8, 64, 8);
 
