@@ -6,7 +6,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::portal::PortalKind;
-use crate::portal::portal_shape::{PortalShape, nether_portal_config};
+use crate::portal::portal_shape::{PortalShape, nether_portal_config, portal_shape_observer};
 use crate::world::ScheduledTickAccess;
 use crate::world::World;
 use steel_macros::block_behavior;
@@ -55,6 +55,13 @@ impl BlockBehavior for NetherPortalBlock {
         let update_axis = direction.get_axis();
         let axis: Axis = state.get_value(HORIZONTAL_AXIS);
         let wrong_axis = axis != update_axis && update_axis != Axis::Y;
+
+        if !wrong_axis
+            && let Some(observer) = portal_shape_observer()
+            && observer.holds(neighbor_state)
+        {
+            return state;
+        }
 
         if !wrong_axis
             && neighbor_state.get_block() != self.block

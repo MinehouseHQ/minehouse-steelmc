@@ -5,6 +5,8 @@
 //! a lore, an item model of the server resource pack, and its id in `custom_data`. The id and
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
+mod afk;
+mod any_shape_portals;
 mod blocks;
 mod cauldron;
 mod cloud;
@@ -46,6 +48,8 @@ use steel_core::{
     inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
     server::Server,
+    set_portal_shape_observer,
+    world::set_sleep_observer,
 };
 use steel_registry::{
     data_components::{
@@ -377,6 +381,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
 /// Starts what runs on the server tick. Call once the server is ready for players.
 pub fn start_jobs(server: &Server) {
     first_join::start(server);
+    afk::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
@@ -400,6 +405,12 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_sleep_observer(&afk::AFK_SLEEP) {
+        log::warn!("MineHouse AFK: sleep is already observed, AFK players count as awake");
+    }
+    if !set_portal_shape_observer(&any_shape_portals::ANY_SHAPE_PORTALS) {
+        log::warn!("MineHouse portals: portal shapes are already observed, only rectangles light");
+    }
     if !set_experience_orb_observer(&xp_orbs::XP_ORBS) {
         log::warn!("MineHouse orbs: experience orbs are already observed, they do not merge");
     }

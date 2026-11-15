@@ -1,7 +1,7 @@
 //! Portal shape detection for validating obsidian frames.
 
 use glam::DVec3;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use steel_math::inverse_lerp;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -12,7 +12,7 @@ use steel_registry::vanilla_blocks;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, Direction, WorldAabb};
+use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
 
 use crate::entity::Entity;
 use crate::physics::WorldCollisionProvider;
@@ -63,6 +63,51 @@ pub fn nether_portal_config() -> PortalFrameConfig {
         max_height: 21,
         frame: &vanilla_blocks::OBSIDIAN,
         portal: &vanilla_blocks::NETHER_PORTAL,
+    }
+}
+
+/// Lets a content crate allow nether portals that are not rectangles. With no observer
+/// portals are vanilla.
+pub trait PortalShapeObserver: Send + Sync {
+    /// The axis and the cells of a closed opening around `pos` that vanilla did not accept
+    /// as a rectangle. Fire placed at `pos` fills these cells with portal.
+    fn find_opening(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _preferred_axis: Axis,
+    ) -> Option<(Axis, Vec<BlockPos>)> {
+        None
+    }
+
+    /// Whether a portal block stays when its neighbor in the portal's plane became
+    /// `neighbor`, without asking vanilla for a complete rectangle.
+    fn holds(&self, _neighbor: BlockStateId) -> bool {
+        false
+    }
+}
+
+static PORTAL_SHAPE_OBSERVER: OnceLock<&'static dyn PortalShapeObserver> = OnceLock::new();
+
+/// Installs the portal shape observer. Returns `false` if one is already installed.
+pub fn set_portal_shape_observer(observer: &'static dyn PortalShapeObserver) -> bool {
+    PORTAL_SHAPE_OBSERVER.set(observer).is_ok()
+}
+
+/// The installed portal shape observer, if any.
+pub(crate) fn portal_shape_observer() -> Option<&'static dyn PortalShapeObserver> {
+    PORTAL_SHAPE_OBSERVER.get().copied()
+}
+
+/// Fills `cells` with nether portal along `axis`, with the flags of
+/// [`PortalShape::place_portal_blocks`].
+pub(crate) fn place_portal_cells(world: &Arc<World>, axis: Axis, cells: &[BlockPos]) {
+    let portal_state = vanilla_blocks::NETHER_PORTAL
+        .default_state()
+        .set_value(&BlockStateProperties::HORIZONTAL_AXIS, axis);
+    let flags = UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
+    for &cell in cells {
+        world.set_block(cell, portal_state, flags);
     }
 }
 

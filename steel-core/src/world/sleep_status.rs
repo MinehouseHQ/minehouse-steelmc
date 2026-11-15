@@ -1,7 +1,25 @@
+use std::sync::OnceLock;
+
 use crate::{
     entity::{Entity, LivingEntity},
     player::Player,
 };
+
+/// Lets a content crate leave players out of `playersSleepingPercentage`, the way vanilla
+/// leaves out spectators. With no observer the count is vanilla.
+pub trait SleepObserver: Send + Sync {
+    /// Whether `player`, who is not in bed, is left out of the players that have to sleep.
+    fn skips(&self, _player: &Player) -> bool {
+        false
+    }
+}
+
+static SLEEP_OBSERVER: OnceLock<&'static dyn SleepObserver> = OnceLock::new();
+
+/// Installs the sleep observer. Returns `false` if one is already installed.
+pub fn set_sleep_observer(observer: &'static dyn SleepObserver) -> bool {
+    SLEEP_OBSERVER.set(observer).is_ok()
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct SleepStatus {
@@ -33,6 +51,13 @@ impl SleepStatus {
 
     pub(super) fn add_player(&mut self, player: &Player) {
         if player.is_spectator() {
+            return;
+        }
+        if !player.is_sleeping()
+            && SLEEP_OBSERVER
+                .get()
+                .is_some_and(|observer| observer.skips(player))
+        {
             return;
         }
         self.active_players += 1;

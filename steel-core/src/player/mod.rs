@@ -1510,6 +1510,13 @@ impl Player {
         *self.last_action_time.lock() = Instant::now();
     }
 
+    /// How long ago the player last did something: vanilla's `getLastActionTime`, as a
+    /// duration up to now.
+    #[must_use]
+    pub fn idle_time(&self) -> Duration {
+        Instant::now().duration_since(*self.last_action_time.lock())
+    }
+
     fn check_idle_timeout(&self) {
         if let Some(server) = self.server.upgrade() {
             let player_idle_timeout = server.player_idle_timeout.load(Ordering::Relaxed);
