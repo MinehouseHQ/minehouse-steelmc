@@ -13,6 +13,7 @@ use std::{f32::consts::PI, sync::Arc};
 use glam::{DVec3, Quat, Vec3};
 use rustc_hash::FxHashMap;
 use steel_core::{
+    behavior::InteractionResult,
     entity::{Entity, next_entity_id},
     player::{Player, input_observer::PlayerInputObserver},
     world::World,
@@ -24,6 +25,7 @@ use steel_registry::{
     dye_color::DyeColor,
     entity_data::{DataValue, Quaternionf, Vector3f},
     entity_type::EntityTypeRef,
+    items::item::BlockHitResult,
     vanilla_blocks, vanilla_entities,
     vanilla_entity_data::{
         BlockDisplayEntityData, DisplayEntityData, InteractionEntityData, TextDisplayEntityData,
@@ -34,6 +36,7 @@ use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
 use super::{
+    anvil_repair,
     map_view::MapView,
     metro, nametags,
     rail_graph::{self, Edge},
@@ -927,6 +930,16 @@ impl PlayerInputObserver for Input {
 
     fn custom_click(&self, player: &Player, id: &Identifier) {
         nametags::clicked(player, id);
+    }
+
+    fn use_on_block(
+        &self,
+        player: &Arc<Player>,
+        world: &Arc<World>,
+        hand: InteractionHand,
+        hit: &BlockHitResult,
+    ) -> Option<InteractionResult> {
+        anvil_repair::clicked(player, world, hand, hit)
     }
 
     fn carried_item(&self, player: &Player, from: u8, to: u8) {

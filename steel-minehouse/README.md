@@ -488,6 +488,16 @@ private team `!minehouse_names`. The choices are in `nametags.properties` of the
 directory, in the format of the Fabric `minehouse-nametags.properties`. The dialog needs
 the play `CShowDialog` and the click of its buttons, `PlayerInputObserver::custom_click`.
 
+Fast leaf decay (`content/leaf_decay.rs`, the Fabric `LeafDecay`): leaves that find no log
+on their scheduled tick wait 4 to 14 ticks and fall on the next one, if they still have
+none, so a felled tree comes apart in a second or two. Persistent leaves and leaves by a
+log are vanilla. The core hook is `behavior::blocks::vegetation::LeafDecayObserver`.
+
+Mending an anvil (`content/anvil_repair.rs`, the Fabric `AnvilRepair`): a click on a chipped
+or damaged anvil with a block of iron in hand undoes one step of damage and takes the block,
+keeping the facing. The core hook is `PlayerInputObserver::use_on_block`, asked before the
+block and the item.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

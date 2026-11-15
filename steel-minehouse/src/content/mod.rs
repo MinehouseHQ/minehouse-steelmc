@@ -6,6 +6,7 @@
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
 mod afk;
+mod anvil_repair;
 mod any_shape_portals;
 mod blocks;
 mod cauldron;
@@ -14,6 +15,7 @@ mod commands;
 mod couplings;
 mod first_join;
 mod herbs;
+mod leaf_decay;
 mod map_markers;
 mod map_view;
 mod metro;
@@ -38,8 +40,8 @@ use std::{str::FromStr as _, sync::LazyLock};
 use simdnbt::owned::NbtCompound;
 use steel_core::{
     behavior::{
-        ItemBehavior, extend_block_behaviors, items::set_name_tag_observer,
-        set_item_behavior_override,
+        ItemBehavior, blocks::vegetation::set_leaf_decay_observer, extend_block_behaviors,
+        items::set_name_tag_observer, set_item_behavior_override,
     },
     command::{CommandRegistrationError, CommandRegistry},
     entity::entities::objects::{
@@ -414,6 +416,9 @@ pub fn start() {
     }
     if !set_team_packet_observer(&nametags::NAMETAGS) {
         log::warn!("MineHouse nametags: team packets are already observed, names can't be hidden");
+    }
+    if !set_leaf_decay_observer(&leaf_decay::LEAF_DECAY) {
+        log::warn!("MineHouse leaves: leaf decay is already observed, leaves fall as in vanilla");
     }
     if !set_portal_shape_observer(&any_shape_portals::ANY_SHAPE_PORTALS) {
         log::warn!("MineHouse portals: portal shapes are already observed, only rectangles light");
