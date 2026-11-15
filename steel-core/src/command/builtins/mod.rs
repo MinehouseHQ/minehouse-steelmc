@@ -4,6 +4,7 @@ pub mod advancement;
 mod bossbar;
 mod chat_commands;
 mod clear;
+mod clone;
 mod damage;
 mod defaultgamemode;
 mod difficulty;
@@ -84,6 +85,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(advancement::registration())?;
     builder.register(bossbar::registration())?;
     builder.register(clear::registration())?;
+    builder.register(clone::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
     builder.register(defaultgamemode::registration())?;
@@ -182,6 +184,7 @@ mod tests {
                 "advancement",
                 "bossbar",
                 "clear",
+                "clone",
                 "deop",
                 "damage",
                 "defaultgamemode",

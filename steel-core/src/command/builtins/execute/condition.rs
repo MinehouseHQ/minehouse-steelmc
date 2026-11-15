@@ -394,8 +394,17 @@ pub fn loaded_block_position(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<steel_utils::BlockPos, CommandSyntaxError> {
+    loaded_block_position_in(context, context.source().world(), name)
+}
+
+/// Vanilla `BlockPosArgument.getLoadedBlockPos(context, level, name)`: the
+/// position checked against `world` rather than the source's own world.
+pub fn loaded_block_position_in(
+    context: &SteelCommandContext<CommandSource>,
+    world: &World,
+    name: &str,
+) -> Result<steel_utils::BlockPos, CommandSyntaxError> {
     let position = context.coordinates(name)?.block_pos(context.source());
-    let world = context.source().world();
     if !world.is_full_chunk_loaded_at(position) {
         return Err(unloaded_position());
     }

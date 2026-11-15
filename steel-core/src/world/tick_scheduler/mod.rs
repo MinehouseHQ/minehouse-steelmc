@@ -47,7 +47,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_utils::{
-    BlockPos, ChunkPos, PackedChunkPos,
+    BlockPos, BoundingBox, ChunkPos, PackedChunkPos,
     locks::{SyncMutex, SyncRwLock},
 };
 
@@ -349,6 +349,19 @@ impl ChunkTickContainer {
         let state = self.state.lock();
         (state.lifecycle != ChunkTickContainerLifecycle::Finalized)
             .then(|| state.lists.fluid().has_tick(pos, fluid))
+    }
+
+    /// The live block ticks inside `area`, or `None` once the container was finalized.
+    pub(crate) fn live_block_ticks_in(&self, area: BoundingBox) -> Option<Vec<BlockTick>> {
+        let state = self.state.lock();
+        (state.lifecycle != ChunkTickContainerLifecycle::Finalized).then(|| {
+            state
+                .lists
+                .block()
+                .live_ticks()
+                .filter(|tick| area.contains_blockpos(tick.pos))
+                .collect()
+        })
     }
 
     pub(crate) fn snapshot(&self, current_tick: i64) -> Option<ScheduledTickSnapshot> {

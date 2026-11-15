@@ -225,7 +225,7 @@ const fn input_at<'input>(
     }
 }
 
-fn block_region_volume(region: BoundingBox) -> i64 {
+pub(super) fn block_region_volume(region: BoundingBox) -> i64 {
     let x_span = i64::from(region.max_x()) - i64::from(region.min_x()) + 1;
     let y_span = i64::from(region.max_y()) - i64::from(region.min_y()) + 1;
     let z_span = i64::from(region.max_z()) - i64::from(region.min_z()) + 1;
