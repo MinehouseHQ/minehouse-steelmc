@@ -101,6 +101,31 @@ pub const fn line_name(line: DyeColor) -> &'static str {
     }
 }
 
+/// The color a line is drawn with, `0xRRGGBB`: a metro palette (the Moscow scheme where it
+/// has one), not the dye textures, so lines stay readable on the maps. The site uses the
+/// same colors.
+#[must_use]
+pub const fn line_rgb(line: DyeColor) -> u32 {
+    match line {
+        DyeColor::White => 0x00B8_C2CC,
+        DyeColor::LightGray => 0x00A1_A2A3,
+        DyeColor::Gray => 0x007A_7A7A,
+        DyeColor::Black => 0x0033_3333,
+        DyeColor::Brown => 0x008D_5B2D,
+        DyeColor::Red => 0x00EF_161E,
+        DyeColor::Orange => 0x00ED_9121,
+        DyeColor::Yellow => 0x00FF_D702,
+        DyeColor::Lime => 0x0099_CC00,
+        DyeColor::Green => 0x002D_BE2C,
+        DyeColor::Cyan => 0x0029_B1A6,
+        DyeColor::LightBlue => 0x004F_C3F7,
+        DyeColor::Blue => 0x0000_78BE,
+        DyeColor::Purple => 0x0080_0080,
+        DyeColor::Magenta => 0x00CC_0066,
+        DyeColor::Pink => 0x00F5_98C3,
+    }
+}
+
 /// The value of [`LINE`] for a line.
 fn line_value(line: Option<DyeColor>) -> u8 {
     line.map_or(0, |line| {

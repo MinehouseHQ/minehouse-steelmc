@@ -13,6 +13,7 @@ use super::{
 use crate::entity::entities::objects::vehicles::minecart_observer;
 use crate::entity::{EntityReference, ProjectileDeflection};
 use crate::player::food_data::food_constants;
+use crate::player::input_observer::player_input_observer;
 use steel_math::trig;
 use steel_protocol::packets::game::CAnimate;
 use steel_registry::particle_type::ParticleData;
@@ -872,6 +873,10 @@ impl Player {
             return;
         }
 
+        if player_input_observer().is_some_and(|observer| observer.attack(self, packet.entity_id)) {
+            return;
+        }
+
         let world = self.get_world();
         let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
             return;
@@ -948,6 +953,12 @@ impl Player {
     /// Handles a client request to interact with an entity.
     pub fn handle_interact(&self, packet: SInteract) {
         if !self.has_client_loaded() {
+            return;
+        }
+
+        if player_input_observer()
+            .is_some_and(|observer| observer.interact(self, packet.entity_id, packet.hand))
+        {
             return;
         }
 

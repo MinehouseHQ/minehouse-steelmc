@@ -683,6 +683,31 @@ impl RailGraph {
         })
     }
 
+    /// Every run of the network `from` is a part of, each once: the copy that leaves its
+    /// smaller end.
+    #[must_use]
+    pub fn component(&self, from: BlockPos) -> Vec<Edge> {
+        let mut seen = vec![key(from)];
+        let mut todo = vec![key(from)];
+        let mut runs = Vec::new();
+        while let Some(node) = todo.pop() {
+            for side in 0..4 {
+                let Some(edge) = self.edges.get(&(node, side)) else {
+                    continue;
+                };
+                let (start, end) = (key(edge.from), key(edge.to));
+                if start < end || (start == end && side_index(edge.exit) < side_index(edge.entry)) {
+                    runs.push(edge.clone());
+                }
+                if !seen.contains(&end) {
+                    seen.push(end);
+                    todo.push(end);
+                }
+            }
+        }
+        runs
+    }
+
     /// The station rails reachable from `from` (standing there), nearest first, with their
     /// distance.
     #[must_use]
