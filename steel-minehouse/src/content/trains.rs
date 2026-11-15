@@ -13,6 +13,9 @@
 //! train pushed backwards turns around: its rear cart becomes the driver.
 //!
 //! Not ported: a train with a player knocking empty carts off the line.
+//!
+//! A cart behind the driver has no pass along the track of its own (see
+//! [`speed`](super::speed)).
 
 use std::{collections::VecDeque, str::FromStr as _, sync::Arc};
 
@@ -610,6 +613,34 @@ pub(super) fn follows(cart: &dyn Entity) -> bool {
             .and_then(|id| trains.consists.get(id))
             .is_some_and(|consist| consist.carts.first() != Some(&cart.uuid()))
     })
+}
+
+/// Whether a player rides `cart` or any cart of its train.
+pub(super) fn carries_player(cart: &dyn Entity) -> bool {
+    if has_player(cart) {
+        return true;
+    }
+    let Some(world) = cart.level() else {
+        return false;
+    };
+    with(|trains| trains.carries_player(&world, cart))
+}
+
+/// A fast driver finished a part of its move: where it is goes on the trail, so the
+/// carts behind it take the same way through curves.
+pub(super) fn step(cart: &dyn Entity) {
+    with(|trains| {
+        let Some(consist) = trains
+            .member
+            .get(&cart.uuid())
+            .and_then(|id| trains.consists.get_mut(id))
+        else {
+            return;
+        };
+        if consist.carts.first() == Some(&cart.uuid()) {
+            consist.record(cart.position());
+        }
+    });
 }
 
 /// Whether `cart` is coupled: an empty coupled cart rolls as freely as a ridden one, or a

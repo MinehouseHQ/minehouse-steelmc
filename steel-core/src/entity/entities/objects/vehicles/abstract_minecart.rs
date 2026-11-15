@@ -154,7 +154,11 @@ pub trait AbstractMinecart: VehicleEntity {
 
     /// Vanilla `OldMinecartBehavior.getMaxSpeed`, for overrides that call `super`.
     fn default_max_speed(&self) -> f64 {
-        if self.is_in_water() { 0.2 } else { 0.4 }
+        let vanilla = if self.is_in_water() { 0.2 } else { 0.4 };
+        match observed(self) {
+            Some((observer, cart)) => observer.max_speed(cart, vanilla),
+            None => vanilla,
+        }
     }
 
     /// Per-tick speed retention while on rails.
@@ -548,6 +552,18 @@ pub trait MinecartObserver: Send + Sync {
         false
     }
 
+    /// The most `cart` moves along its rail in one pass, blocks a tick. `vanilla` is what
+    /// the server allows it.
+    fn max_speed(&self, _cart: &dyn Entity, vanilla: f64) -> f64 {
+        vanilla
+    }
+
+    /// Moves `cart` along its rail for this tick in its own way, calling `pass` for each
+    /// of the server's passes along the track. `false` leaves the one pass to the server.
+    fn drive(&self, _cart: &dyn Entity, _world: &Arc<World>, _pass: &mut dyn FnMut()) -> bool {
+        false
+    }
+
     /// `cart` left its world for `reason`.
     fn removed(&self, _cart: &dyn Entity, _reason: RemovalReason) {}
 }
@@ -564,18 +580,27 @@ pub(crate) fn minecart_observer() -> Option<&'static dyn MinecartObserver> {
     MINECART_OBSERVER.get().copied()
 }
 
+/// The observer and `cart` as it sees it, when one is installed.
+fn observed<M: AbstractMinecart + ?Sized>(
+    cart: &M,
+) -> Option<(&'static dyn MinecartObserver, &dyn Entity)> {
+    let observer = minecart_observer()?;
+    let cart: &dyn Entity = cart.as_abstract_minecart()?;
+    Some((observer, cart))
+}
+
 /// Asks the observer about `cart`. `false` with no observer.
 fn observer_says<M: AbstractMinecart + ?Sized>(
     cart: &M,
     question: impl FnOnce(&dyn MinecartObserver, &dyn Entity) -> bool,
 ) -> bool {
-    let Some(observer) = minecart_observer() else {
-        return false;
-    };
-    let Some(cart) = cart.as_abstract_minecart() else {
-        return false;
-    };
-    question(observer, cart)
+    observed(cart).is_some_and(|(observer, cart)| question(observer, cart))
+}
+
+/// Lets the observer move `cart` along its rail, with `pass` as the server's own pass.
+/// `false` when it leaves that to the server.
+pub(super) fn drive(cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut()) -> bool {
+    minecart_observer().is_some_and(|observer| observer.drive(cart, world, pass))
 }
 
 /// Whether the observer lets `cart` and `other` go through each other.

@@ -45,7 +45,7 @@ use uuid::Uuid;
 use super::{
     metro,
     rail_graph::{self, Nav, Plan},
-    stations,
+    speed, stations,
     trains::{self, Decision, Moved},
 };
 use crate::moderation::format::render;
@@ -202,9 +202,65 @@ impl MinecartObserver for Ride {
         trains::is_linked(cart)
     }
 
+    fn max_speed(&self, cart: &dyn Entity, vanilla: f64) -> f64 {
+        speed::max_speed(cart, vanilla)
+    }
+
+    fn drive(&self, cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut()) -> bool {
+        speed::drive(cart, world, pass)
+    }
+
     fn removed(&self, cart: &dyn Entity, reason: RemovalReason) {
         trains::removed(cart, reason);
     }
+}
+
+/// Is `cart` on the rail of a station it is to stop at? Fast carts end their substeps
+/// there, so the end of the tick sees them arrive instead of jumping past.
+pub(super) fn stops_at(cart: &dyn Entity, world: &World, rail: BlockPos) -> bool {
+    let carts = CARTS.lock();
+    let state = carts.as_ref().and_then(|carts| carts.get(&cart.uuid()));
+    let last_station = state.and_then(|state| state.last_station);
+    if state.is_some_and(|state| state.hold.is_some()) {
+        return false;
+    }
+    if Some(rail.below()) == last_station {
+        return false;
+    }
+    match state.and_then(|state| state.route.as_ref()) {
+        // A train sent somewhere goes past every other station.
+        Some(route) => rail == route.destination,
+        None => rail_graph::is_station(world, rail),
+    }
+}
+
+/// A fast cart moved a part of its tick. The track is followed rail by rail, so no rail
+/// of a trip, junction or station is jumped over.
+pub(super) fn passed(cart: &dyn Entity, world: &Arc<World>) {
+    let Some(minecart) = cart.as_abstract_minecart() else {
+        return;
+    };
+    let rail = minecart.current_block_pos_or_rail_below();
+    if !world
+        .get_block_state(rail)
+        .get_block()
+        .has_tag(&BlockTag::RAILS)
+    {
+        return;
+    }
+    let mut carts = CARTS.lock();
+    let state = carts
+        .get_or_insert_default()
+        .entry(cart.uuid())
+        .or_default();
+    if state.hold.is_some() {
+        return;
+    }
+    let learned = rail_graph::follow(world, &mut state.nav, rail);
+    if learned.node {
+        reached_node(state, cart, world, rail, learned.entry);
+    }
+    on_rail(state, world, rail);
 }
 
 /// A train turned around: what the metro remembers of it goes to the cart that drives it
