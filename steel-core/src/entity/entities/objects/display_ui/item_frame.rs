@@ -1,6 +1,6 @@
 //! Vanilla `ItemFrame` and `GlowItemFrame`.
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use rand::{RngExt as _, rng};
@@ -42,6 +42,31 @@ const DEFAULT_DROP_CHANCE: f32 = 1.0;
 
 /// Vanilla `ItemFrame.NUM_ROTATIONS`.
 const NUM_ROTATIONS: i32 = 8;
+
+/// Sees what players do with item frames, before the frame acts.
+pub trait ItemFrameObserver: Send + Sync {
+    /// `player` used `hand` on `frame` at `location`. `Some` takes the click instead of the
+    /// frame.
+    fn interact(
+        &self,
+        _frame: &ItemFrameEntity,
+        _player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> Option<InteractionResult> {
+        None
+    }
+
+    /// The item of `frame` was just taken out.
+    fn emptied(&self, _frame: &ItemFrameEntity) {}
+}
+
+static ITEM_FRAME_OBSERVER: OnceLock<&'static dyn ItemFrameObserver> = OnceLock::new();
+
+/// Installs the item frame observer. Returns `false` if one is already installed.
+pub fn set_item_frame_observer(observer: &'static dyn ItemFrameObserver) -> bool {
+    ITEM_FRAME_OBSERVER.set(observer).is_ok()
+}
 
 struct FrameState {
     drop_chance: f32,
@@ -202,6 +227,22 @@ impl ItemFrameEntity {
         self.state.lock().fixed
     }
 
+    /// Sets whether the frame is fixed (vanilla NBT `Fixed`).
+    pub fn set_fixed(&self, fixed: bool) {
+        self.state.lock().fixed = fixed;
+    }
+
+    /// Sets whether the frame itself is invisible (vanilla NBT `Invisible`).
+    pub fn set_invisible(&self, invisible: bool) {
+        EntitySyncedData::set_base_invisible_flag(&self.entity_data, invisible);
+    }
+
+    /// The block the frame is in.
+    #[must_use]
+    pub fn frame_pos(&self) -> BlockPos {
+        self.block_attached_entity_base.pos()
+    }
+
     /// Sets the framed item, matching vanilla by storing a single item.
     pub fn set_item(&self, item: ItemStack) {
         self.set_item_with_update(item, true);
@@ -210,7 +251,14 @@ impl ItemFrameEntity {
     /// Vanilla `ItemFrame.setItem` with its comparator-update flag.
     pub(crate) fn set_item_with_update(&self, item: ItemStack, update_comparators: bool) {
         let has_item = !item.is_empty();
+        let had_item = !self.item().is_empty();
         self.store_item(item);
+        if had_item
+            && !has_item
+            && let Some(observer) = ITEM_FRAME_OBSERVER.get()
+        {
+            observer.emptied(self);
+        }
         if has_item {
             self.play_sound(self.add_item_sound(), 1.0, 1.0);
         }
@@ -562,8 +610,13 @@ impl Entity for ItemFrameEntity {
         &self,
         player: &Player,
         hand: InteractionHand,
-        _location: DVec3,
+        location: DVec3,
     ) -> InteractionResult {
+        if let Some(observer) = ITEM_FRAME_OBSERVER.get()
+            && let Some(result) = observer.interact(self, player, hand, location)
+        {
+            return result;
+        }
         if self.is_fixed() {
             return InteractionResult::Pass;
         }

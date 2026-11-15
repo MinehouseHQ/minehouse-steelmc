@@ -57,7 +57,7 @@ mod swing;
 
 pub(crate) use adventure_mode::can_break;
 pub(super) use block_breaking::BlockBreakingManager;
-pub use item_interaction::{use_item, use_item_on};
+pub use item_interaction::{use_block, use_item, use_item_on};
 
 /// Current and previous player game mode stored as one coherent state.
 #[derive(Debug, Clone, Copy)]

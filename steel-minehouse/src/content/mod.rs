@@ -25,6 +25,7 @@ mod station_menu;
 mod stations;
 mod trains;
 mod transfers;
+mod waxed_frames;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -35,7 +36,9 @@ use steel_core::{
         set_item_behavior_override,
     },
     command::{CommandRegistrationError, CommandRegistry},
-    entity::entities::objects::vehicles::set_minecart_observer,
+    entity::entities::objects::{
+        display_ui::set_item_frame_observer, vehicles::set_minecart_observer,
+    },
     player::input_observer::set_player_input_observer,
 };
 use steel_registry::{
@@ -386,6 +389,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_item_frame_observer(&waxed_frames::WAXED_FRAMES) {
+        log::warn!("MineHouse: item frames are already observed, waxed frames are off");
+    }
     if !set_name_tag_observer(&silent_tags::SILENT_TAGS) {
         log::warn!("MineHouse: name tags are already observed, silent name tags are off");
     }
