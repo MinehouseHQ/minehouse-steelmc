@@ -390,6 +390,8 @@ out two characters a tick, Shift shows the page, turns it or takes the answer, t
 picks an answer (the hotbar slot comes right back), Space, an opened window or five blocks
 away end the talk.
 
+The guides of the ATM and of the terminal are in `src/bank/guides.rs` (see Guides below).
+
 Not here yet: of the zones the guides; the banker's body animations (they were played by the
 events mod on the Fabric server).
 
@@ -412,6 +414,32 @@ read. Move a server with an empty journal. An entry whose items can't be read st
 and is logged instead of being dropped. Cards and ATMs of the Fabric server are not carried over:
 the ATM there had no display entity, the card was a registry item, and a terminal kept its
 settings in a block entity (a terminal block found in the world is offered for setup again).
+
+## Guides
+
+`src/guides`: a port of the Fabric mod MineHouse Guides. A guide is a small scene of display
+entities in front of one player, sent to them only, that shows a thing of ours step by step:
+blocks and items drop in, move and glow, a caption over the scene says what happens, and four
+buttons under it go back, start again, go on and close. The steps play on their own; a guide
+closes when the player walks 8 blocks away, changes the world, dies, or a minute after its end.
+
+| How | |
+| --- | --- |
+| `/guide` | The list; a click on a line opens the guide |
+| `/guide <id>` | Opens a guide |
+| `/guide close` | Closes the open one |
+| Sneak + right click in the air with an item of a guide | Opens it; the item's tooltip says so |
+
+A guide is a `Guide` with steps; a step is a caption, a least time and a script
+`fn(&mut Stage)` that builds on what the steps before it left (to show step 3 the first two are
+replayed instantly) and puts things off with `Stage::later`. `Stage` has blocks, stretched
+blocks, items, labels and models of the server pack (`Stage::model`, for blocks of ours that
+a block display can't show), each under an id to move, change, glow, pulse or remove later. A
+module adds its guides to the list in `guides::all` (the bank: `bank-atm`, `bank-terminal`,
+shown while the bank is on).
+
+Not here yet: the book «Гайды MineHouse», the server menu, the guides of the zones, of the
+magnifier, of the metro and of the herbs.
 
 ## Our items
 
