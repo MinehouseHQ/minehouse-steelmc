@@ -498,6 +498,23 @@ or damaged anvil with a block of iron in hand undoes one step of damage and take
 keeping the facing. The core hook is `PlayerInputObserver::use_on_block`, asked before the
 block and the item.
 
+Washing in a cauldron (`content/cauldron_conversion.rs`, the Fabric `CauldronConversion`): a
+stack thrown into a cauldron of water changes all at once. Dirt, coarse dirt and rooted dirt
+become mud and take no water; concrete powder becomes concrete of its color and takes one
+level of water for a stack. The core hook is `ItemEntityObserver`, asked at the end of an
+item's tick.
+
+The closed End (`content/end_lock.rs`, the Fabric `EndLock`): with `closed = true` under
+`[end]` in `config/minehouse/tweaks.toml` nobody can put an eye of ender into a portal frame,
+and a player who still ends up in the End is sent out within a second, to where the exit
+portal leads (the Fabric mod used the player's own respawn point). A spectator with
+`minehouse.end.bypass` may stay. `message` is what the player is told. The setting is read at
+start. The core gets `Player::leave_end`.
+
+The whole recipe book (`content/all_recipes.rs`, the Fabric `RecipeBookAll`): on joining a
+player's book is filled with every vanilla recipe a book can show, quietly, and sent again.
+Recipes of ours still unlock the vanilla way.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
