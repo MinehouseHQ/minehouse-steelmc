@@ -17,6 +17,7 @@ mod settings;
 pub mod terminal;
 pub mod terminal_block;
 pub mod terminals;
+pub mod transfer;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

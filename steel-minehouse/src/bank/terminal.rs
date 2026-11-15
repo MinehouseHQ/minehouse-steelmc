@@ -826,8 +826,8 @@ impl Buttons for Setup {
             || self.terminal().is_none_or(|terminal| terminal.locked)
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {
@@ -957,8 +957,8 @@ impl Buttons for NumberInput {
         self.state.lock().2 || !is_terminal(&self.world, self.pos)
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {
@@ -1113,8 +1113,8 @@ impl Buttons for InvoiceAmount {
         self.state.lock().1 || !is_terminal(&self.world, self.pos)
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {
@@ -1512,8 +1512,8 @@ impl Buttons for Pay {
         self.state.lock().close || !is_terminal(&self.world, self.pos) || self.terminal().is_none()
     }
 
-    fn pos(&self) -> BlockPos {
-        self.pos
+    fn pos(&self) -> Option<BlockPos> {
+        Some(self.pos)
     }
 
     fn bank(&self) -> &Bank {

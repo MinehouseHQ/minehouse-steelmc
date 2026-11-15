@@ -321,7 +321,14 @@ blocks.
   it. Opening it is not limited, as on the Fabric server. These two checks are hooks in
   steel-core (`world::block_guard`).
 
-Not here yet: transfers, the banker and the spawn zones.
+**Transfers**: `/transfer` (every player, from anywhere, no card) opens a window with the
+account the money leaves (a click goes through the player's accounts), the ATM's amount picker up
+to the balance, and the recipient: a number typed in an anvil window that the site resolves
+before the transfer is offered. The player's own account and a frozen one are refused there. The
+owner of the receiving account is told if they are online. On the Fabric server the window was a
+line of the server menu, which Steel does not have yet.
+
+Not here yet: the banker and the spawn zones.
 
 `config/minehouse/bank.toml`:
 
