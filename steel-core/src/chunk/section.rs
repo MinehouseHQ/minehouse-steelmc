@@ -233,6 +233,14 @@ impl<'a> SectionWriteGuard<'a> {
     }
 }
 
+impl SectionWriteGuard<'_> {
+    /// The section's biomes, for rewrites that leave its blocks alone, so
+    /// block-derived caches stay valid.
+    pub(crate) fn biomes_mut(&mut self) -> &mut BiomePalette {
+        &mut self.guard.biomes
+    }
+}
+
 impl Deref for SectionWriteGuard<'_> {
     type Target = ChunkSection;
 

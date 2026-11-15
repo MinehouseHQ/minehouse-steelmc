@@ -47,12 +47,14 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
+use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
-    ATTRIBUTE_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY,
-    MOB_EFFECT_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
-    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
-    mob_effect::MobEffectRef, timeline::TimelineRef, world_clock::WorldClockRef,
+    ATTRIBUTE_REGISTRY, BIOMES_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
+    ENTITY_TYPE_REGISTRY, MOB_EFFECT_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
+    WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
+    item_stack::ItemStack, mob_effect::MobEffectRef, timeline::TimelineRef,
+    world_clock::WorldClockRef,
 };
 use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 
@@ -341,6 +343,11 @@ impl SteelArgumentType {
 
     pub(crate) fn int_range() -> Self {
         Self::new(IntRangeParser)
+    }
+
+    /// Vanilla `ResourceArgument.resource(context, Registries.BIOME)`.
+    pub(crate) fn biome() -> Self {
+        Self::new(BiomeParser)
     }
 
     pub(crate) fn biome_or_tag() -> Self {
@@ -666,6 +673,7 @@ argument_value_wrapper!(
     AttributeValue(AttributeRef),
     "steel:command/value/attribute"
 );
+argument_value_wrapper!(BiomeValue(BiomeRef), "steel:command/value/biome");
 argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
 argument_value_wrapper!(
     ComponentValue(TextComponent),
@@ -1332,6 +1340,29 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::Resource {
             identifier: "minecraft:mob_effect",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    BiomeParser,
+    "steel:command/parser/biome",
+    BiomeValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.biomes.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &BIOMES_REGISTRY)),
+            |biome| Ok(BiomeValue(biome)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(REGISTRY.biomes.iter().map(|(_, biome)| &biome.key), builder);
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:worldgen/biome",
         },
         None,
     )

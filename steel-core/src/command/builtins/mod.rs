@@ -16,6 +16,7 @@ mod enchant;
 mod execute;
 mod experience;
 mod fill;
+mod fillbiome;
 mod fly;
 mod forceload;
 pub(crate) mod gamemode;
@@ -107,6 +108,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(execute::registration())?;
     builder.register(experience::registration())?;
     builder.register(fill::registration())?;
+    builder.register(fillbiome::registration())?;
     builder.register(fly::registration())?;
     builder.register(forceload::registration())?;
     builder.register(gamemode::registration()?)?;
@@ -217,6 +219,7 @@ mod tests {
                 "experience",
                 "xp",
                 "fill",
+                "fillbiome",
                 "fly",
                 "forceload",
                 "gamemode",
