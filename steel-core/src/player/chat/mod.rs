@@ -28,6 +28,7 @@ use text_components::TextComponent;
 use text_components::format::Color;
 
 use crate::entity::Entity;
+use crate::permission::{PermissionExpr, PermissionKey};
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
@@ -112,7 +113,23 @@ impl ChatState {
     }
 }
 
+/// Permission that spares a player the chat and command spam kick.
+///
+/// Vanilla spares operators; Steel grants operator powers through permission
+/// groups, so a group like `admin` with `*` is an operator in all but name and
+/// must be spared too, or pasting a Litematica schematic (one command per
+/// block) kicks it.
+pub(crate) const SPAM_BYPASS_PERMISSION_KEY: &str = "steel.bypass.spam";
+
 impl Player {
+    /// Vanilla `PlayerList.isOp` for the spam check: the `op` group, or any
+    /// group granting [`SPAM_BYPASS_PERMISSION_KEY`].
+    fn is_spam_exempt(&self) -> bool {
+        self.is_operator()
+            || PermissionKey::parse(SPAM_BYPASS_PERMISSION_KEY)
+                .is_ok_and(|key| self.has_permission(&PermissionExpr::key(key)))
+    }
+
     /// Decays the throttlers of the player once per server tick.
     pub fn tick_throttlers(&self) {
         let mut chat = self.chat().lock();
@@ -134,7 +151,7 @@ impl Player {
 
     /// Applies Vanilla command spam accounting after a command is handled
     pub fn detect_command_rate_spam(&self) {
-        let is_operator = self.is_operator();
+        let is_operator = self.is_spam_exempt();
         let should_disconnect = {
             let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.command_spam_throttler, is_operator)
@@ -146,7 +163,7 @@ impl Player {
     }
 
     fn detect_chat_rate_spam(&self) {
-        let is_operator = self.is_operator();
+        let is_operator = self.is_spam_exempt();
         let should_disconnect = {
             let mut chat = self.chat().lock();
             Self::should_disconnect_for_rate_spam(&mut chat.chat_spam_throttler, is_operator)
@@ -506,14 +523,18 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use steel_crypto::{
         CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
     };
+
     use uuid::Uuid;
 
     use super::{
         ChatSessionUpdateOutcome, ChatState, Player, profile_key, validate_chat_session_update,
     };
+    use crate::permission::{PermissionKey, PermissionMetadataSet, PermissionSet};
+    use crate::test_support::{TestPlayerBuilder, test_runtime_config, test_world};
 
     struct FixedValidator(bool);
 
@@ -628,6 +649,54 @@ mod tests {
                 Some(&FixedValidator(false)),
             ),
             ChatSessionUpdateOutcome::Invalid(profile_key::ValidationError::InvalidSignature)
+        ));
+    }
+
+    fn spam_test_player(effective: PermissionSet) -> Arc<Player> {
+        let player = TestPlayerBuilder::new(Arc::clone(test_world()), "Builder", 9_301)
+            .detached_config(test_runtime_config(2))
+            .build();
+        player.set_permission_state(
+            vec!["admin".to_owned()],
+            PermissionSet::new(),
+            PermissionMetadataSet::new(),
+            effective,
+            PermissionMetadataSet::new(),
+        );
+        player
+    }
+
+    fn key(value: &str) -> PermissionKey {
+        match PermissionKey::parse(value) {
+            Ok(key) => key,
+            Err(error) => panic!("test permission key should parse: {error}"),
+        }
+    }
+
+    #[test]
+    fn a_group_granting_everything_is_spared_the_spam_kick() {
+        let mut everything = PermissionSet::new();
+        everything.allow(key("*"));
+        assert!(spam_test_player(everything).is_spam_exempt());
+
+        let mut bypass = PermissionSet::new();
+        bypass.allow(key(super::SPAM_BYPASS_PERMISSION_KEY));
+        assert!(spam_test_player(bypass).is_spam_exempt());
+    }
+
+    #[test]
+    fn a_plain_player_is_kicked_for_command_spam() {
+        let player = spam_test_player(PermissionSet::new());
+        assert!(!player.is_spam_exempt());
+        let mut throttler = super::TickThrottler::new(20, 200);
+        let kicks: Vec<bool> = (0..10)
+            .map(|_| Player::should_disconnect_for_rate_spam(&mut throttler, false))
+            .collect();
+        assert_eq!(kicks.iter().filter(|kick| **kick).count(), 1);
+        assert!(kicks[9]);
+        assert!(!Player::should_disconnect_for_rate_spam(
+            &mut throttler,
+            true
         ));
     }
 }
