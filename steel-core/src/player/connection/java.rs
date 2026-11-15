@@ -7,8 +7,8 @@ use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
 use steel_protocol::packet_writer::TCPNetworkEncoder;
 use steel_protocol::packets::common::{
-    CDisconnect, CKeepAlive, CPongResponse, SClientInformation, SCustomPayload, SKeepAlive,
-    SPingRequest,
+    CDisconnect, CKeepAlive, CPongResponse, SClientInformation, SCustomClickAction, SCustomPayload,
+    SKeepAlive, SPingRequest,
 };
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
@@ -85,6 +85,7 @@ enum ScheduledPlayPacketKind {
     Attack(SAttack),
     Interact(SInteract),
     CustomPayload(SCustomPayload),
+    CustomClickAction(SCustomClickAction),
     Chat(Box<SChat>),
     ChatAck(SChatAck),
     ChatSessionUpdate(SChatSessionUpdate),
@@ -239,6 +240,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
+            | ScheduledPlayPacketKind::CustomClickAction(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
             | ScheduledPlayPacketKind::SetBeacon(_)
             | ScheduledPlayPacketKind::SelectTrade(_)
@@ -261,6 +263,7 @@ impl ScheduledPlayPacket {
         )
     }
 
+    #[expect(clippy::too_many_lines, reason = "one arm per scheduled packet kind")]
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
@@ -274,6 +277,9 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::Interact(packet) => player.handle_interact(packet),
             ScheduledPlayPacketKind::CustomPayload(packet) => {
                 player.handle_custom_payload(packet);
+            }
+            ScheduledPlayPacketKind::CustomClickAction(packet) => {
+                player.handle_custom_click_action(&packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
                 player.handle_chat(*packet);
@@ -728,6 +734,9 @@ impl JavaConnection {
             )),
             play::S_CUSTOM_PAYLOAD => scheduled(ScheduledPlayPacketKind::CustomPayload(
                 SCustomPayload::read_packet(data)?,
+            )),
+            play::S_CUSTOM_CLICK_ACTION => scheduled(ScheduledPlayPacketKind::CustomClickAction(
+                SCustomClickAction::read_packet(data)?,
             )),
             play::S_CHAT => scheduled(ScheduledPlayPacketKind::Chat(Box::new(SChat::read_packet(
                 data,

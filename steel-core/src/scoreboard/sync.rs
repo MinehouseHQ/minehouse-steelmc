@@ -3,7 +3,7 @@
 
 use std::{
     ptr,
-    sync::{Arc, Weak},
+    sync::{Arc, OnceLock, Weak},
 };
 
 use steel_protocol::packets::game::{
@@ -33,6 +33,29 @@ pub enum ScoreboardPacket {
     Team(CSetPlayerTeam),
 }
 
+/// Lets a content crate change the team packets one player gets, for what vanilla clients
+/// can only be told through teams (hidden name tags). The scoreboard itself stays as it is.
+pub trait TeamPacketObserver: Send + Sync {
+    /// The packet `viewer` gets instead of `packet`, or `None` to send it as it is.
+    fn rewrite(&self, _viewer: &Player, _packet: &CSetPlayerTeam) -> Option<CSetPlayerTeam> {
+        None
+    }
+}
+
+static TEAM_PACKET_OBSERVER: OnceLock<&'static dyn TeamPacketObserver> = OnceLock::new();
+
+/// Installs the team packet observer. Returns `false` if one is already installed.
+pub fn set_team_packet_observer(observer: &'static dyn TeamPacketObserver) -> bool {
+    TEAM_PACKET_OBSERVER.set(observer).is_ok()
+}
+
+fn send_team(packet: &CSetPlayerTeam, player: &Player) {
+    let rewritten = TEAM_PACKET_OBSERVER
+        .get()
+        .and_then(|observer| observer.rewrite(player, packet));
+    player.send_packet(rewritten.unwrap_or_else(|| packet.clone()));
+}
+
 impl ScoreboardPacket {
     pub(super) fn send_to(&self, player: &Player) {
         match self {
@@ -40,7 +63,7 @@ impl ScoreboardPacket {
             Self::Display(packet) => player.send_packet(packet.clone()),
             Self::Score(packet) => player.send_packet(packet.clone()),
             Self::Reset(packet) => player.send_packet(packet.clone()),
-            Self::Team(packet) => player.send_packet(packet.clone()),
+            Self::Team(packet) => send_team(packet, player),
         }
     }
 }
@@ -146,6 +169,14 @@ impl ScoreboardState {
 
     /// Vanilla `PlayerList.updateEntireScoreboard`: every team, then each
     /// displayed objective once.
+    /// Every team's settings again, as `createAddOrModifyPacket(team, false)`.
+    pub(super) fn team_settings_packets(&self) -> Vec<ScoreboardPacket> {
+        self.teams
+            .values()
+            .map(|team| team_add_or_modify_packet(team, false))
+            .collect()
+    }
+
     pub(super) fn entire_scoreboard_packets(&self) -> Vec<ScoreboardPacket> {
         let mut packets: Vec<_> = self
             .teams

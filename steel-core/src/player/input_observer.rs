@@ -3,6 +3,7 @@
 
 use std::sync::OnceLock;
 
+use steel_utils::Identifier;
 use steel_utils::types::InteractionHand;
 
 use super::Player;
@@ -22,6 +23,10 @@ pub trait PlayerInputObserver: Send + Sync {
 
     /// The player is changing the hotbar slot `from` to `to`; the change goes on after.
     fn carried_item(&self, _player: &Player, _from: u8, _to: u8) {}
+
+    /// The player pressed a dialog button or clicked text with the `custom` action `id`.
+    /// Vanilla does nothing with these.
+    fn custom_click(&self, _player: &Player, _id: &Identifier) {}
 }
 
 static PLAYER_INPUT_OBSERVER: OnceLock<&'static dyn PlayerInputObserver> = OnceLock::new();
