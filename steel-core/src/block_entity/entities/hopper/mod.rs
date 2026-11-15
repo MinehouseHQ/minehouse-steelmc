@@ -28,7 +28,7 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, RemovalReason};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef, SharedContainer};
-use crate::world::World;
+use crate::world::{World, block_guard};
 use rand::RngExt as _;
 
 pub(crate) use transfer::{add_item, is_full_container};
@@ -309,6 +309,9 @@ pub(crate) fn suck_in_items(
 ) -> bool {
     let above = BlockPos::containing(level_position.x, level_position.y + 1.0, level_position.z);
     let source_point = DVec3::new(level_position.x, level_position.y + 1.0, level_position.z);
+    if block_guard::keeps_from_hoppers(world, above) {
+        return false;
+    }
     if let Some(sources) = get_container_at_point(world, above, source_point) {
         let hopper_id = hopper.container_id();
         let source_ids: Vec<ContainerId> = sources.iter().map(ContainerRef::container_id).collect();

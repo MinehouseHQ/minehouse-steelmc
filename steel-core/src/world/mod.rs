@@ -114,6 +114,7 @@ use crate::{
 pub(crate) mod autosave;
 mod block_entity_ticker;
 mod block_event;
+pub mod block_guard;
 mod block_region;
 mod block_updates;
 mod border;

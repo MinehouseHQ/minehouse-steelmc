@@ -92,11 +92,14 @@ def client_blocks(files):
             key = tuple(slot["state"][name] for name in names)
             if key in models:
                 sys.exit(f"client_blocks.json: repeated {carrier} state for {slot['block']}")
-            models[key] = slot["model"]
+            models[key] = {"model": slot["model"]}
+            # A block that faces a side is its model turned around the vertical axis.
+            if slot.get("y"):
+                models[key]["y"] = slot["y"]
         variants = {}
         for key in itertools.product(*(properties[name] for name in names)):
             state = ",".join(f"{name}={value}" for name, value in zip(names, key))
-            variants[state] = {"model": models.pop(key, entry["vanilla_model"])}
+            variants[state] = models.pop(key, {"model": entry["vanilla_model"]})
         if models:
             sys.exit(f"client_blocks.json: no such {carrier} state: {sorted(models)}")
         path = f"minecraft/blockstates/{carrier}.json"

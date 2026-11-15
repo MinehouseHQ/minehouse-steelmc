@@ -296,8 +296,32 @@ site for the account and opens a chest window:
 `custom_data` (`minehouse_bank_card`). An ATM opened with a card in the hand opens that card's
 account.
 
-Not here yet: the terminals (so the ATM has no «Купить терминал» button), transfers, the banker
-and the spawn zones.
+**The terminal** (`minehouse-bank:terminal`, «Купить терминал» in the ATM for `terminal_price`)
+is a small block for a counter or a chest. The client sees a state of the plant carrier with our
+model, dark until the terminal is locked, and a stone button without the pack. What it is set to
+is in `bank-terminals.json` in the data directory, by world and position; the till's invoice is
+in memory only. A text display above it (tag `minehouse_terminal`, saved with the chunk) says
+what it sells or asks for and follows the stock twice a second while a player is within 24
+blocks.
+
+- A terminal that is not locked opens the setup window to anyone: the account (the player's own
+  by default, another one typed in an anvil window and checked by the site), the mode, and for
+  vending the goods (the stack in the hand: its count is one sale) and the price. «Сохранить и
+  закрепить» tells the site and locks it. Only breaking the block undoes that, and the site is
+  told who broke it.
+- **A till**: the owner sets an amount, the label shows it for `invoice_seconds`, a buyer clicks
+  and pays with a card from the inventory (the pay window lets them pick one of several).
+- **A vending terminal** sells from the chest or barrel under it. The goods leave the chest into
+  the journal (`vending`) before the money moves: paid, they go to the buyer (or wait for the
+  next join); refused, they go back to the chest; no answer, the bank asks the site about the
+  operation two minutes later and does one or the other. Goods that no longer fit the chest are
+  dropped on it.
+- The stock under a locked vending terminal (both halves of a double chest) is not broken by
+  anyone but the owner and players with `minehouse.bank.admin`, and hoppers take nothing from
+  it. Opening it is not limited, as on the Fabric server. These two checks are hooks in
+  steel-core (`world::block_guard`).
+
+Not here yet: transfers, the banker and the spawn zones.
 
 `config/minehouse/bank.toml`:
 
@@ -315,7 +339,8 @@ Differences from the Fabric mod: the journal is in the data directory instead of
 folder, and its items are hex of their NBT, not SNBT, so a Fabric journal with items in it is not
 read. Move a server with an empty journal. An entry whose items can't be read stays in the file
 and is logged instead of being dropped. Cards and ATMs of the Fabric server are not carried over:
-the ATM there had no display entity, the card was a registry item.
+the ATM there had no display entity, the card was a registry item, and a terminal kept its
+settings in a block entity (a terminal block found in the world is offered for setup again).
 
 ## Our items
 

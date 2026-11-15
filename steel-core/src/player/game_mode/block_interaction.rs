@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use crate::world::block_guard;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -105,6 +106,11 @@ impl Player {
         let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
+                if block_guard::keeps_from_breaking(self, &world, packet.pos) {
+                    self.send_block_updates(packet.pos, packet.direction);
+                    self.ack_block_changes_up_to(packet.sequence);
+                    return;
+                }
                 if let Some(world_log) = self.world_log()
                     && world_log.block_clicked(self, &world, packet.pos, packet.direction, true)
                 {

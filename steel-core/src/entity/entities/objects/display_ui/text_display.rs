@@ -131,6 +131,12 @@ impl TextDisplayEntity {
         self.entity_data.lock().text.set(Box::new(text));
     }
 
+    /// Changes the synced data: the text, its background, the scale, the billboard and the
+    /// rest. What changed is sent to the clients on the next tick.
+    pub fn edit(&self, change: impl FnOnce(&mut TextDisplayEntityData)) {
+        change(&mut self.entity_data.lock());
+    }
+
     /// Vanilla `TextDisplay.getFlags`.
     #[must_use]
     pub fn flags(&self) -> i8 {
