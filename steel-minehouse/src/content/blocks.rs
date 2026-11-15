@@ -29,6 +29,7 @@ use steel_utils::{BlockStateId, Identifier};
 
 use super::{
     CustomItem, JUNCTION, LEAF_BLOCK as LEAF_BLOCK_ITEM, STATION,
+    cauldron::{self, BROTH_CAULDRON, MILK_CAULDRON},
     cloud::{self, CLOUD_BLOCK},
     herbs::{self, CROP_BLOCK, LEAF_BLOCK, WILD_BLOCK},
     metro::{self, JUNCTION_BLOCK, STATION_BLOCK},
@@ -140,6 +141,22 @@ pub(super) fn show_block(
     }
 }
 
+/// Has clients see every state of `block` as the vanilla state `shown` gives for it, and
+/// its break as what `broken` gives: for a block that needs no state of the pack.
+pub(super) fn show_as(
+    blocks: &mut BlockRegistry,
+    block: &'static Block,
+    shown: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
+    broken: impl Fn(&BlockRegistry, BlockStateId) -> BlockStateId,
+) {
+    let first = blocks.get_base_state_id(block).0;
+    for state in (first..first + block.state_count()).map(BlockStateId) {
+        let (shown, broken) = (shown(blocks, state), broken(blocks, state));
+        blocks.show_to_clients_as(state, shown);
+        blocks.show_break_to_clients_as(state, broken);
+    }
+}
+
 /// [`show_block`] for a block that looks the same in every state without the pack.
 pub(super) fn show_full_block(
     blocks: &mut BlockRegistry,
@@ -180,7 +197,12 @@ impl ItemBehavior for PlacesBlock {
 }
 
 /// The blocks a pickaxe mines. The tag stays on the server: clients do not have the blocks.
-const PICKAXE: &[&Block] = &[&STATION_BLOCK, &JUNCTION_BLOCK];
+const PICKAXE: &[&Block] = &[
+    &STATION_BLOCK,
+    &JUNCTION_BLOCK,
+    &MILK_CAULDRON,
+    &BROTH_CAULDRON,
+];
 /// The blocks a hoe mines faster.
 const HOE: &[&Block] = &[&LEAF_BLOCK];
 
@@ -219,6 +241,9 @@ pub(super) fn register(registry: &mut Registry) {
     blocks.register(&LEAF_BLOCK);
     blocks.register(&CROP_BLOCK);
     blocks.register(&WILD_BLOCK);
+    blocks.register(&MILK_CAULDRON);
+    blocks.register(&BROTH_CAULDRON);
+    cauldron::show_to_clients(blocks);
     herbs::show_to_clients(blocks);
     tag(blocks, "mineable/pickaxe", PICKAXE);
     tag(blocks, "mineable/hoe", HOE);
@@ -236,6 +261,8 @@ pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     }
     behaviors.set_behavior(&CROP_BLOCK, Box::new(herbs::HerbCrop));
     behaviors.set_behavior(&WILD_BLOCK, Box::new(herbs::WildHerb));
+    behaviors.set_behavior(&MILK_CAULDRON, Box::new(cauldron::MilkCauldron));
+    behaviors.set_behavior(&BROTH_CAULDRON, Box::new(cauldron::BrothCauldron));
 }
 
 #[cfg(test)]
@@ -355,6 +382,36 @@ mod tests {
         let junction = blocks.get_base_state_id(&JUNCTION_BLOCK);
         assert_eq!(broken[usize::from(station.0) + 16], quartz.0);
         assert_eq!(broken[usize::from(junction.0)], cut.0);
+    }
+
+    #[test]
+    fn cauldrons_of_ours_are_vanilla_cauldrons_to_a_client() {
+        let (registry, vanilla_states) = extended();
+        let blocks = &registry.blocks;
+        let (shown, _) = blocks.client_states(vanilla_states);
+        let shown = shown.expect("our blocks change what clients are sent");
+        let broken = blocks.client_break_states(&shown, vanilla_states);
+        let state = |block: &'static Block, properties: &[(&str, &str)]| {
+            blocks
+                .state_id_from_block_properties(block, properties)
+                .expect("the block has the state")
+        };
+        let sent = |id: BlockStateId| BlockStateId(shown[usize::from(id.0)]);
+        let empty = blocks.get_default_state_id(&vanilla_blocks::CAULDRON);
+
+        // Milk is powder snow to its level, whatever leaves are in it.
+        let milk = state(&MILK_CAULDRON, &[("level", "2"), ("leaves", "7")]);
+        let snow = state(&vanilla_blocks::POWDER_SNOW_CAULDRON, &[("level", "2")]);
+        assert_eq!(sent(milk), snow);
+        assert_eq!(broken[usize::from(milk.0)], empty.0);
+
+        // Broth is water: full at five bowls, at the bottom with one left.
+        for (servings, level) in [("5", "3"), ("3", "2"), ("1", "1")] {
+            let broth = state(&BROTH_CAULDRON, &[("servings", servings)]);
+            let water = state(&vanilla_blocks::WATER_CAULDRON, &[("level", level)]);
+            assert_eq!(sent(broth), water, "{servings} bowls");
+            assert_eq!(broken[usize::from(broth.0)], empty.0);
+        }
     }
 
     #[test]

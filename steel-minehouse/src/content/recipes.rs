@@ -15,7 +15,7 @@ use steel_registry::{
 };
 use steel_utils::Identifier;
 
-use super::{CLOUD, CustomItem, JUNCTION, LEAF, LEAF_BLOCK, MAGNIFIER, STATION};
+use super::{CLOUD, CustomItem, JUNCTION, LEAF, LEAF_BLOCK, MAGNIFIER, PAPIROSA, STATION};
 
 /// The result of a recipe: one of `item`. Built without the registry, which is not published
 /// yet when our recipes are added to it.
@@ -196,6 +196,23 @@ static LEAF_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock::
     )
 });
 
+/// Two magic leaves rolled in a sheet of paper.
+static PAPIROSA_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock::new(|| {
+    Recipe::new(
+        Identifier::new("minehouse-herbs", "magic_papirosa"),
+        &vanilla_recipe_types::CRAFTING,
+        CraftingRecipe::Shapeless(ShapelessRecipe::new(
+            misc(),
+            Box::new([
+                LEAF.ingredient(),
+                LEAF.ingredient(),
+                Ingredient::Item(&vanilla_items::PAPER),
+            ]),
+            result(&PAPIROSA, 1),
+        )),
+    )
+});
+
 /// The keys of our recipes.
 pub(super) const KEYS: &[(&str, &str)] = &[
     ("minehouse-tweaks", "magnifier"),
@@ -204,6 +221,7 @@ pub(super) const KEYS: &[(&str, &str)] = &[
     ("minehouse-tweaks", "metro_junction"),
     ("minehouse-herbs", "magic_leaf_block"),
     ("minehouse-herbs", "magic_leaf_from_block"),
+    ("minehouse-herbs", "magic_papirosa"),
 ];
 
 /// How many of our recipes the published registry holds.
@@ -226,6 +244,7 @@ pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*JUNCTION_RECIPE);
     registry.recipes.register(&*LEAF_BLOCK_RECIPE);
     registry.recipes.register(&*LEAF_RECIPE);
+    registry.recipes.register(&*PAPIROSA_RECIPE);
 }
 
 #[cfg(test)]

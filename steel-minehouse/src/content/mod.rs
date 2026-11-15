@@ -6,10 +6,12 @@
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
 mod blocks;
+mod cauldron;
 mod cloud;
 mod commands;
 mod herbs;
 mod metro;
+mod papirosa;
 mod recipes;
 
 use std::{str::FromStr as _, sync::LazyLock};
@@ -22,13 +24,17 @@ use steel_core::{
 use steel_registry::{
     data_components::{
         CustomData,
-        vanilla_components::{CUSTOM_DATA, ITEM_MODEL, ITEM_NAME, ItemLore, LORE, MAX_STACK_SIZE},
+        vanilla_components::{
+            CONSUMABLE, CUSTOM_DATA, Consumable, FOOD, ITEM_MODEL, ITEM_NAME, ItemLore,
+            ItemStackTemplate, ItemUseAnimation, LORE, MAX_STACK_SIZE, USE_REMAINDER, UseRemainder,
+        },
     },
     extend_registry,
     item_stack::ItemStack,
     items::Item,
     recipe::{Ingredient, set_extension_item_id},
-    vanilla_items,
+    sound_event::{SoundEvent, SoundEventHolder},
+    sound_events, vanilla_items,
 };
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -50,6 +56,20 @@ pub struct CustomItem {
     pub lore: &'static [&'static str],
     /// How many fit a stack.
     pub max_stack: i32,
+    /// How it is drunk or smoked, if it is.
+    pub consume: Option<Consume>,
+}
+
+/// How an item of ours is consumed.
+pub struct Consume {
+    /// For how long, in seconds.
+    pub seconds: f32,
+    /// How the player holds it meanwhile.
+    pub animation: ItemUseAnimation,
+    /// The sound of it, every few ticks.
+    pub sound: &'static SoundEvent,
+    /// What is left in the hand.
+    pub remainder: Option<&'static LazyLock<Item>>,
 }
 
 /// «Лупа»: shows the history of a block to any player.
@@ -64,6 +84,7 @@ pub static MAGNIFIER: CustomItem = CustomItem {
         "Ещё клик по тому же блоку: дальше",
     ],
     max_stack: 1,
+    consume: None,
 };
 
 /// «Облачко»: the cloud block in a hand.
@@ -73,6 +94,7 @@ pub static CLOUD: CustomItem = CustomItem {
     name: "Облачко",
     lore: &[],
     max_stack: 64,
+    consume: None,
 };
 
 /// «Станция метро»: the station block in a hand.
@@ -82,6 +104,7 @@ pub static STATION: CustomItem = CustomItem {
     name: "Станция метро",
     lore: &[],
     max_stack: 64,
+    consume: None,
 };
 
 /// «Стрелка метро»: the junction block in a hand.
@@ -91,6 +114,7 @@ pub static JUNCTION: CustomItem = CustomItem {
     name: "Стрелка метро",
     lore: &[],
     max_stack: 64,
+    consume: None,
 };
 
 /// «Семена магического растения»: fall from the wild plant and from the crop, and sow it.
@@ -100,6 +124,7 @@ pub static SEEDS: CustomItem = CustomItem {
     name: "Семена магического растения",
     lore: &["Сажать на вспаханную землю"],
     max_stack: 64,
+    consume: None,
 };
 
 /// «Магический лист»: what the magic herb gives.
@@ -112,6 +137,7 @@ pub static LEAF: CustomItem = CustomItem {
         "магический отвар",
     ],
     max_stack: 64,
+    consume: None,
 };
 
 /// «Блок магических листьев»: nine leaves in one block.
@@ -121,6 +147,42 @@ pub static LEAF_BLOCK: CustomItem = CustomItem {
     name: "Блок магических листьев",
     lore: &["9 магических листьев,", "на верстаке разбирается обратно"],
     max_stack: 64,
+    consume: None,
+};
+
+/// «Магический отвар»: a bowl out of the cauldron of broth.
+pub static BROTH: CustomItem = CustomItem {
+    id: "minehouse-herbs:magic_broth",
+    base: &vanilla_items::MUSHROOM_STEW,
+    name: "Магический отвар",
+    lore: &["+4 сердца, замедление и левитация"],
+    max_stack: 1,
+    consume: Some(Consume {
+        seconds: 1.6,
+        animation: ItemUseAnimation::Drink,
+        sound: &sound_events::ENTITY_GENERIC_DRINK,
+        remainder: Some(&vanilla_items::BOWL),
+    }),
+};
+
+/// «Магическая папироса»: two magic leaves rolled in paper.
+pub static PAPIROSA: CustomItem = CustomItem {
+    id: "minehouse-herbs:magic_papirosa",
+    base: &vanilla_items::PAPER,
+    name: "Магическая папироса",
+    lore: &[
+        "+2 сердца и замедление",
+        "Прикуривать с огнивом во второй руке",
+        "Больше трёх подряд — поплохеет",
+    ],
+    max_stack: 16,
+    consume: Some(Consume {
+        seconds: papirosa::SMOKE_SECONDS,
+        animation: ItemUseAnimation::TootHorn,
+        // The sound of a consumable repeats every 4 ticks; the puffs make their own.
+        sound: &sound_events::INTENTIONALLY_EMPTY,
+        remainder: None,
+    }),
 };
 
 /// Every item of ours.
@@ -132,6 +194,8 @@ pub static ITEMS: &[&CustomItem] = &[
     &SEEDS,
     &LEAF,
     &LEAF_BLOCK,
+    &BROTH,
+    &PAPIROSA,
 ];
 
 static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
@@ -142,7 +206,11 @@ static SEEDS_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::CROP_BLOCK)
 /// What using `stack` does when it is an item of ours that does not behave as its vanilla
 /// item: clouds are white wool to the client, and must not be placed as wool.
 fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
-    let id = id_of(stack)?;
+    let Some(id) = id_of(stack) else {
+        return stack
+            .is(&vanilla_items::MILK_BUCKET)
+            .then_some(&cauldron::MilkBucket);
+    };
     if id == CLOUD.id {
         Some(&cloud::CLOUD_ITEM)
     } else if id == STATION.id {
@@ -153,8 +221,26 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&SEEDS_ITEM)
     } else if id == LEAF_BLOCK.id {
         Some(&LEAF_BLOCK_ITEM)
+    } else if id == BROTH.id {
+        Some(&cauldron::Broth)
+    } else if id == PAPIROSA.id {
+        Some(&papirosa::Papirosa)
     } else {
         None
+    }
+}
+
+impl Consume {
+    fn apply(&self, stack: &mut ItemStack) {
+        let sound = SoundEventHolder::Registry(self.sound);
+        if let Ok(consumable) = Consumable::new(self.seconds, self.animation, sound, false, vec![])
+        {
+            stack.set(CONSUMABLE, consumable);
+        }
+        if let Some(remainder) = self.remainder {
+            let left = ItemStackTemplate::new(LazyLock::force(remainder));
+            stack.set(USE_REMAINDER, UseRemainder::new(left));
+        }
     }
 }
 
@@ -179,6 +265,14 @@ impl CustomItem {
             stack.set(ITEM_MODEL, model);
         }
         stack.set(MAX_STACK_SIZE, self.max_stack);
+        // The base item may be food (the broth is a mushroom stew to the client): an
+        // item of ours is consumed only the way it says.
+        stack.remove(FOOD);
+        stack.remove(CONSUMABLE);
+        stack.remove(USE_REMAINDER);
+        if let Some(consume) = &self.consume {
+            consume.apply(&mut stack);
+        }
         let mut tag = NbtCompound::new();
         tag.insert(ID_KEY, self.id);
         if let Some(data) = CustomData::try_from_compound(tag) {
