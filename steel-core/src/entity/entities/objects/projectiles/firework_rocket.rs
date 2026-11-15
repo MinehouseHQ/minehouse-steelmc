@@ -46,6 +46,8 @@ struct FireworkRocketState {
     life: i32,
     lifetime: i32,
     attached_to_entity: Option<Weak<dyn Entity>>,
+    /// A rocket for show: its blast hurts no one. Not vanilla, not saved.
+    harmless: bool,
 }
 
 /// A launched firework rocket.
@@ -76,6 +78,7 @@ impl FireworkRocketEntity {
                 life: 0,
                 lifetime: 0,
                 attached_to_entity: None,
+                harmless: false,
             }),
         }
     }
@@ -92,6 +95,7 @@ impl FireworkRocketEntity {
                 life: 0,
                 lifetime: 0,
                 attached_to_entity: None,
+                harmless: false,
             }),
         }
     }
@@ -108,6 +112,12 @@ impl FireworkRocketEntity {
         let rocket = Self::new(entity_type, id, position, world);
         rocket.initialize_launch(source_item);
         rocket
+    }
+
+    /// Makes the blast of this rocket hurt no one: a rocket launched by the server for
+    /// show. Vanilla has no such rocket; the flag is not saved with the entity.
+    pub fn set_harmless(&self, harmless: bool) {
+        self.state.lock().harmless = harmless;
     }
 
     /// Creates a rocket attached to the supplied living entity.
@@ -246,7 +256,7 @@ impl FireworkRocketEntity {
 
     fn deal_explosion_damage(self: &Arc<Self>, world: &Arc<World>) {
         let explosion_count = self.explosion_count();
-        if explosion_count == 0 {
+        if explosion_count == 0 || self.state.lock().harmless {
             return;
         }
         let damage_amount = 5.0 + explosion_count as f32 * 2.0;
