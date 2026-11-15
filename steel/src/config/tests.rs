@@ -75,6 +75,7 @@ fn packaged_config_matches_the_runtime_config_defaults() {
         command_spam_threshold_seconds,
         compression,
         server_links,
+        resource_pack,
         packet_workers,
         chunk_generation_threads,
         chunk_encoding_threads,
@@ -121,6 +122,8 @@ fn packaged_config_matches_the_runtime_config_defaults() {
     // These four diverge by design, so only the packaged side is pinned: links are the
     // embedder's to choose, and a thread count of zero means the automatic default `None` does.
     assert!(server_links.is_some());
+    // The packaged config only shows the pack settings, commented out.
+    assert!(resource_pack.is_none());
     assert_eq!(packet_workers, Some(0));
     assert_eq!(chunk_generation_threads, Some(0));
     assert_eq!(chunk_encoding_threads, Some(0));
@@ -317,6 +320,90 @@ fn validate_rejects_extended_view_distance_without_opt_in() {
     assert_eq!(
         validate(&config.server),
         Err("View distance must in range 1..32")
+    );
+}
+
+fn with_resource_pack(settings: &str) -> SteelConfig {
+    let config_toml = DEFAULT_CONFIG.replace(
+        "# [server.resource_pack]",
+        &format!("[server.resource_pack]\n{settings}"),
+    );
+    toml::from_str(&config_toml).expect("config parses")
+}
+
+#[test]
+fn resource_pack_settings_become_the_push_packet() {
+    let config = with_resource_pack(
+        "url = \"https://example.com/pack.zip\"\n\
+         sha1 = \"0123456789abcdef0123456789ABCDEF01234567\"\n\
+         required = true\n\
+         prompt = \"Our textures\"",
+    );
+    validate(&config.server).expect("pack settings validate");
+    let runtime_config = config.server.into_runtime_config();
+    let packet = runtime_config
+        .resource_pack_packet()
+        .expect("a pack is offered");
+
+    assert_eq!(packet.url, "https://example.com/pack.zip");
+    assert_eq!(packet.hash, "0123456789abcdef0123456789ABCDEF01234567");
+    assert!(packet.required);
+    assert!(packet.prompt.is_some());
+    // Vanilla UUID.nameUUIDFromBytes of the address.
+    assert_eq!(
+        packet.id.to_string(),
+        "50227fe1-89d1-393b-8884-7d487e29fa5a"
+    );
+    assert!(runtime_config.resource_pack_required());
+}
+
+#[test]
+fn resource_pack_prompt_can_be_a_text_component() {
+    let config = with_resource_pack(
+        "url = \"https://example.com/pack.zip\"\n\
+         prompt = { text = \"Our textures\", color = \"gold\" }",
+    );
+    let runtime_config = config.server.into_runtime_config();
+
+    assert!(
+        runtime_config
+            .resource_pack_packet()
+            .is_some_and(|packet| packet.prompt.is_some())
+    );
+}
+
+#[test]
+fn resource_pack_id_can_be_set() {
+    let config = with_resource_pack(
+        "url = \"https://example.com/pack.zip\"\n\
+         id = \"00000000-0000-0000-0000-00000000002a\"",
+    );
+    let runtime_config = config.server.into_runtime_config();
+    let packet = runtime_config
+        .resource_pack_packet()
+        .expect("a pack is offered");
+
+    assert_eq!(packet.id.as_u128(), 42);
+    assert!(!packet.required);
+    assert!(!runtime_config.resource_pack_required());
+}
+
+#[test]
+fn resource_pack_without_an_address_is_not_offered() {
+    let config = with_resource_pack("required = true");
+    let runtime_config = config.server.into_runtime_config();
+
+    assert!(runtime_config.resource_pack_packet().is_none());
+    assert!(!runtime_config.resource_pack_required());
+}
+
+#[test]
+fn validate_rejects_a_malformed_resource_pack_hash() {
+    let config = with_resource_pack("url = \"https://example.com/pack.zip\"\nsha1 = \"abc\"");
+
+    assert_eq!(
+        validate(&config.server),
+        Err("resource_pack.sha1 must be 40 hex digits")
     );
 }
 

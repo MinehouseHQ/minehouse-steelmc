@@ -33,7 +33,7 @@ use crate::tcp_client::JavaTcpClient;
 
 /// Vanilla pings a configuring client every 15 seconds; the client gives up after 30
 /// seconds of silence.
-const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
+pub(crate) const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Where a client stands with the login gate.
 #[derive(Default)]

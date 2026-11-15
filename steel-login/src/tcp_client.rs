@@ -28,7 +28,7 @@ use steel_protocol::{
     packets::{
         common::{
             CDisconnect, SClientInformation, SCustomClickAction, SCustomPayload, SKeepAlive,
-            SPingRequest,
+            SPingRequest, SResourcePack,
         },
         config::SSelectKnownPacks,
         handshake::{ClientIntent, SClientIntention},
@@ -240,6 +240,8 @@ pub struct JavaTcpClient {
     pub(crate) forwarded_address: AtomicCell<Option<IpAddr>>,
     /// State of the login gate for this client, see `handlers::gate`.
     pub(crate) gate: SyncMutex<GateState>,
+    /// Cancelled when the client gives its last word about the offered resource pack.
+    pub(crate) resource_pack_wait: CancellationToken,
     pub(crate) task_tracker: TaskTracker,
 }
 
@@ -313,6 +315,7 @@ impl JavaTcpClient {
             login_deadline: AtomicCell::new(None),
             forwarded_address: AtomicCell::new(None),
             gate: SyncMutex::new(GateState::default()),
+            resource_pack_wait: CancellationToken::new(),
             task_tracker,
         };
 
@@ -818,10 +821,14 @@ impl JavaTcpClient {
                 Ok(ConnectionAction::none())
             }
             config::S_KEEP_ALIVE => {
-                // Only the login gate pings in this phase; the answer needs no bookkeeping.
+                // Only the resource pack task and the login gate ping in this phase; the answer
+                // needs no bookkeeping.
                 SKeepAlive::read_packet(data)?;
                 Ok(ConnectionAction::none())
             }
+            config::S_RESOURCE_PACK => Ok(self
+                .handle_resource_pack(SResourcePack::read_packet(data)?)
+                .await),
             config::S_CUSTOM_CLICK_ACTION => {
                 self.handle_config_custom_click(SCustomClickAction::read_packet(data)?);
                 Ok(ConnectionAction::none())

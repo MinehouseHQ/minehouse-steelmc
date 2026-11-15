@@ -3,4 +3,5 @@
 pub mod config;
 pub(crate) mod gate;
 pub mod login;
+pub(crate) mod resource_pack;
 pub mod status;
