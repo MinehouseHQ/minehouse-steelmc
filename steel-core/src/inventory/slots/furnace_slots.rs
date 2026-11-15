@@ -1,11 +1,15 @@
 //! Furnace-specific input, fuel, and result slots.
 
+use rustc_hash::FxHashMap;
+use steel_registry::REGISTRY;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::recipe::UntypedRecipeRef;
 use steel_registry::vanilla_items;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::block_entity::entities::{FurnaceContainer, pop_furnace_experience};
 use crate::entity::Entity as _;
+use crate::inventory::container::Container as _;
 use crate::inventory::fuel_values::VANILLA_FUEL_VALUES;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::slots::{NormalSlot, Slot, SlotStorage};
@@ -132,18 +136,35 @@ impl Slot for FurnaceResultSlot {
         _stack: &mut ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Award crafted stats/recipes and trigger RECIPE_CRAFTED once supported.
+        // TODO: Award the crafted stat once stats are tracked per take.
         let (container, _) = self.storage().physical_backing()?;
         let container_id = container.container_id();
-        let recipes = guard
+        let used = guard
             .get_typed_mut::<FurnaceContainer>(container_id)
-            .map(FurnaceContainer::take_recipes_used);
+            .map(|furnace| (furnace.take_recipes_used(), furnace.items().to_vec()));
         self.base.set_changed(guard);
-        if let Some(recipes) = recipes {
-            guard.run_unlocked(|| {
-                pop_furnace_experience(&player.get_world(), player.position(), recipes);
-            });
+        if let Some((recipes, items)) = used {
+            guard.run_unlocked(|| award_used_recipes_and_pop_experience(player, recipes, &items));
         }
         None
+    }
+}
+
+/// Vanilla `AbstractFurnaceBlockEntity.awardUsedRecipesAndPopExperience`: pops the
+/// smelting experience, unlocks the recipes the furnace used and fires
+/// `recipe_crafted` for each with the furnace's items.
+fn award_used_recipes_and_pop_experience(
+    player: &Player,
+    recipes_used: FxHashMap<Identifier, i32>,
+    items: &[ItemStack],
+) {
+    let recipes: Vec<UntypedRecipeRef> = recipes_used
+        .keys()
+        .filter_map(|key| REGISTRY.recipes.by_key(key))
+        .collect();
+    pop_furnace_experience(&player.get_world(), player.position(), recipes_used);
+    player.award_recipes(&recipes);
+    for recipe in recipes {
+        player.trigger_recipe_crafted(recipe.key(), items);
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_events;
 use steel_utils::{
-    BlockPos,
+    BlockPos, Identifier,
     locks::{Shared, SyncMutex},
 };
 
@@ -52,13 +52,23 @@ impl StonecutterState {
     /// The result Vanilla `StonecutterMenu.setupResultSlot` shows for `index`.
     #[must_use]
     pub fn result_for(&self, index: i32) -> ItemStack {
+        self.result_and_recipe_for(index).0
+    }
+
+    /// Vanilla `StonecutterMenu.setupResultSlot`: the result for `index` and the
+    /// recipe it records as used, or empty and no recipe.
+    #[must_use]
+    pub fn result_and_recipe_for(&self, index: i32) -> (ItemStack, Option<Identifier>) {
         if self.recipes_for_input.is_empty() || !self.is_valid_recipe_index(index) {
-            return ItemStack::empty();
+            return (ItemStack::empty(), None);
         }
         usize::try_from(index)
             .ok()
             .and_then(|index| self.recipes_for_input.get(index))
-            .map_or_else(ItemStack::empty, |recipe| recipe.data().result.create())
+            .map_or_else(
+                || (ItemStack::empty(), None),
+                |recipe| (recipe.data().result.create(), Some(recipe.key().clone())),
+            )
     }
 }
 
@@ -91,6 +101,25 @@ impl StonecutterResultHandler {
     }
 }
 
+impl StonecutterResultHandler {
+    /// Vanilla `resultContainer.awardUsedRecipes(player, getRelevantItems())`, with the
+    /// input as the used item, run with the containers unlocked.
+    fn award_used_recipe(&self, guard: &mut ContainerLockGuard, player: &Player) {
+        let Some(input) = guard
+            .get(ContainerId::from_arc(&self.input_container))
+            .map(|input| input.get_item(0).clone())
+        else {
+            return;
+        };
+        let recipe = guard
+            .get_typed_mut::<ResultContainer>(ContainerId::from_arc(&self.result_container))
+            .and_then(ResultContainer::take_recipe_to_award);
+        if let Some(recipe) = recipe {
+            guard.run_unlocked(|| player.award_used_recipe(recipe, &[input]));
+        }
+    }
+}
+
 impl ResultHandler for StonecutterResultHandler {
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result_container))
@@ -104,12 +133,12 @@ impl ResultHandler for StonecutterResultHandler {
     fn update_result(&self, _guard: &mut ContainerLockGuard, _player: &Player) {}
 
     /// Vanilla `StonecutterMenu`'s result slot `onTake`.
-    // TODO: Award the used recipe once player recipe books exist.
     fn on_result_taken(
         &self,
         guard: &mut ContainerLockGuard,
-        _player: &Player,
+        player: &Player,
     ) -> Option<ItemStack> {
+        self.award_used_recipe(guard, player);
         let input_left = {
             let Some(input) = guard.get_mut(ContainerId::from_arc(&self.input_container)) else {
                 log::warn!("input container not locked while taking the stonecutter result");
@@ -126,14 +155,17 @@ impl ResultHandler for StonecutterResultHandler {
             // that ran out has already reset the recipe list through
             // `slotsChanged`, which leaves the result empty; the menu resets the
             // selection itself when it sees the changed input.
-            let result = if input_left {
-                state.result_for(state.selected_recipe_index)
+            let (result, recipe) = if input_left {
+                state.result_and_recipe_for(state.selected_recipe_index)
             } else {
-                ItemStack::empty()
+                (ItemStack::empty(), None)
             };
-            if let Some(result_container) =
-                guard.get_mut(ContainerId::from_arc(&self.result_container))
+            if let Some(result_container) = guard
+                .get_typed_mut::<ResultContainer>(ContainerId::from_arc(&self.result_container))
             {
+                if input_left {
+                    result_container.set_recipe_used(recipe);
+                }
                 result_container.set_item(0, result);
             }
         }

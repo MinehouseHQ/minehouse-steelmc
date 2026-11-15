@@ -215,7 +215,7 @@ mod tests {
         data_components::vanilla_components::TRIM, init_vanilla_registry, vanilla_blocks,
         vanilla_items,
     };
-    use steel_utils::{BlockPos, ChunkPos, Downcast as _, types::UpdateFlags};
+    use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, types::UpdateFlags};
 
     use super::{SmithingKind, smithing};
     use crate::{
@@ -310,6 +310,8 @@ mod tests {
         assert!(result.lock().get_item(0).is_empty());
         let inventory = player.inventory.lock();
         assert!((0..36).any(|slot| inventory.get_item(slot).is(&vanilla_items::NETHERITE_SWORD)));
+        drop(inventory);
+        assert!(player.knows_recipe(&Identifier::vanilla_static("netherite_sword_smithing")));
     }
 
     #[test]

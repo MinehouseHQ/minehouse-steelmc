@@ -13,6 +13,7 @@ pub mod lock;
 pub mod menu;
 pub mod prelude;
 pub mod recipe_access;
+pub mod recipe_crafting_holder;
 pub mod recipe_displays;
 pub mod recipe_manager;
 pub mod slot_access;

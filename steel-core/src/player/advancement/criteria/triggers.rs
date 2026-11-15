@@ -25,6 +25,11 @@ pub(crate) const BREWED_POTION: Identifier = Identifier::vanilla_static("brewed_
 pub(crate) const INVENTORY_CHANGED: Identifier = Identifier::vanilla_static("inventory_changed");
 /// `minecraft:recipe_unlocked`
 pub(crate) const RECIPE_UNLOCKED: Identifier = Identifier::vanilla_static("recipe_unlocked");
+/// Vanilla `CriteriaTriggers.RECIPE_CRAFTED`.
+pub(crate) const RECIPE_CRAFTED: Identifier = Identifier::vanilla_static("recipe_crafted");
+/// Vanilla `CriteriaTriggers.CRAFTER_RECIPE_CRAFTED`.
+pub(crate) const CRAFTER_RECIPE_CRAFTED: Identifier =
+    Identifier::vanilla_static("crafter_recipe_crafted");
 
 impl Player {
     /// Vanilla `PlayerTrigger.trigger(player)` for a trigger without

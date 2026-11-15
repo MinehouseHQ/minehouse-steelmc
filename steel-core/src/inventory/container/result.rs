@@ -2,13 +2,17 @@ use core::slice;
 use std::mem;
 
 use steel_registry::item_stack::ItemStack;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_registry::recipe::UntypedRecipeRef;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::inventory::container::Container;
+use crate::inventory::recipe_crafting_holder::take_recipe_to_award;
 
 /// A simple container for holding a single crafting result.
 pub struct ResultContainer {
     result: ItemStack,
+    /// Vanilla `ResultContainer.recipeUsed`.
+    recipe_used: Option<Identifier>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ResultContainer`.
@@ -22,7 +26,25 @@ impl ResultContainer {
     pub fn new() -> Self {
         Self {
             result: ItemStack::empty(),
+            recipe_used: None,
         }
+    }
+
+    /// Vanilla `ResultContainer.setRecipeUsed`.
+    pub fn set_recipe_used(&mut self, recipe: Option<Identifier>) {
+        self.recipe_used = recipe;
+    }
+
+    /// Vanilla `ResultContainer.getRecipeUsed`.
+    #[must_use]
+    pub const fn recipe_used(&self) -> Option<&Identifier> {
+        self.recipe_used.as_ref()
+    }
+
+    /// The container half of vanilla `RecipeCraftingHolder.awardUsedRecipes`; see
+    /// [`take_recipe_to_award`].
+    pub fn take_recipe_to_award(&mut self) -> Option<UntypedRecipeRef> {
+        take_recipe_to_award(&mut self.recipe_used)
     }
 }
 

@@ -124,7 +124,12 @@ impl StonecutterKind {
 
     /// Vanilla `StonecutterMenu.setupResultSlot`.
     fn setup_result_slot(&self, guard: &mut ContainerLockGuard, index: i32) {
-        let result = self.state.lock().result_for(index);
+        let (result, recipe) = self.state.lock().result_and_recipe_for(index);
+        if let Some(container) =
+            guard.get_typed_mut::<ResultContainer>(ContainerId::from_arc(&self.result_container))
+        {
+            container.set_recipe_used(recipe);
+        }
         self.set_result(guard, result);
     }
 }
@@ -257,7 +262,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
-    use steel_utils::{BlockPos, ChunkPos, Downcast as _, types::UpdateFlags};
+    use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, types::UpdateFlags};
 
     use super::{StonecutterKind, stonecutter};
     use crate::{
@@ -293,6 +298,18 @@ mod tests {
         player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
         let menu = stonecutter(Arc::clone(&player.inventory), 1, pos, world);
         (world_fixture, player, menu)
+    }
+
+    fn slab_recipe() -> Identifier {
+        let recipes = RECIPE_ACCESS
+            .stonecutter_recipes()
+            .select_by_input(&ItemStack::new(&vanilla_items::STONE));
+        let index = usize::try_from(slab_button()).expect("button ids are indices");
+        recipes
+            .get(index)
+            .expect("the slab recipe exists")
+            .key()
+            .clone()
     }
 
     fn slab_button() -> i32 {
@@ -346,6 +363,8 @@ mod tests {
         let slabs = result.lock().get_item(0).clone();
         assert!(slabs.is(&vanilla_items::STONE_SLAB));
         assert_eq!(slabs.count(), 2);
+        assert_eq!(result.lock().recipe_used(), Some(&slab_recipe()));
+        assert!(!player.knows_recipe(&slab_recipe()));
 
         // Taking one result consumes one input and keeps the selection.
         menu.clicked(
@@ -359,6 +378,9 @@ mod tests {
         assert_eq!(input.lock().get_item(0).count(), 2);
         assert!(result.lock().get_item(0).is(&vanilla_items::STONE_SLAB));
         assert_eq!(i32::from(selected.get(menu.behavior())), button);
+        // Taking the result unlocks its recipe, and the slot records it again.
+        assert!(player.knows_recipe(&slab_recipe()));
+        assert_eq!(result.lock().recipe_used(), Some(&slab_recipe()));
     }
 
     #[test]
