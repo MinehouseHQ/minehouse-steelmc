@@ -375,7 +375,23 @@ card of the lot: the area, the rent, the tenant or the bid, when the auction end
 time) and a button to the zone on the site. The set is rewritten when the site's list changes
 and taken off while the zones are closed.
 
-Not here yet: the banker, and of the zones the guides.
+The banker (`bank/banker/`) explains how the bank works. `/bank banker` (`minehouse.bank.banker`)
+puts him where the admin stands, facing the admin; `/bank banker <nick>` with the skin of a
+player, `/bank banker url <link>` with the skin PNG at the link (signed through MineSkin), and
+`/bank banker remove` takes away the nearest one within five blocks. He is not a world entity:
+where the bankers stand is kept in `bank-bankers.json` of the data directory and every player
+within 64 blocks is sent a mannequin of their own, so he takes no harm, can't be pushed and
+turns his head to each player he talks to.
+
+A right click starts the talk. The window is one action bar line of the fonts
+`minehouse-bank:dialog*` of the server pack over a fog drawn as a title (`banker/dialog.json`
+is the layout `tools/gen_dialog.py` of the Fabric mod makes with the fonts): the words type
+out two characters a tick, Shift shows the page, turns it or takes the answer, the wheel
+picks an answer (the hotbar slot comes right back), Space, an opened window or five blocks
+away end the talk.
+
+Not here yet: of the zones the guides; the banker's body animations (they were played by the
+events mod on the Fabric server).
 
 `config/minehouse/bank.toml`:
 
