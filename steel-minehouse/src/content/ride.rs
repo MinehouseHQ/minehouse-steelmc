@@ -45,7 +45,7 @@ use uuid::Uuid;
 use super::{
     metro,
     rail_graph::{self, Nav, Plan},
-    speed, stations,
+    speed, station_menu, stations,
     trains::{self, Decision, Moved},
 };
 use crate::moderation::format::render;
@@ -60,6 +60,8 @@ const DOCK_RANGE: f64 = 3.5;
 const DOCK_SNAP: f64 = 0.25;
 /// Fastest a docked cart is pulled to the middle of the station rail, blocks a tick.
 const DOCK_PULL: f64 = 0.15;
+/// This close to the middle of its station rail a docked cart has arrived.
+const DOCK_SETTLED: f64 = 0.05;
 /// How many rails short of a station a stopped cart is still pulled onto it.
 const DOCK_REACH: i32 = 2;
 /// How close a junction gets switched ahead of the cart, in blocks along the axes.
@@ -169,8 +171,8 @@ impl MinecartObserver for Ride {
             }
         }
         let now = world.game_time();
-        let mut carts = CARTS.lock();
-        let carts = carts.get_or_insert_default();
+        let mut carts_guard = CARTS.lock();
+        let carts = carts_guard.get_or_insert_default();
         let state = carts.entry(cart.uuid()).or_default();
         if let Some(start) = state.start {
             state.last_step = cart.position() - start;
@@ -179,6 +181,8 @@ impl MinecartObserver for Ride {
         if now % FORGET_AFTER == 0 {
             carts.retain(|_, state| (now - state.seen).abs() < FORGET_AFTER);
         }
+        drop(carts_guard);
+        station_menu::tick(cart, world);
     }
 
     fn interact(
@@ -212,6 +216,7 @@ impl MinecartObserver for Ride {
 
     fn removed(&self, cart: &dyn Entity, reason: RemovalReason) {
         trains::removed(cart, reason);
+        station_menu::cart_removed(cart);
     }
 }
 
@@ -297,7 +302,7 @@ fn set_horizontal(cart: &dyn Entity, speed: DVec3) {
 }
 
 /// Runs `action` for every player riding the cart or another cart of its train.
-fn riders(cart: &dyn Entity, mut action: impl FnMut(&Player)) {
+pub(super) fn riders(cart: &dyn Entity, mut action: impl FnMut(&Player)) {
     let mut aboard = |cart: &dyn Entity| {
         for passenger in cart.passengers() {
             if let Some(player) = passenger.as_player() {
@@ -705,6 +710,55 @@ fn reached_node(
     }
 }
 
+/// The rail under a cart: the one it is docked to, or the one it stands on.
+fn rail_of(cart: &dyn Entity, world: &World, docked: Option<BlockPos>) -> BlockPos {
+    let position = cart.position();
+    let mut rail = BlockPos::containing(position.x, position.y, position.z);
+    if is_rail(world.get_block_state(rail.below())) {
+        rail = rail.below();
+    }
+    docked.unwrap_or(rail)
+}
+
+/// The station rail `cart` (the front one of its train) stands still on, when it may be
+/// sent somewhere from there: it is not on its way anywhere and not counting down.
+pub(super) fn standing_at(cart: &dyn Entity, world: &World) -> Option<BlockPos> {
+    if !cart.is_on_rails() {
+        return None;
+    }
+    let docked = {
+        let carts = CARTS.lock();
+        let state = carts.as_ref().and_then(|carts| carts.get(&cart.uuid()));
+        if state.is_some_and(|state| state.route.is_some() || state.hold.is_some()) {
+            return None;
+        }
+        state.and_then(|state| state.dock)
+    };
+    if horizontal(cart.velocity()).length() > STILL {
+        return None;
+    }
+    // A docked cart is first pulled to the middle of its rail; the map hangs in front of
+    // where the rider is, so it waits for the cart to get there.
+    if docked.is_some_and(|rail| {
+        horizontal(bottom_center(rail) - cart.position()).length() > DOCK_SETTLED
+    }) {
+        return None;
+    }
+    let rail = rail_of(cart, world, docked);
+    (is_rail(world.get_block_state(rail)) && rail_graph::is_station(world, rail)).then_some(rail)
+}
+
+/// Sends `cart` from station rail `from` to station rail `destination`, as its rider
+/// chose on the map. `false` if the network as known has no way there.
+pub(super) fn send(
+    cart: &dyn Entity,
+    world: &Arc<World>,
+    from: BlockPos,
+    destination: BlockPos,
+) -> bool {
+    depart(cart, world, from, destination)
+}
+
 /// Sends `cart`, standing on station rail `from`, to the station rail `destination`.
 /// `false` if the network as known has no way there.
 fn depart(cart: &dyn Entity, world: &Arc<World>, from: BlockPos, destination: BlockPos) -> bool {
@@ -783,12 +837,7 @@ fn standing(context: CommandContext<'_>) -> Result<Standing, CommandError> {
         .as_ref()
         .and_then(|carts| carts.get(&cart.uuid()))
         .and_then(|state| state.dock);
-    let position = cart.position();
-    let mut rail = BlockPos::containing(position.x, position.y, position.z);
-    if is_rail(world.get_block_state(rail.below())) {
-        rail = rail.below();
-    }
-    let rail = docked.unwrap_or(rail);
+    let rail = rail_of(&*cart, &world, docked);
     if !is_rail(world.get_block_state(rail)) || !rail_graph::is_station(&world, rail) {
         return Err(error("Вагонетка должна стоять на станции метро."));
     }

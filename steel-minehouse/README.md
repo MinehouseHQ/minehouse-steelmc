@@ -392,9 +392,20 @@ carries it a long way, and every powered rail adds 6 blocks a second. It stops m
 tick where the chunks ahead are not ticking. `steel-core` asks the observer for `max_speed`
 and gives it `drive`, the move along the track to make as many times as it wants.
 
+`content/station_menu.rs` is the station map (the Fabric `StationMenu`, with `MapView` in
+`content/map_view.rs` and `Transfers` in `content/transfers.rs`). A rider whose cart (or
+the front cart of their train) stands on a station sees the network known from there
+hanging in front of them: the lines as strips of the line's color, the stations as dots,
+forks where the color changes as white rings. The station looked at is signed, a click
+sends the cart there (`/metro` still works), a held right button drags the map, and the
+wheel zooms it; the hotbar slot the wheel moved is given back when the map closes. The map
+is display entities sent to that player only, with one interaction entity over it for the
+clicks; nothing is added to the world. `steel-core` has `PlayerInputObserver`
+(`player/input_observer.rs`) for this: `interact` and `attack` for entity ids the server
+does not know, and `carried_item` for the wheel.
+
 Not ported yet: a train with a player knocking empty carts
-off the line, the station map in the cart (`/metro` stands in for it), transfers, and the
-lines on the web map.
+off the line, and the lines on the web map.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
