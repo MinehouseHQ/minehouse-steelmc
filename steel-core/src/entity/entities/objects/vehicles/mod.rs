@@ -13,6 +13,7 @@ mod vehicle_container;
 mod vehicle_entity;
 
 pub use abstract_boat::{AbstractBoat, BoatCore, BoatStatus};
+pub(crate) use abstract_minecart::minecart_observer;
 pub use abstract_minecart::{
     AbstractMinecart, MinecartCore, MinecartObserver, set_minecart_observer,
 };

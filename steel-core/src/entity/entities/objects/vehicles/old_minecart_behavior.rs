@@ -14,7 +14,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::BlockPos;
 
-use super::abstract_minecart::{AbstractMinecart, come_off_track, exits, is_rail};
+use super::abstract_minecart::{
+    AbstractMinecart, come_off_track, exits, follows, is_rail, passes_through,
+};
 use crate::entity::selector::EntitySelector;
 use crate::entity::{Entity, SharedEntity};
 use crate::physics::MoverType;
@@ -48,7 +50,7 @@ pub(super) fn tick<M: AbstractMinecart>(minecart: &Arc<M>) {
                 state.get_value(&BlockStateProperties::POWERED),
             );
         }
-    } else {
+    } else if !follows(&**minecart) {
         come_off_track(minecart);
     }
     drop(world);
@@ -358,6 +360,8 @@ fn push_and_pickup_entities<M: AbstractMinecart>(minecart: &Arc<M>) {
                 || entity.is_passenger();
             if stays_out {
                 entity.push_entity(minecart.as_ref());
+            } else if passes_through(&**minecart, entity.as_ref()) {
+                // An extension keeps this entity out of the cart.
             } else {
                 entity.start_riding(&vehicle, false);
             }
