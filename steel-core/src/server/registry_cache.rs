@@ -11,6 +11,7 @@ use steel_protocol::{
     utils::ConnectionProtocol,
 };
 
+use steel_registry::blocks::BlockRegistry;
 use steel_registry::{
     BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCK_STATE_PROVIDER_REGISTRY,
     BLOCK_TRANSFORMER_REGISTRY, BLOCKS_REGISTRY, CAT_SOUND_VARIANT_REGISTRY, CAT_VARIANT_REGISTRY,
@@ -25,6 +26,7 @@ use steel_registry::{
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
+use steel_utils::types::client_block_state_count;
 
 use steel_protocol::packet_traits::CompressionInfo;
 
@@ -34,6 +36,29 @@ pub struct RegistryCache {
     pub registry_packets: Arc<[EncodedPacket]>,
     /// The cached tags packet.
     pub tags_packet: Arc<EncodedPacket>,
+}
+
+/// The block tags as the client is sent them. A registry extension may add blocks the
+/// client's game does not have, and tag them (so that a pickaxe mines them, for one). Such
+/// a block is left out: an id past the client's registry would have it drop the connection.
+/// `client_states` is the number of block states the client has, if it is not all of them.
+fn block_tags(
+    blocks: &BlockRegistry,
+    client_states: Option<u16>,
+) -> Vec<(Identifier, Vec<VarInt>)> {
+    blocks
+        .tag_keys()
+        .map(|tag_key| {
+            let ids = blocks
+                .iter_tag(tag_key)
+                .filter(|block| {
+                    client_states.is_none_or(|count| blocks.get_base_state_id(block).0 < count)
+                })
+                .map(|block| VarInt::from(block.id()))
+                .collect();
+            (tag_key.clone(), ids)
+        })
+        .collect()
 }
 
 impl RegistryCache {
@@ -125,7 +150,10 @@ impl RegistryCache {
             };
         }
 
-        add_tags!(BLOCKS_REGISTRY, blocks);
+        tags_by_registry.push((
+            BLOCKS_REGISTRY,
+            block_tags(&registry.blocks, client_block_state_count()),
+        ));
         add_tags!(ITEMS_REGISTRY, items);
         add_tags!(TIMELINE_REGISTRY, timelines);
         add_tags!(DIALOG_REGISTRY, dialogs);
@@ -188,4 +216,61 @@ pub fn build_compressed_packets(
         compress_packet(tags_packet, compression).expect("Failed to compress tags packet");
 
     (compressed_packets.into(), compressed_tags_packet)
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{
+        RegistryExt as _,
+        blocks::{Block, behavior::BlockConfig},
+        vanilla_blocks,
+    };
+
+    use super::*;
+
+    /// A block of a registry extension: the client's game does not have it.
+    static EXTENSION_BLOCK: Block = Block::new(
+        Identifier::new_static("steel-test", "tagged_extension_block"),
+        BlockConfig::new(),
+        &[],
+    );
+
+    #[test]
+    fn a_tagged_block_the_client_lacks_stays_out_of_its_tags() {
+        let mut registry = Registry::new_vanilla();
+        let client_states = registry.blocks.next_state_id;
+        let pickaxe = Identifier::vanilla_static("mineable/pickaxe");
+        let vanilla_len = registry.blocks.iter_tag(&pickaxe).count();
+        registry.blocks.register(&EXTENSION_BLOCK);
+        registry.blocks.modify_tag(&pickaxe, |mut keys| {
+            keys.push(EXTENSION_BLOCK.key.clone());
+            keys
+        });
+        // The server has it in the tag.
+        assert!(registry.blocks.is_in_tag(&EXTENSION_BLOCK, &pickaxe));
+
+        let ids_of = |tags: Vec<(Identifier, Vec<VarInt>)>| {
+            tags.into_iter()
+                .find(|(key, _)| *key == pickaxe)
+                .map(|(_, ids)| ids)
+                .expect("the pickaxe tag is sent")
+        };
+        let stone = registry
+            .blocks
+            .id_from_key(&vanilla_blocks::STONE.key)
+            .expect("stone is a block");
+        let extension = EXTENSION_BLOCK.id();
+        let has = |ids: &[VarInt], id: usize| ids.iter().any(|sent| sent.0 as usize == id);
+
+        // The client is sent the vanilla blocks of the tag, and not ours.
+        let sent = ids_of(block_tags(&registry.blocks, Some(client_states)));
+        assert_eq!(sent.len(), vanilla_len);
+        assert!(has(&sent, stone));
+        assert!(!has(&sent, extension));
+
+        // Without a smaller client registry nothing is left out.
+        let all = ids_of(block_tags(&registry.blocks, None));
+        assert_eq!(all.len(), vanilla_len + 1);
+        assert!(has(&all, extension));
+    }
 }

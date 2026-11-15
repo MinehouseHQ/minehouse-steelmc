@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 use steel_registry::{
     REGISTRY, Registry,
     item_stack_template::ItemStackTemplate,
+    items::Item,
     recipe::{
         CraftingBookCategory, CraftingInput, CraftingRecipe, Ingredient, Recipe,
         RecipeBookCategoryKind, RecipeBookProperties, RecipeProperties, ShapedRecipe,
@@ -14,7 +15,7 @@ use steel_registry::{
 };
 use steel_utils::Identifier;
 
-use super::{CLOUD, CustomItem, MAGNIFIER};
+use super::{CLOUD, CustomItem, JUNCTION, MAGNIFIER, STATION};
 
 /// The result of a recipe: one of `item`. Built without the registry, which is not published
 /// yet when our recipes are added to it.
@@ -100,10 +101,66 @@ static CLOUD_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock:
     )
 });
 
+/// A block of the metro: iron ingots around `heart`, with `rail` in the middle of the
+/// bottom row.
+fn metro_recipe(
+    item: &CustomItem,
+    heart: &'static LazyLock<Item>,
+    rail: &'static LazyLock<Item>,
+) -> Recipe<CraftingRecipe, CraftingInput> {
+    let iron = || Ingredient::Item(&vanilla_items::IRON_INGOT);
+    let pattern = vec![
+        iron(),
+        iron(),
+        iron(),
+        iron(),
+        Ingredient::Item(heart),
+        iron(),
+        iron(),
+        Ingredient::Item(rail),
+        iron(),
+    ];
+    let properties = RecipeProperties {
+        special: false,
+        placement: None,
+        recipe_book: Some(RecipeBookProperties {
+            category: RecipeBookCategoryKind::Crafting(CraftingBookCategory::Redstone),
+            group: None,
+            show_notification: true,
+        }),
+    };
+    Recipe::new(
+        Identifier::new("minehouse-tweaks", item.short_id()),
+        &vanilla_recipe_types::CRAFTING,
+        CraftingRecipe::Shaped(ShapedRecipe::new(
+            properties,
+            3,
+            3,
+            pattern.into_boxed_slice(),
+            result(item, 1),
+        )),
+    )
+}
+
+/// A station: iron around a clock, over a powered rail.
+static STATION_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock::new(|| {
+    metro_recipe(
+        &STATION,
+        &vanilla_items::CLOCK,
+        &vanilla_items::POWERED_RAIL,
+    )
+});
+
+/// A junction: iron around a compass, over a rail.
+static JUNCTION_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> =
+    LazyLock::new(|| metro_recipe(&JUNCTION, &vanilla_items::COMPASS, &vanilla_items::RAIL));
+
 /// The keys of our recipes.
 pub(super) const KEYS: &[(&str, &str)] = &[
     ("minehouse-tweaks", "magnifier"),
     ("minehouse-tweaks", "cloud"),
+    ("minehouse-tweaks", "metro_station"),
+    ("minehouse-tweaks", "metro_junction"),
 ];
 
 /// How many of our recipes the published registry holds.
@@ -122,12 +179,14 @@ pub(super) fn registered() -> usize {
 pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*MAGNIFIER_RECIPE);
     registry.recipes.register(&*CLOUD_RECIPE);
+    registry.recipes.register(&*STATION_RECIPE);
+    registry.recipes.register(&*JUNCTION_RECIPE);
 }
 
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        init_vanilla_registry, item_stack::ItemStack, items::Item, recipe::RecipeMatches as _,
+        init_vanilla_registry, item_stack::ItemStack, recipe::RecipeMatches as _,
     };
 
     use super::*;
@@ -181,5 +240,33 @@ mod tests {
         let clouds = shaped.result.create();
         assert!(CLOUD.is(&clouds));
         assert_eq!(clouds.count(), 4);
+    }
+
+    #[test]
+    fn the_metro_blocks_are_crafted_from_iron_around_a_clock_or_a_compass() {
+        init_vanilla_registry();
+        let iron = Some(&vanilla_items::IRON_INGOT);
+        let clock = Some(&vanilla_items::CLOCK);
+        let compass = Some(&vanilla_items::COMPASS);
+        let powered = Some(&vanilla_items::POWERED_RAIL);
+        let rail = Some(&vanilla_items::RAIL);
+        let around = |heart, rail| grid([iron, iron, iron, iron, heart, iron, iron, rail, iron]);
+        for (recipe, item, heart, under) in [
+            (&STATION_RECIPE, &STATION, clock, powered),
+            (&JUNCTION_RECIPE, &JUNCTION, compass, rail),
+        ] {
+            let recipe = recipe.data();
+            assert!(recipe.matches(&around(heart, under)));
+            let CraftingRecipe::Shaped(shaped) = recipe else {
+                panic!("a block of the metro is a shaped recipe");
+            };
+            let made = shaped.result.create();
+            assert!(item.is(&made));
+            assert_eq!(made.count(), 1);
+        }
+        // Each needs its own rail and its own heart.
+        assert!(!STATION_RECIPE.data().matches(&around(clock, rail)));
+        assert!(!STATION_RECIPE.data().matches(&around(compass, powered)));
+        assert!(!JUNCTION_RECIPE.data().matches(&around(compass, powered)));
     }
 }
