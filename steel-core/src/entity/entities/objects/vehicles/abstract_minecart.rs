@@ -468,6 +468,11 @@ pub(super) fn come_off_track<M: AbstractMinecart>(minecart: &Arc<M>) {
 
 /// Vanilla `AbstractMinecart.tick`.
 pub(super) fn tick_minecart<M: AbstractMinecart>(minecart: &Arc<M>) {
+    if let Some(observer) = MINECART_OBSERVER.get()
+        && let Some(world) = minecart.level()
+    {
+        observer.before_tick(&**minecart, &world);
+    }
     if minecart.hurt_time() > 0 {
         minecart.set_hurt_time(minecart.hurt_time() - 1);
     }
@@ -489,9 +494,12 @@ pub(super) fn tick_minecart<M: AbstractMinecart>(minecart: &Arc<M>) {
     notify_observer(&**minecart);
 }
 
-/// Hears about every minecart once it has moved in its tick. Installed once with
+/// Hears about every minecart around its tick. Installed once with
 /// [`set_minecart_observer`], by an extension that follows carts along the track.
 pub trait MinecartObserver: Send + Sync {
+    /// `cart` is about to tick in `world`: the place to set the speed it moves with.
+    fn before_tick(&self, _cart: &dyn Entity, _world: &Arc<World>) {}
+
     /// `cart` ended its tick in `world`. `rail` is the rail it is on, `None` off the track.
     fn ticked(&self, cart: &dyn Entity, world: &Arc<World>, rail: Option<BlockPos>);
 }

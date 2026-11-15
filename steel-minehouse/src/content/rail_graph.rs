@@ -7,15 +7,18 @@
 //!
 //! The graph is kept in `metro-rail-graph.json` of the data directory, by world.
 
-use std::{collections::BTreeMap, fs, io, path::PathBuf, ptr, sync::Arc};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BinaryHeap},
+    fs, io,
+    path::PathBuf,
+    ptr,
+    sync::Arc,
+};
 
 use glam::I64Vec3;
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use steel_core::{
-    entity::{Entity, entities::objects::vehicles::MinecartObserver},
-    world::World,
-};
+use steel_core::world::World;
 use steel_registry::{
     blocks::{
         block_state_ext::BlockStateExt as _,
@@ -25,7 +28,6 @@ use steel_registry::{
     vanilla_blocks,
 };
 use steel_utils::{BlockPos, Direction, Identifier, locks::SyncMutex};
-use uuid::Uuid;
 
 use super::metro::{JUNCTION_BLOCK, STATION_BLOCK};
 use crate::config;
@@ -38,8 +40,6 @@ const MAX_LENGTH: u32 = 50_000;
 const MAX_POINTS: usize = 4096;
 /// A changed graph is written at most this often, in ticks.
 const SAVE_EVERY: i64 = 100;
-/// A cart that has not ticked for this long is forgotten, in ticks.
-const FORGET_AFTER: i64 = 1200;
 
 const HORIZONTAL: [Direction; 4] = [
     Direction::North,
@@ -140,10 +140,6 @@ impl RailGraph {
     }
 
     /// The edge that leaves `node` through `side`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "routing, which comes next, reads the edges")
-    )]
     #[must_use]
     pub fn edge(&self, node: BlockPos, side: Direction) -> Option<&Edge> {
         self.edges.get(&(key(node), side_index(side)))
@@ -179,32 +175,37 @@ pub struct Nav {
     exit: Option<Direction>,
     length: u32,
     points: Vec<BlockPos>,
-    /// The game time of its last tick.
-    seen: i64,
 }
 
 impl Nav {
     /// Forgets the way: the cart left the track or was put down somewhere else.
     pub fn reset(&mut self) {
-        let seen = self.seen;
-        *self = Self {
-            seen,
-            ..Self::default()
-        };
+        *self = Self::default();
     }
 }
 
+/// What a cart getting onto a rail came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Learned {
+    /// Whether the graph changed.
+    pub changed: bool,
+    /// Whether the rail is a node.
+    pub node: bool,
+    /// The side the cart came onto a node through, `None` when it was put there.
+    pub entry: Option<Direction>,
+}
+
 /// The cart is on rail `pos` now. `is_node` tells whether a rail is a station rail or a
-/// junction. Says whether the graph changed.
+/// junction.
 pub fn learn(
     graph: &mut RailGraph,
     nav: &mut Nav,
     pos: BlockPos,
     is_node: impl FnOnce(BlockPos) -> bool,
-) -> bool {
+) -> Learned {
     let mut prev = nav.prev;
     if prev == Some(pos) {
-        return false;
+        return Learned::default();
     }
     if prev.is_some_and(|prev| manhattan(prev, pos) > 3) {
         // Teleported or put down somewhere else: start over.
@@ -220,12 +221,12 @@ pub fn learn(
         nav.reset();
     }
 
-    let mut changed = false;
+    let mut learned = Learned::default();
     if is_node(pos) {
         if let (Some(from), Some(exit), Some(prev)) = (nav.from, nav.exit, prev)
             && pos != from
         {
-            changed = graph.put(&Edge {
+            learned.changed = graph.put(&Edge {
                 from,
                 exit,
                 to: pos,
@@ -239,9 +240,11 @@ pub fn learn(
         nav.length = 0;
         nav.points.clear();
         nav.points.push(pos);
+        learned.node = true;
+        learned.entry = prev.map(|prev| side(pos, prev));
     }
     nav.prev = Some(pos);
-    changed
+    learned
 }
 
 const fn manhattan(a: BlockPos, b: BlockPos) -> u32 {
@@ -335,7 +338,7 @@ fn leads_in(world: &World, rail: BlockPos, side: Direction) -> bool {
 
 /// The two horizontal offsets a rail shape connects (vanilla `AbstractMinecart.EXITS`
 /// without the heights).
-const fn exits(shape: RailShape) -> [(i32, i32); 2] {
+pub(super) const fn exits(shape: RailShape) -> [(i32, i32); 2] {
     const NORTH: (i32, i32) = (0, -1);
     const SOUTH: (i32, i32) = (0, 1);
     const WEST: (i32, i32) = (-1, 0);
@@ -494,35 +497,211 @@ pub fn remove_node(world: &Identifier, node: BlockPos) {
     });
 }
 
-/// Follows every minecart along the track and learns the graph from it.
-pub struct Carts;
+/// The cart with `nav` is on rail `pos` of `world` now: learns the graph from it, and
+/// writes a changed graph now and then.
+pub fn follow(world: &Arc<World>, nav: &mut Nav, pos: BlockPos) -> Learned {
+    let now = world.game_time();
+    with(|graphs| {
+        let learned = learn(graphs.of(&world.key), nav, pos, |pos| is_node(world, pos));
+        graphs.dirty |= learned.changed;
+        if graphs.dirty && (now - graphs.saved_at).abs() >= SAVE_EVERY {
+            graphs.saved_at = now;
+            graphs.save();
+        }
+        learned
+    })
+}
 
-/// The observer given to `steel_core`.
-pub static CARTS: Carts = Carts;
+/// What a rail is to the graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A rail on a station block.
+    Station,
+    /// A switch.
+    Junction,
+    /// Any other rail.
+    Plain,
+}
 
-static NAVS: SyncMutex<Option<FxHashMap<Uuid, Nav>>> = SyncMutex::new(None);
+/// What `rail` of `world` is to the graph.
+#[must_use]
+pub fn kind(world: &World, rail: BlockPos) -> Kind {
+    if is_station(world, rail) {
+        Kind::Station
+    } else if is_junction(world, rail) {
+        Kind::Junction
+    } else {
+        Kind::Plain
+    }
+}
 
-impl MinecartObserver for Carts {
-    fn ticked(&self, cart: &dyn Entity, world: &Arc<World>, rail: Option<BlockPos>) {
-        let now = world.game_time();
-        let mut navs = NAVS.lock();
-        let navs = navs.get_or_insert_default();
-        let nav = navs.entry(cart.uuid()).or_default();
-        nav.seen = now;
-        match rail {
-            Some(pos) => with(|graphs| {
-                let changed = learn(graphs.of(&world.key), nav, pos, |pos| is_node(world, pos));
-                graphs.dirty |= changed;
-                if graphs.dirty && (now - graphs.saved_at).abs() >= SAVE_EVERY {
-                    graphs.saved_at = now;
-                    graphs.save();
+/// The rail shape that joins two sides of a junction.
+#[must_use]
+pub fn shape(a: Direction, b: Direction) -> RailShape {
+    let has = |side| a == side || b == side;
+    let (north, south) = (has(Direction::North), has(Direction::South));
+    let (east, west) = (has(Direction::East), has(Direction::West));
+    if north && south {
+        RailShape::NorthSouth
+    } else if east && west {
+        RailShape::EastWest
+    } else if north {
+        if east {
+            RailShape::NorthEast
+        } else {
+            RailShape::NorthWest
+        }
+    } else if east {
+        RailShape::SouthEast
+    } else {
+        RailShape::SouthWest
+    }
+}
+
+/// A way from a node: the side to leave it by, and the shape to set at each junction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plan {
+    /// The side to leave the first node by.
+    pub start: Direction,
+    /// The station rail the way ends on.
+    pub destination: BlockPos,
+    /// The shape each junction on the way has to have.
+    pub switches: Vec<(BlockPos, RailShape)>,
+    /// The nodes on the way after the first, in order.
+    pub nodes: Vec<BlockPos>,
+    /// How many rails long the way is.
+    pub length: u32,
+}
+
+/// A node as a search reaches it: through a side, or standing on it.
+type State = (Key, Option<u8>);
+
+impl RailGraph {
+    /// The sides a cart can leave a node by: any when it stands there, straight on through
+    /// a station, any other side at a junction.
+    fn exits(
+        node: BlockPos,
+        entry: Option<Direction>,
+        kind: &impl Fn(BlockPos) -> Kind,
+    ) -> Vec<Direction> {
+        match entry {
+            None => HORIZONTAL.to_vec(),
+            Some(entry) if kind(node) == Kind::Junction => HORIZONTAL
+                .into_iter()
+                .filter(|&side| side != entry)
+                .collect(),
+            Some(entry) => vec![entry.opposite()],
+        }
+    }
+
+    /// Dijkstra from `from`, entered through `entry`. `visit` sees every node as it is
+    /// settled, with its distance, and stops the search by returning `true`. Gives the
+    /// edge each state was reached by.
+    fn search(
+        &self,
+        from: BlockPos,
+        entry: Option<Direction>,
+        kind: &impl Fn(BlockPos) -> Kind,
+        mut visit: impl FnMut(BlockPos, Option<Direction>, u32) -> bool,
+    ) -> (Option<State>, BTreeMap<State, (State, Edge)>) {
+        let start: State = (key(from), entry.map(side_index));
+        let mut best: BTreeMap<State, u32> = BTreeMap::new();
+        let mut came: BTreeMap<State, (State, Edge)> = BTreeMap::new();
+        let mut queue: BinaryHeap<Reverse<(u32, State)>> = BinaryHeap::new();
+        best.insert(start, 0);
+        queue.push(Reverse((0, start)));
+        while let Some(Reverse((cost, state))) = queue.pop() {
+            if best.get(&state).is_some_and(|&known| cost > known) {
+                continue;
+            }
+            let ((x, y, z), entered) = state;
+            let node = BlockPos::new(x, y, z);
+            let entered = entered.and_then(|index| HORIZONTAL.get(usize::from(index)).copied());
+            if state != start && visit(node, entered, cost) {
+                return (Some(state), came);
+            }
+            for exit in Self::exits(node, entered, kind) {
+                let Some(edge) = self.edge(node, exit) else {
+                    continue;
+                };
+                let next: State = (key(edge.to), Some(side_index(edge.entry)));
+                let cost = cost + edge.length;
+                if best.get(&next).is_none_or(|&known| cost < known) {
+                    best.insert(next, cost);
+                    came.insert(next, (state, edge.clone()));
+                    queue.push(Reverse((cost, next)));
                 }
-            }),
-            None => nav.reset(),
+            }
         }
-        if now % FORGET_AFTER == 0 {
-            navs.retain(|_, nav| (now - nav.seen).abs() < FORGET_AFTER);
+        (None, came)
+    }
+
+    /// The shortest way from rail `from` to the station rail `destination`. Entered through
+    /// `entry` (`None`: standing there, any way out).
+    #[must_use]
+    pub fn plan(
+        &self,
+        from: BlockPos,
+        entry: Option<Direction>,
+        destination: BlockPos,
+        kind: impl Fn(BlockPos) -> Kind,
+    ) -> Option<Plan> {
+        let mut length = 0;
+        let (goal, came) = self.search(from, entry, &kind, |node, _, cost| {
+            length = cost;
+            node == destination
+        });
+        let start: State = (key(from), entry.map(side_index));
+        let mut path = Vec::new();
+        let mut at = goal?;
+        while at != start {
+            let (before, edge) = came.get(&at)?;
+            path.push(edge.clone());
+            at = *before;
         }
+        path.reverse();
+        let first = path.first()?.exit;
+        let mut switches = Vec::new();
+        if let Some(entry) = entry
+            && kind(from) == Kind::Junction
+        {
+            switches.push((from, shape(entry, first)));
+        }
+        for pair in path.windows(2) {
+            if let [edge, next] = pair
+                && kind(edge.to) == Kind::Junction
+            {
+                switches.push((edge.to, shape(edge.entry, next.exit)));
+            }
+        }
+        Some(Plan {
+            start: first,
+            destination,
+            switches,
+            nodes: path.iter().map(|edge| edge.to).collect(),
+            length,
+        })
+    }
+
+    /// The station rails reachable from `from` (standing there), nearest first, with their
+    /// distance.
+    #[must_use]
+    pub fn reachable_stations(
+        &self,
+        from: BlockPos,
+        kind: impl Fn(BlockPos) -> Kind,
+    ) -> Vec<(BlockPos, u32)> {
+        let mut stations: Vec<(BlockPos, u32)> = Vec::new();
+        self.search(from, None, &kind, |node, _, cost| {
+            if node != from
+                && kind(node) == Kind::Station
+                && !stations.iter().any(|&(known, _)| known == node)
+            {
+                stations.push((node, cost));
+            }
+            false
+        });
+        stations
     }
 }
 
@@ -541,7 +720,7 @@ mod tests {
         let mut nav = Nav::default();
         let mut changed = false;
         for &pos in way {
-            changed |= learn(graph, &mut nav, pos, |pos| nodes.contains(&pos));
+            changed |= learn(graph, &mut nav, pos, |pos| nodes.contains(&pos)).changed;
         }
         changed
     }
@@ -621,6 +800,83 @@ mod tests {
             edge.map(|edge| (edge.to, edge.length)),
             Some((rail(0, 0), 5))
         );
+    }
+
+    /// A line west to east through a junction at (4, 0), with a branch south to (4, 5).
+    fn fork() -> (RailGraph, [BlockPos; 4]) {
+        let (west, junction, east, south) = (rail(0, 0), rail(4, 0), rail(8, 0), rail(4, 5));
+        let nodes = [west, junction, east, south];
+        let mut graph = RailGraph::default();
+        let line: Vec<BlockPos> = (0..=8).map(|x| rail(x, 0)).collect();
+        drive(&mut graph, &line, &nodes);
+        let branch: Vec<BlockPos> = (0..=5).map(|z| rail(4, z)).collect();
+        drive(&mut graph, &branch, &nodes);
+        (graph, nodes)
+    }
+
+    fn fork_kind(nodes: [BlockPos; 4]) -> impl Fn(BlockPos) -> Kind {
+        move |pos| {
+            if pos == nodes[1] {
+                Kind::Junction
+            } else if nodes.contains(&pos) {
+                Kind::Station
+            } else {
+                Kind::Plain
+            }
+        }
+    }
+
+    #[test]
+    fn a_way_turns_at_the_junction() {
+        let (graph, nodes) = fork();
+        let [west, junction, east, south] = nodes;
+        let plan = graph.plan(west, None, south, fork_kind(nodes));
+        assert_eq!(
+            plan,
+            Some(Plan {
+                start: Direction::East,
+                destination: south,
+                switches: vec![(junction, RailShape::SouthWest)],
+                nodes: vec![junction, south],
+                length: 9,
+            })
+        );
+        let plan = graph.plan(south, None, east, fork_kind(nodes));
+        assert_eq!(
+            plan.map(|plan| plan.switches),
+            Some(vec![(junction, RailShape::SouthEast)])
+        );
+        // A cart on the junction that came in from the west is switched where it stands.
+        let plan = graph.plan(junction, Some(Direction::West), south, fork_kind(nodes));
+        assert_eq!(
+            plan.map(|plan| (plan.start, plan.switches)),
+            Some((Direction::South, vec![(junction, RailShape::SouthWest)]))
+        );
+    }
+
+    #[test]
+    fn a_train_does_not_turn_back_through_a_station() {
+        let mut graph = RailGraph::default();
+        let way: Vec<BlockPos> = (0..=8).map(|x| rail(x, 0)).collect();
+        let nodes = [rail(0, 0), rail(4, 0), rail(8, 0)];
+        drive(&mut graph, &way, &nodes);
+        let kind = |pos| {
+            if nodes.contains(&pos) {
+                Kind::Station
+            } else {
+                Kind::Plain
+            }
+        };
+        // Came into the middle station from the west: the west end is behind it.
+        assert_eq!(
+            graph.plan(rail(4, 0), Some(Direction::West), rail(0, 0), kind),
+            None
+        );
+        assert_eq!(
+            graph.reachable_stations(rail(0, 0), kind),
+            vec![(rail(4, 0), 4), (rail(8, 0), 8)]
+        );
+        assert_eq!(graph.reachable_stations(rail(20, 0), kind), vec![]);
     }
 
     #[test]
