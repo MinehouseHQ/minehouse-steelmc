@@ -10,7 +10,7 @@ mod afk;
 mod all_recipes;
 mod anvil_repair;
 mod any_shape_portals;
-mod blocks;
+pub(crate) mod blocks;
 mod cauldron;
 mod cauldron_conversion;
 mod cloud;
@@ -81,7 +81,7 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::moderation::format::render;
+use crate::{bank::atm_block::ATM_BLOCK, moderation::format::render};
 
 /// The key in `custom_data` that holds the id of an item of ours.
 pub const ID_KEY: &str = "minehouse_item";
@@ -154,6 +154,26 @@ pub static JUNCTION: CustomItem = CustomItem {
     id: "minehouse-tweaks:metro_junction",
     base: &vanilla_items::WAXED_CUT_COPPER,
     name: "Стрелка метро",
+    lore: &[],
+    max_stack: 64,
+    consume: None,
+};
+
+/// «Карта MineHouse»: pays at terminals; what the site said about it is in its custom data.
+pub static CARD: CustomItem = CustomItem {
+    id: "minehouse-bank:card",
+    base: &vanilla_items::PAPER,
+    name: "Карта MineHouse",
+    lore: &[],
+    max_stack: 1,
+    consume: None,
+};
+
+/// «Банкомат»: the ATM block in a hand.
+pub static ATM: CustomItem = CustomItem {
+    id: "minehouse-bank:atm",
+    base: &vanilla_items::LECTERN,
+    name: "Банкомат",
     lore: &[],
     max_stack: 64,
     consume: None,
@@ -238,8 +258,11 @@ pub static ITEMS: &[&CustomItem] = &[
     &LEAF_BLOCK,
     &BROTH,
     &PAPIROSA,
+    &CARD,
+    &ATM,
 ];
 
+static ATM_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&ATM_BLOCK);
 static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
 static JUNCTION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::JUNCTION_BLOCK);
 static LEAF_BLOCK_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::LEAF_BLOCK);
@@ -267,6 +290,8 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&cauldron::Broth)
     } else if id == PAPIROSA.id {
         Some(&papirosa::Papirosa)
+    } else if id == ATM.id {
+        Some(&ATM_ITEM)
     } else {
         None
     }

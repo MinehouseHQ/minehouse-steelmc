@@ -7,6 +7,10 @@
 //! This is the base the ATM, the cards, the terminals and the spawn zones stand on: the calls
 //! to the site, the journal, and what a player is given on join.
 
+pub mod atm;
+pub mod atm_block;
+pub mod card;
+pub mod gui;
 pub mod journal;
 pub mod ores;
 mod settings;
@@ -33,7 +37,7 @@ use uuid::Uuid;
 pub use settings::BankConfig;
 
 use crate::{config, moderation::format::render, site::SiteClient};
-use journal::{DELIVERED, Entry, Journal};
+use journal::{DELIVERED, DEPOSIT, Entry, Journal};
 
 /// How often half-done operations are tried again, in ticks.
 const RETRY_TICKS: u64 = 20 * 30;
@@ -134,7 +138,7 @@ fn sales_line(answer: &Value) -> Option<String> {
     (count != 0).then(|| format!("&6Пока тебя не было: продано {count} раз, +{}", ar(sum)))
 }
 
-fn online(server: &Server, uuid: Uuid) -> Option<Arc<Player>> {
+pub(crate) fn online(server: &Server, uuid: Uuid) -> Option<Arc<Player>> {
     server
         .get_players()
         .into_iter()
@@ -253,9 +257,20 @@ impl Bank {
     }
 
     fn finish(&self, then: impl FnOnce(&Arc<Server>, Value) + Send + 'static, answer: Value) {
-        self.done
+        self.later(move |server| then(server, answer));
+    }
+
+    /// Runs `then` on the next server tick: for what a window can't do while it handles a
+    /// click, like opening another window.
+    pub fn later(&self, then: impl FnOnce(&Arc<Server>) + Send + 'static) {
+        self.done.lock().push(Box::new(then));
+    }
+
+    /// Remembers the number of the personal account of a player online.
+    pub(crate) fn remember_account(&self, player: Uuid, number: &str) {
+        self.account_numbers
             .lock()
-            .push(Box::new(move |server| then(server, answer)));
+            .insert(player, number.to_owned());
     }
 
     /// The number of the personal account of a player online, once the site has told it.
@@ -287,9 +302,7 @@ impl Bank {
                 && personal(account)
                 && let Some(number) = account.get("number").and_then(Value::as_str)
             {
-                bank.account_numbers
-                    .lock()
-                    .insert(player, number.to_owned());
+                bank.remember_account(player, number);
             }
             then(server, answer);
         });
@@ -331,9 +344,11 @@ impl Bank {
             return;
         }
         for entry in self.journal.all() {
-            // Deposits and vending purchases are retried by the ATM and the terminal.
+            // Vending purchases are retried by the terminal.
             if entry.kind == DELIVERED {
                 self.send_delivered(entry);
+            } else if entry.kind == DEPOSIT {
+                atm::retry_deposit(self, entry);
             }
         }
     }
