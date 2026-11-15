@@ -673,6 +673,9 @@ impl Player {
             world: &world,
         });
         menu.start_open(self);
+        if let Some(world_log) = self.world_log() {
+            world_log.menu_opened(self, &menu);
+        }
         assert_eq!(
             menu.container_id(),
             container_id,
@@ -929,6 +932,9 @@ impl Player {
     fn remove_open_menu(&self, menu: &mut Menu) {
         let overrides_player_slots = menu.overrides_player_slots();
         menu.removed(self);
+        if let Some(world_log) = self.world_log() {
+            world_log.menu_closed(self, menu);
+        }
         if overrides_player_slots {
             self.request_inventory_resync(0..PlayerInventory::INVENTORY_SIZE);
         } else {

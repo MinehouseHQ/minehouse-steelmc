@@ -17,6 +17,7 @@ use steel_core::{
 use text_components::TextComponent;
 
 pub mod auth;
+pub mod blocklog;
 pub mod chat;
 pub mod config;
 pub mod console;
@@ -28,6 +29,7 @@ pub mod tab;
 pub mod voice;
 
 use auth::{Auth, AuthSetup};
+use blocklog::BlockLog;
 use chat::Chat;
 use console::Console;
 use downtime::Downtime;
@@ -40,6 +42,7 @@ pub struct Setup {
     moderation: Option<Arc<Moderation>>,
     downtime: Option<Arc<Downtime>>,
     chat: Option<Arc<Chat>>,
+    blocklog: Option<Arc<BlockLog>>,
 }
 
 /// The running `MineHouse` modules of one server.
@@ -51,6 +54,7 @@ pub struct Minehouse {
     downtime: Option<Arc<Downtime>>,
     roles: Option<Roles>,
     voice: Option<Arc<voice::Voice>>,
+    blocklog: Option<Arc<BlockLog>>,
 }
 
 impl Minehouse {
@@ -73,6 +77,7 @@ impl Minehouse {
             moderation,
             downtime: Downtime::register(registry),
             chat: Chat::register(registry),
+            blocklog: BlockLog::register(registry),
         }
     }
 
@@ -94,6 +99,9 @@ impl Minehouse {
             chat.start(server);
         }
         tab::Tab::start(server);
+        if let Some(blocklog) = &setup.blocklog {
+            blocklog.start(server);
+        }
         let voice = voice::Voice::start(server);
         let auth = setup.auth.map(|auth| Auth::start(server, auth));
         // One gate serves both: maintenance refuses first, then the login check asks the site.
@@ -111,6 +119,7 @@ impl Minehouse {
             downtime: setup.downtime,
             roles,
             voice,
+            blocklog: setup.blocklog,
         }
     }
 
@@ -130,6 +139,10 @@ impl Minehouse {
         }
         if let Some(console) = &self.console {
             console.stop().await;
+        }
+        // Last: whatever the other modules still did is in the log.
+        if let Some(blocklog) = &self.blocklog {
+            blocklog.stop();
         }
     }
 }

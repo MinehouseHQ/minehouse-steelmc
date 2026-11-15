@@ -126,11 +126,23 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
+        let replaced_state = context.world.get_block_state(place_pos);
         if !place_block(&context, new_state) {
             return InteractionResult::Fail;
         }
 
         let placed_state = context.world.get_block_state(place_pos);
+        if let Some(player) = context.player()
+            && let Some(world_log) = player.world_log()
+        {
+            world_log.block_placed(
+                player,
+                context.world,
+                place_pos,
+                replaced_state,
+                placed_state,
+            );
+        }
         if placed_state.get_block() == new_state.get_block() {
             Self::update_block_entity_components(&context, place_pos);
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());

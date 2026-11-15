@@ -77,6 +77,15 @@ impl Player {
             return;
         }
 
+        if packet.hand == InteractionHand::MainHand
+            && let Some(world_log) = self.world_log()
+            && world_log.block_clicked(self, &world, pos, false)
+        {
+            self.send_block_updates(pos, direction);
+            self.broadcast_inventory_changes_and_trigger();
+            return;
+        }
+
         let animation = self.interact_animation(packet.hand);
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
         self.swing_after_interaction(packet.hand, animation, result);
@@ -96,6 +105,13 @@ impl Player {
         let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
+                if let Some(world_log) = self.world_log()
+                    && world_log.block_clicked(self, &world, packet.pos, true)
+                {
+                    self.send_block_updates(packet.pos, packet.direction);
+                    self.ack_block_changes_up_to(packet.sequence);
+                    return;
+                }
                 self.block_breaking.lock().handle_block_break_action(
                     self,
                     &world,

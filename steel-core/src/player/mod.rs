@@ -138,6 +138,7 @@ use crate::player::player_inventory::{
 use crate::server::{
     PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
+    world_log::WorldLog,
 };
 use crate::world::player_spawn_finder::{
     POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
@@ -1116,6 +1117,18 @@ impl Player {
         self.server
             .upgrade()
             .expect("player must not outlive server")
+    }
+
+    /// The world log of the server. A player without a server (in tests) has none.
+    pub(crate) fn world_log(&self) -> Option<Arc<dyn WorldLog>> {
+        self.server.upgrade()?.world_log().cloned()
+    }
+
+    /// Tells the world log that this player broke `state` at `pos`.
+    pub(crate) fn log_block_broken(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+        if let Some(world_log) = self.world_log() {
+            world_log.block_broken(self, world, pos, state);
+        }
     }
 
     /// Returns the identity of the player's current continuous domain stay.
