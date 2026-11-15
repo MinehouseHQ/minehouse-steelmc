@@ -20,7 +20,7 @@ use steel_core::{
 use steel_utils::Identifier;
 use text_components::{Modifier as _, TextComponent, format::Color};
 
-use super::{gui, left, markup, standing_in};
+use super::{gui, left, map, markup, standing_in};
 use crate::bank::{Bank, bank, error, ok, ores::give_stack};
 
 const ADMIN: &str = "minehouse.zones.admin";
@@ -81,6 +81,7 @@ fn tree() -> CommandNode {
                         .executes(|context| show(*context, Some(context.integer("num")?))),
                 ),
         )
+        .then(literal("map").executes(|context| zone_map(*context)))
         .then(
             literal("wand")
                 .requires(admin)
@@ -199,6 +200,17 @@ fn show(context: CommandContext<'_>, num: Option<i32>) -> Result<i32, CommandErr
         |num| format!("Граница зоны {num} видна 30 секунд."),
     );
     Ok(done(context, text))
+}
+
+fn zone_map(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let bank = running()?;
+    if bank.zones.all().is_empty() {
+        return Err(CommandError::from("Зоны ещё не размечены."));
+    }
+    give_stack(player, map::item());
+    bank.zones.map.forget(player.gameprofile.id());
+    Ok(done(context, "Карта зон спавна в инвентаре.".to_owned()))
 }
 
 fn wand(context: CommandContext<'_>) -> Result<i32, CommandError> {
