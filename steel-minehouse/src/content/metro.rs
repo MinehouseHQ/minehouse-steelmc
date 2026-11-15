@@ -2,7 +2,8 @@
 //! block of a switch. A port of the Fabric `StationBlock` and `JunctionBlock` as blocks:
 //! they can be crafted, placed and mined, and a saved world keeps them. A station takes its
 //! name from a name tag and its line from a dye, and [`super::stations`] remembers both.
-//! What the blocks do for trains is not ported yet.
+//! The rails on the two blocks are the nodes of [`super::rail_graph`]. What the blocks do
+//! for trains is not ported yet.
 
 use std::{ptr, sync::Arc};
 
@@ -31,7 +32,7 @@ use steel_utils::{
 };
 use text_components::{Modifier as _, TextComponent, format::Color, resolving::NoResolutor};
 
-use super::{STATION, blocks::show_full_block, id_of, stations};
+use super::{JUNCTION, STATION, blocks::show_full_block, id_of, rail_graph, stations};
 
 /// The line of a station: 0 none, else the id of the dye of the line plus one. It picks
 /// the model: the sign of the station is in the color of its line.
@@ -282,6 +283,34 @@ impl BlockBehavior for Station {
         _moved_by_piston: bool,
     ) {
         stations::with(|stations| stations.remove(&world.key, pos));
+        rail_graph::remove_node(&world.key, pos.above());
+    }
+}
+
+/// The junction block: the plain rail on it is a switch of the metro.
+pub(super) struct Junction;
+
+impl BlockBehavior for Junction {
+    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        Some(JUNCTION_BLOCK.default_state())
+    }
+
+    fn get_drops(
+        &self,
+        _state: BlockStateId,
+        _context: &BlockLootContext<'_>,
+    ) -> Option<Vec<ItemStack>> {
+        Some(vec![JUNCTION.stack(1)])
+    }
+
+    fn affect_neighbors_after_removal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _moved_by_piston: bool,
+    ) {
+        rail_graph::remove_node(&world.key, pos.above());
     }
 }
 

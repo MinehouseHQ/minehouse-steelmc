@@ -344,8 +344,16 @@ the sign on the block to the color of the line; an empty hand tells what the sta
 `content/stations.rs` keeps the names and lines in `metro-stations.json` of the data
 directory, by world, with the line as the name of its dye (as the saved data
 `minehouse-tweaks:metro_stations` of the Fabric mod has it, so a world can be carried over).
-A station that is broken is forgotten. Junctions, the graph of tracks and the trains are
-not ported yet.
+A station that is broken is forgotten.
+
+`content/rail_graph.rs` is the metro network as carts drove it (the Fabric `RailGraph`).
+Its nodes are the rails on station blocks and the junctions: a plain rail on a junction
+block with track coming in from three or four sides. Any minecart learns the run of rails
+between two nodes it drives, both ways, through the `MinecartObserver` hook of `steel-core`
+(`set_minecart_observer`), which hears of every cart at the end of its tick. The graph is
+kept in `metro-rail-graph.json` of the data directory and written at most every five
+seconds; breaking a station or junction block forgets the runs through its rail. Routing
+over the graph, turning the junctions and the trains are not ported yet.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
