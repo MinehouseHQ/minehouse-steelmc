@@ -37,6 +37,7 @@ use crate::player::player_data::{
     PersistentRootVehicle, PersistentSlot, PersistentStat, next_capture_order,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
+use crate::player::recipe_book::{RECIPE_BOOK_TAG, ServerRecipeBook};
 use crate::player::warden_spawn_tracker::WardenSpawnTracker;
 
 /// Vanilla `EntityEquipment` keys and the player container slots Steel stores them in.
@@ -70,8 +71,6 @@ pub struct PlayerReport {
     pub unknown_entities: BTreeMap<String, usize>,
     /// Active effects Steel does not know or cannot read, by effect id.
     pub unknown_effects: BTreeMap<String, usize>,
-    /// Players whose recipe book was dropped because Steel has no recipe book yet.
-    pub dropped_recipe_books: usize,
 }
 
 impl PlayerReport {
@@ -101,13 +100,6 @@ impl fmt::Display for PlayerReport {
                     writeln!(f, "  {key}: {count}")?;
                 }
             }
-        }
-        if self.dropped_recipe_books > 0 {
-            writeln!(
-                f,
-                "Recipe books dropped (Steel has no recipe book yet): {}",
-                self.dropped_recipe_books
-            )?;
         }
         if !self.failed_players.is_empty() {
             writeln!(f, "Failed players:")?;
@@ -275,9 +267,6 @@ fn convert_player_data(
     }
 
     let active_effects = active_effects(root, report);
-    if root.contains("recipeBook") {
-        report.dropped_recipe_books += 1;
-    }
 
     let mut entities = ImportReport::default();
     let root_vehicle = root.compound("RootVehicle").and_then(|vehicle| {
@@ -362,6 +351,9 @@ fn convert_player_data(
                 _ => None,
             }),
         warden_spawn_tracker: warden_spawn_tracker(root),
+        recipe_book: root
+            .compound(RECIPE_BOOK_TAG)
+            .map_or_else(ServerRecipeBook::default, ServerRecipeBook::load),
         capture_order: next_capture_order(),
     })
 }

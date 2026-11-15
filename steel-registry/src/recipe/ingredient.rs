@@ -4,7 +4,11 @@ use std::sync::OnceLock;
 
 use steel_utils::Identifier;
 
-use crate::{REGISTRY, TaggedRegistryExt, item_stack::ItemStack, items::ItemRef};
+use crate::{
+    REGISTRY, RegistryHolderSet, TaggedRegistryExt,
+    item_stack::ItemStack,
+    items::{Item, ItemRef},
+};
 
 /// Tells an item of a registry extension from the vanilla item it is made of: the id the
 /// extension gave the stack, or `None` for a plain vanilla stack.
@@ -87,6 +91,16 @@ impl Ingredient {
             Self::Choice(items) => items.to_vec(),
             // The client's recipe book has only the vanilla item to show.
             Self::Extension { item, .. } => vec![*item],
+        }
+    }
+
+    /// Vanilla `Ingredient.CONTENTS_STREAM_CODEC` holder set: a tag stays named, any
+    /// other ingredient lists its items.
+    #[must_use]
+    pub fn contents(&self) -> RegistryHolderSet<Item> {
+        match self {
+            Self::Tag(tag) => RegistryHolderSet::Tag(tag.clone()),
+            other => RegistryHolderSet::Direct(other.get_items()),
         }
     }
 

@@ -427,6 +427,7 @@ impl Server {
         // Vanilla `PlayerList.placeNewPlayer` syncs the recipe property sets and
         // stonecutter recipes right after the login state.
         player.send_packet(RECIPE_ACCESS.update_recipes_packet());
+        player.send_initial_recipe_book();
     }
 
     /// Gets all the players on the server

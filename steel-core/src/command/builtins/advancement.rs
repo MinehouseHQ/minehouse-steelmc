@@ -171,6 +171,8 @@ impl Action {
         if !show_advancement {
             guard.flush_dirty(player, false);
         }
+        drop(guard);
+        player.grant_pending_advancement_rewards();
         count
     }
 
@@ -180,11 +182,15 @@ impl Action {
         advancement: &'static Advancement,
         criterion: &str,
     ) -> bool {
-        let mut guard = player.advancements.lock();
-        match self {
-            Self::Grant => guard.award(player, advancement, criterion),
-            Self::Revoke => guard.revoke(advancement, criterion),
-        }
+        let changed = {
+            let mut guard = player.advancements.lock();
+            match self {
+                Self::Grant => guard.award(player, advancement, criterion),
+                Self::Revoke => guard.revoke(advancement, criterion),
+            }
+        };
+        player.grant_pending_advancement_rewards();
+        changed
     }
 }
 

@@ -12,7 +12,7 @@
 )]
 
 pub(crate) mod predicates;
-mod triggers;
+pub(crate) mod triggers;
 
 use std::sync::LazyLock;
 
@@ -271,6 +271,7 @@ pub(crate) fn trigger(
             .lock()
             .award(player, listener.advancement, listener.criterion);
     }
+    player.grant_pending_advancement_rewards();
 }
 
 #[cfg(test)]

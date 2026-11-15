@@ -40,6 +40,7 @@ use crate::player::KnownPlayers;
 use crate::player::Player;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::memory_storage::MemoryPlayerDataStorage;
+use crate::player::recipe_book::ServerRecipeBook;
 use crate::player::warden_spawn_tracker::WardenSpawnTracker;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::item_stack::ItemStack;
@@ -47,7 +48,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 14;
+const PLAYER_STORAGE_VERSION: u16 = 15;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -118,6 +119,8 @@ struct PlayerDataFile {
     /// Vanilla `warden_spawn_tracker`; empty or one
     /// `[ticks_since_last_warning, warning_level, cooldown_ticks]`.
     warden_spawn_tracker: Vec<[i32; 3]>,
+    /// Vanilla `recipeBook` as compound NBT bytes; empty for an empty book.
+    recipe_book: Vec<u8>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -486,6 +489,7 @@ impl PlayerDataFile {
                 data.warden_spawn_tracker.warning_level(),
                 data.warden_spawn_tracker.cooldown_ticks(),
             ]],
+            recipe_book: data.recipe_book.to_bytes(),
         })
     }
 
@@ -498,14 +502,6 @@ impl PlayerDataFile {
                     self.data_version
                 ),
             ));
-        }
-
-        let mut inventory = Vec::with_capacity(self.inventory.len());
-        for slot in self.inventory {
-            inventory.push(PersistentSlot {
-                slot: slot.slot,
-                item: item_from_nbt_bytes(&slot.item_nbt)?,
-            });
         }
 
         Ok(PersistentPlayerData {
@@ -536,7 +532,7 @@ impl PlayerDataFile {
                 flying_speed: self.abilities.flying_speed,
                 walking_speed: self.abilities.walking_speed,
             },
-            inventory,
+            inventory: slots_from_files(self.inventory)?,
             selected_slot: self.selected_slot,
             world: self.world,
             food_level: self.food_level,
@@ -566,16 +562,7 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
-            ender_items: {
-                let mut items = Vec::with_capacity(self.ender_items.len());
-                for slot in self.ender_items {
-                    items.push(PersistentSlot {
-                        slot: slot.slot,
-                        item: item_from_nbt_bytes(&slot.item_nbt)?,
-                    });
-                }
-                items
-            },
+            ender_items: slots_from_files(self.ender_items)?,
             stats: Vec::new(),
             advancements: Vec::new(),
             shoulder_entity_left: self.shoulder_entity_left,
@@ -590,6 +577,7 @@ impl PlayerDataFile {
                     WardenSpawnTracker::new(ticks_since_last_warning, warning_level, cooldown_ticks)
                 },
             ),
+            recipe_book: ServerRecipeBook::from_bytes(&self.recipe_book),
             capture_order: next_capture_order(),
         })
     }
@@ -635,6 +623,19 @@ fn item_to_nbt_bytes(item: &ItemStack) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     compound.write(&mut bytes);
     Ok(bytes)
+}
+
+/// Decodes stored slots back into persistent slots.
+fn slots_from_files(slots: Vec<SlotFile>) -> io::Result<Vec<PersistentSlot>> {
+    slots
+        .into_iter()
+        .map(|slot| {
+            Ok(PersistentSlot {
+                slot: slot.slot,
+                item: item_from_nbt_bytes(&slot.item_nbt)?,
+            })
+        })
+        .collect()
 }
 
 fn item_from_nbt_bytes(bytes: &[u8]) -> io::Result<ItemStack> {
@@ -684,16 +685,19 @@ fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
     // Older layouts are the current one without its newest trailing fields, so the missing
     // fields are appended empty before decoding: (storage version, data version, missing).
     let legacy = match stored_version(bytes) {
-        // Before shoulder entities, active effects, the raid omen position
-        // and the warden spawn tracker.
-        Some(10) => Some((10, 7, 5)),
-        // Before active effects, the raid omen position and the warden spawn
-        // tracker.
-        Some(11) => Some((11, 8, 3)),
-        // Before the raid omen position and the warden spawn tracker.
-        Some(12) => Some((12, 9, 2)),
-        // Before the warden spawn tracker.
-        Some(13) => Some((13, 10, 1)),
+        // Before shoulder entities, active effects, the raid omen position,
+        // the warden spawn tracker and the recipe book.
+        Some(10) => Some((10, 7, 6)),
+        // Before active effects, the raid omen position, the warden spawn
+        // tracker and the recipe book.
+        Some(11) => Some((11, 8, 4)),
+        // Before the raid omen position, the warden spawn tracker and the
+        // recipe book.
+        Some(12) => Some((12, 9, 3)),
+        // Before the warden spawn tracker and the recipe book.
+        Some(13) => Some((13, 10, 2)),
+        // Before the recipe book.
+        Some(14) => Some((14, 11, 1)),
         _ => None,
     };
     let Some((storage_version, data_version, missing_fields)) = legacy else {

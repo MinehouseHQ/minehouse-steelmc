@@ -483,7 +483,8 @@ pub(crate) struct PlayerPredicate {
     gamemode: Option<Value>,
     food: Option<Value>,
     stats: Option<Value>,
-    recipes: Option<Value>,
+    #[serde(default)]
+    recipes: BTreeMap<Identifier, bool>,
     advancements: Option<Value>,
     looking_at: Option<Box<EntityPredicate>>,
     input: Option<Value>,
@@ -499,7 +500,10 @@ impl PlayerPredicate {
         self.gamemode.is_none()
             && self.food.is_none()
             && self.stats.is_none()
-            && self.recipes.is_none()
+            && self
+                .recipes
+                .iter()
+                .all(|(recipe, unlocked)| player.knows_recipe(recipe) == *unlocked)
             && self.advancements.is_none()
             && self.looking_at.is_none()
             && self.input.is_none()

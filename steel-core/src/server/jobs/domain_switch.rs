@@ -315,6 +315,8 @@ impl DomainSwitchJob {
                     restore_player.land_after_teleport();
                 }
             });
+        // The target domain's recipe book replaces the source domain's on the client.
+        self.player.send_initial_recipe_book();
         if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {
             return self.finish_source_disconnect(Some(
                 "domain switch lost its residence before target restore installation",

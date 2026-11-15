@@ -100,6 +100,23 @@ impl ItemStackTemplate {
         template
     }
 
+    /// This template with `count` in place of its own, keeping its components.
+    ///
+    /// # Panics
+    /// Panics if `count` is outside the persistent range.
+    #[must_use]
+    pub fn with_replaced_count(&self, count: i32) -> Self {
+        assert!(
+            (Self::MIN_COUNT..=Self::MAX_COUNT).contains(&count),
+            "Item stack template count {count} is outside the persistent range {}..={}",
+            Self::MIN_COUNT,
+            Self::MAX_COUNT
+        );
+        let mut template = self.clone();
+        template.count = count;
+        template
+    }
+
     /// Creates a template after validating its complete persistent codec shape.
     pub fn try_with_count_and_patch(
         item: ItemRef,

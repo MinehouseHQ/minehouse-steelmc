@@ -36,7 +36,7 @@ use text_components::TextComponent;
 
 /// Runs `command` from the console and returns its result, or `None` when
 /// the command failed.
-fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
+pub(super) fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
     run_as(server, CommandSender::Console, command)
 }
 
@@ -99,7 +99,7 @@ fn with_server(name: &'static str, test: impl FnOnce(&Arc<Server>, &str)) {
 }
 
 /// Runs `test` against a fresh server with its only world.
-fn with_server_world(name: &'static str, test: impl FnOnce(&Arc<Server>, &Arc<World>)) {
+pub(super) fn with_server_world(name: &'static str, test: impl FnOnce(&Arc<Server>, &Arc<World>)) {
     let world_fixture = fresh_test_world(name);
     let world = &world_fixture.world;
     let runtime = Builder::new_current_thread()

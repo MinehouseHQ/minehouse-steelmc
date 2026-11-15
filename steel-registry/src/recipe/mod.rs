@@ -2,6 +2,7 @@
 
 mod brewing;
 mod crafting;
+mod display;
 mod ingredient;
 mod properties;
 mod registry;
@@ -16,6 +17,7 @@ pub use crafting::{
     MapExtendingRecipe, MapRecipeData, PositionedCraftingInput, RepairItemRecipe, ShapedRecipe,
     ShapelessRecipe, ShieldDecorationRecipe, TransmuteRecipe,
 };
+pub use display::{RecipeDisplay, RecipeDisplayEntry, SlotDisplay};
 pub use ingredient::{ExtensionItemId, Ingredient, set_extension_item_id};
 pub use properties::{
     CookingBookCategory, CraftingBookCategory, PlacementInfo, RecipeBookCategory,

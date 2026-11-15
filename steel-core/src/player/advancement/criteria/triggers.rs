@@ -23,6 +23,8 @@ pub(crate) const RAID_OMEN: Identifier = Identifier::vanilla_static("voluntary_e
 pub(crate) const BREWED_POTION: Identifier = Identifier::vanilla_static("brewed_potion");
 /// `minecraft:inventory_changed`
 pub(crate) const INVENTORY_CHANGED: Identifier = Identifier::vanilla_static("inventory_changed");
+/// `minecraft:recipe_unlocked`
+pub(crate) const RECIPE_UNLOCKED: Identifier = Identifier::vanilla_static("recipe_unlocked");
 
 impl Player {
     /// Vanilla `PlayerTrigger.trigger(player)` for a trigger without
