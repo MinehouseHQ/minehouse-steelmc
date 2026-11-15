@@ -5,7 +5,10 @@
 //! other way (`/data`) keeps the flag: only what a tag did is undone, marked by an entity
 //! tag.
 
-use steel_core::{behavior::items::NameTagObserver, entity::LivingEntity};
+use steel_core::{
+    behavior::items::NameTagObserver,
+    entity::{Entity, LivingEntity},
+};
 use steel_registry::vanilla_entities;
 use text_components::{TextComponent, resolving::NoResolutor};
 
@@ -23,6 +26,16 @@ pub fn is_silent_name(name: &str) -> bool {
         .any(|part| WORDS.contains(&part))
 }
 
+/// A name tag just named `target`: makes it silent, or gives back the voice a tag took.
+pub(super) fn named<E: Entity + ?Sized>(target: &E, name: &TextComponent) {
+    if is_silent_name(&name.to_plain(&NoResolutor)) {
+        target.set_silent(true);
+        target.add_tag(MARK.to_owned());
+    } else if target.remove_tag(MARK) {
+        target.set_silent(false);
+    }
+}
+
 /// Makes mobs silent by their name tags.
 pub(super) struct SilentTags;
 
@@ -34,12 +47,7 @@ impl NameTagObserver for SilentTags {
         if target.entity_type() == &vanilla_entities::PLAYER {
             return;
         }
-        if is_silent_name(&name.to_plain(&NoResolutor)) {
-            target.set_silent(true);
-            target.add_tag(MARK.to_owned());
-        } else if target.remove_tag(MARK) {
-            target.set_silent(false);
-        }
+        named(target, name);
     }
 }
 

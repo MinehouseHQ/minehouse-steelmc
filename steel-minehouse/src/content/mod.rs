@@ -14,6 +14,7 @@ mod herbs;
 mod map_markers;
 mod map_view;
 mod metro;
+mod minecart_names;
 mod papirosa;
 mod rail_graph;
 mod recipes;

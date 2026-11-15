@@ -428,6 +428,12 @@ voice back. Only what a tag did is undone (the entity tag `minehouse_silenced`).
 has `NameTagObserver` (`behavior/items/name_tag.rs`) for this. The words are fixed here; the
 Fabric mod reads them from its config.
 
+Name tags on minecarts (`content/minecart_names.rs`, the Fabric `MinecartNames`): a named
+name tag names any minecart with a right click, and the tag is used up (not in creative, and
+not when the cart already has that name). The name shows while a player points at the cart.
+A silent word in it makes the cart silent. Not ported: a cart placed from a minecart item
+renamed "Тихо" on an anvil is not made silent.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
