@@ -55,7 +55,7 @@ impl StructureTemplate {
         initial: ProcessedBlockInfo,
         settings: &StructurePlaceSettings<'_>,
         reference_pos: BlockPos,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Option<ProcessedBlockInfo> {
         let mut current = initial;
         if settings.block_ignore.ignores(registry, current.state) {
@@ -99,7 +99,7 @@ impl StructureTemplate {
         current: ProcessedBlockInfo,
         settings: &StructurePlaceSettings<'_>,
         reference_pos: BlockPos,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Option<ProcessedBlockInfo> {
         match processor {
             StructureProcessorKind::BlockRot {
@@ -161,7 +161,7 @@ impl StructureTemplate {
         current: ProcessedBlockInfo,
         mossiness: f32,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> ProcessedBlockInfo {
         match settings.processor_random {
             StructureProcessorRandom::Placement => {
@@ -172,6 +172,12 @@ impl StructureTemplate {
                     LegacyRandom::from_seed(Self::block_pos_seed(current.world_pos) as u64);
                 Self::process_block_age_with_random(registry, current, mossiness, &mut random)
             }
+            StructureProcessorRandom::Separate(random) => Self::process_block_age_with_random(
+                registry,
+                current,
+                mossiness,
+                &mut *random.borrow_mut(),
+            ),
         }
     }
 
@@ -466,7 +472,7 @@ impl StructureTemplate {
         settings: &StructurePlaceSettings<'_>,
         original_blocks: &[ProcessedBlockInfo],
         mut processed_blocks: Vec<ProcessedBlockInfo>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Vec<ProcessedBlockInfo> {
         for processor in settings.processors {
             if let StructureProcessorKind::Capped { delegate, limit } = processor {
@@ -501,7 +507,7 @@ impl StructureTemplate {
         original_blocks: &[ProcessedBlockInfo],
         mut processed_blocks: Vec<ProcessedBlockInfo>,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Vec<ProcessedBlockInfo> {
         if limit.max() == 0 || processed_blocks.is_empty() {
             return processed_blocks;
@@ -558,7 +564,7 @@ impl StructureTemplate {
     pub(super) fn processor_next_f32(
         settings: &StructurePlaceSettings<'_>,
         pos: BlockPos,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> f32 {
         match settings.processor_random {
             StructureProcessorRandom::Placement => random.next_f32(),
@@ -566,6 +572,7 @@ impl StructureTemplate {
                 let mut random = LegacyRandom::from_seed(Self::block_pos_seed(pos) as u64);
                 random.next_f32()
             }
+            StructureProcessorRandom::Separate(random) => random.borrow_mut().next_f32(),
         }
     }
 

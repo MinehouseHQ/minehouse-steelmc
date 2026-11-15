@@ -143,7 +143,7 @@ impl StructureTemplate {
         position: BlockPos,
         reference_pos: BlockPos,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
         flags: UpdateFlags,
     ) -> bool {
         let Some(palette) = self.palette(settings, position, random) else {
@@ -307,6 +307,7 @@ impl StructureTemplate {
                 if state != new_state {
                     let _ = region.set_block_state(pos, new_state, placed_update_flags);
                 }
+                region.update_neighbors_at(pos, new_state.get_block());
             }
         }
 
@@ -393,7 +394,7 @@ impl StructureTemplate {
         registry: &Registry,
         position: BlockPos,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) {
         let Some(palette) = self.palette(settings, position, random) else {
             return;
@@ -424,7 +425,7 @@ impl StructureTemplate {
         registry: &Registry,
         position: BlockPos,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Vec<StructureDataMarker> {
         let Some(palette) = self.palette(settings, position, random) else {
             return Vec::new();
@@ -662,7 +663,7 @@ impl StructureTemplate {
         &self,
         settings: &StructurePlaceSettings<'_>,
         position: BlockPos,
-        random: &mut WorldgenRandom,
+        random: &mut impl Random,
     ) -> Option<&StructureTemplatePalette> {
         if self.palettes.is_empty() {
             return None;
@@ -678,6 +679,9 @@ impl StructureTemplate {
             StructureProcessorRandom::Positional => {
                 let mut random = LegacyRandom::from_seed(Self::block_pos_seed(position) as u64);
                 random.next_i32_bounded(bound)
+            }
+            StructureProcessorRandom::Separate(random) => {
+                random.borrow_mut().next_i32_bounded(bound)
             }
         };
         Some(&self.palettes[index as usize])

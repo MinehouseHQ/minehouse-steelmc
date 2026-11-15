@@ -38,7 +38,7 @@ use crate::chunk::{
     Chunk,
     chunk_generation_task::StaticCache2D,
     chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
+    chunk_pyramid::{ChunkStep, LIVE_STEP},
     full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
     section::{SectionHolder, SectionWriteGuard, Sections},
@@ -60,7 +60,11 @@ use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 pub struct WorldGenRegion<'a> {
     context: &'a WorldGenContext,
     step: &'a ChunkStep,
-    cache: &'a StaticCache2D<Arc<ChunkHolder>>,
+    /// Generation dependencies; `None` for a live region, which reads the world.
+    cache: Option<&'a StaticCache2D<Arc<ChunkHolder>>>,
+    /// The world a live region reads and writes, as vanilla features and templates
+    /// placed by `/place` see a `ServerLevel` instead of a `WorldGenRegion`.
+    live: Option<Arc<World>>,
     center: ChunkPos,
     chunk_cache_radius: i32,
     chunks: RefCell<Box<[Option<CachedWorldGenChunk<'a>>]>>,
@@ -244,13 +248,46 @@ impl<'a> WorldGenRegion<'a> {
         Self {
             context,
             step,
-            cache,
+            cache: Some(cache),
+            live: None,
             center,
             chunk_cache_radius,
             chunks: RefCell::new(chunks),
             worldgen_heightmaps: RefCell::new(worldgen_heightmaps),
             random,
         }
+    }
+
+    /// Creates a region over the loaded world, centered on `center`.
+    ///
+    /// Vanilla `/place` hands features and templates the `ServerLevel` itself. A live
+    /// region does the same: reads and writes go to the world, with its block updates,
+    /// light and client sync, and every chunk is writable as `ServerLevel.ensureCanWrite`
+    /// allows. It declares no generation dependencies, so no proto chunk is touched.
+    #[must_use]
+    pub fn new_live(
+        context: &'a WorldGenContext,
+        world: Arc<World>,
+        center: ChunkPos,
+        random: RandomSource,
+    ) -> Self {
+        Self {
+            context,
+            step: &LIVE_STEP,
+            cache: None,
+            live: Some(world),
+            center,
+            chunk_cache_radius: 0,
+            chunks: RefCell::new(Box::new([None])),
+            worldgen_heightmaps: RefCell::new(Box::new([CachedWorldgenHeightmaps::default()])),
+            random,
+        }
+    }
+
+    /// Returns the world of a live region.
+    #[must_use]
+    pub const fn live_world(&self) -> Option<&Arc<World>> {
+        self.live.as_ref()
     }
 
     /// Returns the center chunk being generated.
@@ -318,12 +355,10 @@ impl<'a> WorldGenRegion<'a> {
     /// is not generated for the feature-stage proto chunks. Treating the region as dark keeps
     /// snow and freeze checks aligned with vanilla feature placement.
     #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "keeps light lookup callable through the region instance"
-    )]
-    pub const fn block_light_at(&self, _pos: BlockPos) -> u8 {
-        0
+    pub fn block_light_at(&self, pos: BlockPos) -> u8 {
+        self.live
+            .as_ref()
+            .map_or(0, |world| world.light_value_at(LightLayer::Block, pos))
     }
 
     /// Returns the exclusive maximum build height.
@@ -349,6 +384,9 @@ impl<'a> WorldGenRegion<'a> {
     /// Returns whether block writes are allowed in the given chunk.
     #[must_use]
     pub const fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        if self.live.is_some() {
+            return true;
+        }
         let radius = self.step.block_state_write_radius;
         radius >= 0
             && (chunk_x - self.center.0.x).abs() <= radius
@@ -368,7 +406,7 @@ impl<'a> WorldGenRegion<'a> {
             return None;
         }
 
-        let holder = self.cache.get(chunk_x, chunk_z);
+        let holder = self.cache?.get(chunk_x, chunk_z);
         let chunk = holder.try_chunk(available_status)?;
         let published_status = holder.published_status()?;
         Some(WorldGenChunkRef {
@@ -467,6 +505,9 @@ impl<'a> WorldGenRegion<'a> {
     /// Panics if the position's chunk is outside this step's direct dependencies.
     #[must_use]
     pub fn block_state(&self, pos: BlockPos) -> BlockStateId {
+        if let Some(world) = &self.live {
+            return world.get_block_state(pos);
+        }
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
@@ -480,6 +521,9 @@ impl<'a> WorldGenRegion<'a> {
     /// Panics if the position's chunk is outside this step's direct dependencies.
     #[must_use]
     pub fn block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        if let Some(world) = &self.live {
+            return world.get_block_entity(pos);
+        }
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
@@ -508,6 +552,11 @@ impl<'a> WorldGenRegion<'a> {
     /// Panics if the position's chunk is outside this step's direct dependencies.
     #[must_use]
     pub fn noise_biome_id(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> u16 {
+        if let Some(world) = &self.live {
+            return world
+                .noise_biome_id(quart_x, quart_y, quart_z)
+                .unwrap_or_default();
+        }
         let chunk_x = quart_x >> 2;
         let chunk_z = quart_z >> 2;
         let local_quart_x = (quart_x & 3) as usize;
@@ -537,6 +586,10 @@ impl<'a> WorldGenRegion<'a> {
     /// direct dependencies, or if the holder has not reached the declared status.
     #[must_use]
     pub fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
+        if let Some(world) = &self.live {
+            // `ServerLevel.setBlock`: no proto-chunk postprocessing marks.
+            return world.set_block(pos, state, flags);
+        }
         let Some((chunk_x, chunk_z, status)) = self.writable_chunk_for_pos(pos, "write block")
         else {
             return false;
@@ -598,6 +651,19 @@ impl<'a> WorldGenRegion<'a> {
         state: BlockStateId,
         nbt: NbtCompound,
     ) -> bool {
+        if let Some(world) = &self.live {
+            if !block_entity_type.is_valid(state.get_block()) {
+                return false;
+            }
+            let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
+                block_entity_type,
+                Arc::downgrade(world),
+                pos,
+                state,
+                nbt,
+            );
+            return world.set_block_entity(entity);
+        }
         let Some((chunk_x, chunk_z, status)) =
             self.writable_chunk_for_pos(pos, "write block entity")
         else {
@@ -628,8 +694,14 @@ impl<'a> WorldGenRegion<'a> {
     }
 
     /// Removes block entity data at a writable worldgen position.
+    ///
+    /// A live region leaves this to the world: `World::set_block` already replaced
+    /// the old block entity, and any the new block made is its own.
     #[must_use]
     pub fn remove_block_entity(&self, pos: BlockPos) -> bool {
+        if self.live.is_some() {
+            return true;
+        }
         let Some((chunk_x, chunk_z, status)) =
             self.writable_chunk_for_pos(pos, "remove block entity")
         else {
@@ -650,6 +722,9 @@ impl<'a> WorldGenRegion<'a> {
     /// insertion is allowed anywhere covered by the generation step's chunk dependencies.
     #[must_use]
     pub fn add_fresh_entity(&self, entity: SharedEntity) -> bool {
+        if let Some(world) = &self.live {
+            return world.try_add_entity(entity).is_ok();
+        }
         let pos = BlockPos::from(entity.position());
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "add entity");
 
@@ -673,9 +748,13 @@ impl<'a> WorldGenRegion<'a> {
         &self,
         pos: BlockPos,
         block: BlockRef,
-        _delay: i32,
+        delay: i32,
         priority: TickPriority,
     ) -> bool {
+        if let Some(world) = &self.live {
+            world.schedule_block_tick(pos, block, delay, priority);
+            return true;
+        }
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule block tick");
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
             if chunk.access_mode.allows_writes() {
@@ -699,9 +778,13 @@ impl<'a> WorldGenRegion<'a> {
         &self,
         pos: BlockPos,
         fluid: FluidRef,
-        _delay: i32,
+        delay: i32,
         priority: TickPriority,
     ) -> bool {
+        if let Some(world) = &self.live {
+            world.schedule_fluid_tick(pos, fluid, delay, priority);
+            return true;
+        }
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule fluid tick");
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
             if chunk.access_mode.allows_writes() {
@@ -717,11 +800,22 @@ impl<'a> WorldGenRegion<'a> {
         self.schedule_fluid_tick(pos, fluid, delay, TickPriority::Normal)
     }
 
+    /// Vanilla `LevelAccessor.updateNeighborsAt`: a no-op on a `WorldGenRegion`, the
+    /// world's neighbor updates on a live region.
+    pub fn update_neighbors_at(&self, pos: BlockPos, source_block: BlockRef) {
+        if let Some(world) = &self.live {
+            world.update_neighbors_at(pos, source_block);
+        }
+    }
+
     /// Marks a position for vanilla proto-chunk postprocessing after full promotion.
     ///
     /// # Panics
     /// Panics if the target chunk is outside this step's direct dependencies.
     pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
+        if self.live.is_some() {
+            return;
+        }
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
@@ -738,6 +832,9 @@ impl<'a> WorldGenRegion<'a> {
     /// dependency cache already holds for that chunk.
     #[must_use]
     pub fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        if let Some(world) = &self.live {
+            return LevelReader::height_at(world, heightmap_type, x, z);
+        }
         let chunk_x = SectionPos::block_to_section_coord(x);
         let chunk_z = SectionPos::block_to_section_coord(z);
         let local_x = (x & 15) as usize;
@@ -1045,6 +1142,11 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         replacement: impl FnOnce(BlockStateId) -> Option<BlockStateId>,
     ) -> bool {
         self.with_ore_profile(OreFeatureStats::record_target_read);
+        if let Some(world) = &self.region.live {
+            return self.live_section_index(pos).is_some()
+                && replacement(world.get_block_state(pos))
+                    .is_some_and(|state| Self::live_write(world, pos, state));
+        }
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
         let Some(key) = self.writable_section_key(pos) else {
@@ -1104,6 +1206,14 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         positions: &[PackedSectionBlockPos],
         mut replacement: impl FnMut(BlockStateId, i32) -> Option<BlockStateId>,
     ) -> u64 {
+        if let Some(world) = &self.region.live {
+            let base = BlockPos::new(
+                chunk_x * 16,
+                self.region.min_y() + (section_index as i32) * 16,
+                chunk_z * 16,
+            );
+            return Self::live_replace_in_section(world, base, positions, replacement);
+        }
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
         if !self.region.can_write_to_chunk(chunk_x, chunk_z) {
@@ -1198,6 +1308,13 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     /// Out-of-height reads return air, matching vanilla `BulkSectionAccess.getBlockState`.
     #[must_use]
     pub(crate) fn block_state(&mut self, pos: BlockPos) -> BlockStateId {
+        if let Some(world) = &self.region.live {
+            return if self.live_section_index(pos).is_some() {
+                world.get_block_state(pos)
+            } else {
+                self.air
+            };
+        }
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
         let air = self.air;
@@ -1267,6 +1384,12 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     /// pre-light worldgen write paths.
     #[must_use]
     pub(crate) fn set_block_state(&mut self, pos: BlockPos, state: BlockStateId) -> bool {
+        if let Some(world) = &self.region.live {
+            return self.live_section_index(pos).is_some() && {
+                Self::live_write(world, pos, state);
+                true
+            };
+        }
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
         let Some(key) = self.writable_section_key(pos) else {
@@ -1305,6 +1428,49 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
         Self::record_ore_write_time(ore_profile, started_at);
         true
+    }
+
+    /// The section a live write lands in, `None` outside the build height, where
+    /// vanilla `BulkSectionAccess.getSection` has no section either.
+    fn live_section_index(&self, pos: BlockPos) -> Option<usize> {
+        Self::section_index(self.region.min_y(), self.region.height(), pos.y())
+    }
+
+    /// The live form of [`Self::replace_ore_target_block_states_in_section`].
+    fn live_replace_in_section(
+        world: &Arc<World>,
+        base: BlockPos,
+        positions: &[PackedSectionBlockPos],
+        mut replacement: impl FnMut(BlockStateId, i32) -> Option<BlockStateId>,
+    ) -> u64 {
+        let mut placed = 0;
+        for &local in positions {
+            let pos = base.offset(
+                i32::from(local.x()),
+                i32::from(local.y()),
+                i32::from(local.z()),
+            );
+            if let Some(state) = replacement(world.get_block_state(pos), pos.y()) {
+                Self::live_write(world, pos, state);
+                placed += 1;
+            }
+        }
+        placed
+    }
+
+    /// Writes one block of a live region's bulk access.
+    ///
+    /// Vanilla `BulkSectionAccess` writes the `LevelChunkSection` directly, even on a
+    /// `ServerLevel`, so clients, heightmaps and light stay stale until the chunk
+    /// reloads. Steel's sections keep block counts and change tracking that a bare
+    /// write on a full chunk would break, so a live write goes through the world, but
+    /// with no neighbor or shape updates, as vanilla's write has none.
+    fn live_write(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> bool {
+        world.set_block(
+            pos,
+            state,
+            UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
+        )
     }
 
     fn writable_section_key(&self, pos: BlockPos) -> Option<WritableSectionKey> {
@@ -1517,7 +1683,14 @@ impl LevelReader for WorldGenRegion<'_> {
             .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
+    fn sky_darkening(&self) -> u8 {
+        self.live.as_ref().map_or(0, LevelReader::sky_darkening)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        if let Some(world) = &self.live {
+            return LevelReader::raw_brightness(world, pos, sky_darkening);
+        }
         let sky_light = if self.context.world().dimension_type.has_skylight {
             15_u8.saturating_sub(sky_darkening)
         } else {
@@ -1528,6 +1701,9 @@ impl LevelReader for WorldGenRegion<'_> {
     }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {
+        if let Some(world) = &self.live {
+            return LevelReader::can_see_sky(world, pos);
+        }
         if !self.context.world().dimension_type.has_skylight {
             return false;
         }
@@ -1562,6 +1738,9 @@ impl ServerLevelAccessor for WorldGenRegion<'_> {
     }
 
     fn brightness(&self, layer: LightLayer, pos: BlockPos) -> u8 {
+        if let Some(world) = &self.live {
+            return world.light_value_at(layer, pos);
+        }
         match layer {
             LightLayer::Sky => {
                 if self.context.world().dimension_type.has_skylight {
@@ -1591,6 +1770,9 @@ impl ServerLevelAccessor for WorldGenRegion<'_> {
     // the trait default (0) is the region's value.
 
     fn biome(&self, pos: BlockPos) -> Option<BiomeRef> {
+        if let Some(world) = &self.live {
+            return world.biome_at(pos);
+        }
         let biome_id = fuzzed_biome_at_block(obfuscate_biome_seed(self.seed()), pos, |quart| {
             self.noise_biome_id(quart.x, quart.y, quart.z)
         });
@@ -1627,7 +1809,10 @@ impl LevelAccessor for WorldGenRegion<'_> {
         WorldGenRegion::can_write_to_chunk(self, chunk_x, chunk_z)
     }
 
-    fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {
+        if let Some(world) = &self.live {
+            return world.destroy_block(pos, drop_items);
+        }
         if self.block_state(pos).is_air() {
             return false;
         }

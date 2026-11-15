@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 use std::str::FromStr;
@@ -30,7 +31,6 @@ use steel_registry::{
     vanilla_template_pools,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random, RandomSource};
 use steel_utils::value_providers::IntProvider;
 use steel_utils::{
@@ -100,12 +100,16 @@ pub(crate) struct StructureDataMarker {
     pub(crate) pos: BlockPos,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StructureProcessorRandom {
-    /// Vanilla `StructurePlaceSettings.setRandom(random)`.
+#[derive(Clone, Copy)]
+pub(crate) enum StructureProcessorRandom<'a> {
+    /// Vanilla `StructurePlaceSettings.setRandom(random)` with the random that is also
+    /// passed to `placeInWorld`, as worldgen pieces and features do.
     Placement,
     /// Vanilla `StructurePlaceSettings.getRandom(pos)` fallback.
     Positional,
+    /// Vanilla `StructurePlaceSettings.setRandom(random)` with a random of its own, as
+    /// `/place template` and structure blocks set one apart from the placement random.
+    Separate(&'a RefCell<LegacyRandom>),
 }
 
 pub(crate) struct StructurePlaceSettings<'a> {
@@ -118,7 +122,7 @@ pub(crate) struct StructurePlaceSettings<'a> {
     pub(crate) late_block_ignore: StructureBlockIgnore,
     pub(crate) replace_jigsaws: bool,
     pub(crate) projection: Option<Projection>,
-    pub(crate) processor_random: StructureProcessorRandom,
+    pub(crate) processor_random: StructureProcessorRandom<'a>,
     pub(crate) liquid_settings: LiquidSettingsData,
 }
 

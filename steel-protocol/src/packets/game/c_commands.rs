@@ -346,6 +346,7 @@ pub enum ArgumentType {
     LootModifier,
     SlotSource,
     Dialog,
+    Feature,
     SwingAnimation,
     Uuid,
 }
@@ -417,6 +418,7 @@ impl ArgumentType {
             Self::LootModifier => 54,
             Self::SlotSource => 57,
             Self::Dialog => 58,
+            Self::Feature => 59,
             Self::SwingAnimation => 60,
             Self::Uuid => 61,
         }
@@ -534,6 +536,7 @@ mod tests {
             (ArgumentType::LootModifier, 54),
             (ArgumentType::SlotSource, 57),
             (ArgumentType::Dialog, 58),
+            (ArgumentType::Feature, 59),
             (ArgumentType::SwingAnimation, 60),
             (ArgumentType::Uuid, 61),
         ] {

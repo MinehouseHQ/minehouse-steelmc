@@ -51,6 +51,7 @@ use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::{
     ATTRIBUTE_REGISTRY, BIOMES_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
@@ -62,8 +63,10 @@ use steel_registry::{
 use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 
 use crate::inventory::recipe_displays::RECIPE_DISPLAYS;
+use steel_worldgen::structure::StructureMirror;
+
 use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, Rotation,
     nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
@@ -450,6 +453,21 @@ impl SteelArgumentType {
         Self::new(LootTableParser)
     }
 
+    /// Vanilla `ResourceOrIdArgument.feature`, by id only, like [`Self::loot_table`].
+    pub(crate) fn feature() -> Self {
+        Self::new(FeatureParser)
+    }
+
+    /// Vanilla `TemplateRotationArgument.templateRotation`.
+    pub(crate) fn template_rotation() -> Self {
+        Self::new(TemplateRotationParser)
+    }
+
+    /// Vanilla `TemplateMirrorArgument.templateMirror`.
+    pub(crate) fn template_mirror() -> Self {
+        Self::new(TemplateMirrorParser)
+    }
+
     /// Vanilla `CompoundTagArgument.compoundTag`.
     pub(crate) fn compound_tag() -> Self {
         Self::new(CompoundTagParser)
@@ -703,6 +721,18 @@ argument_value_wrapper!(ItemSlotValue(i32), "steel:command/value/item_slot");
 argument_value_wrapper!(
     LootTableValue(LootTableRef),
     "steel:command/value/loot_table"
+);
+argument_value_wrapper!(
+    FeatureValue(ConfiguredFeatureEntryRef),
+    "steel:command/value/feature"
+);
+argument_value_wrapper!(
+    TemplateRotationValue(Rotation),
+    "steel:command/value/template_rotation"
+);
+argument_value_wrapper!(
+    TemplateMirrorValue(StructureMirror),
+    "steel:command/value/template_mirror"
 );
 argument_value_wrapper!(
     CompoundTagValue(NbtCompound),
@@ -1595,6 +1625,44 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::LootTable, None)
 );
 unit_argument_parser!(
+    FeatureParser,
+    "steel:command/parser/feature",
+    FeatureValue,
+    parse | reader,
+    _source | { parse_feature(reader).map(FeatureValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .configured_features
+                .iter()
+                .map(|(_, feature)| &feature.key),
+            builder,
+        );
+    },
+    protocol(ProtocolArgumentType::Feature, None)
+);
+unit_argument_parser!(
+    TemplateRotationParser,
+    "steel:command/parser/template_rotation",
+    TemplateRotationValue,
+    parse | reader,
+    _source | { parse_named(reader, &TEMPLATE_ROTATIONS).map(TemplateRotationValue) },
+    suggest | _context,
+    builder | { suggest_list(builder, TEMPLATE_ROTATIONS.iter().map(|(name, _)| *name)) },
+    protocol(ProtocolArgumentType::TemplateRotation, None)
+);
+unit_argument_parser!(
+    TemplateMirrorParser,
+    "steel:command/parser/template_mirror",
+    TemplateMirrorValue,
+    parse | reader,
+    _source | { parse_named(reader, &TEMPLATE_MIRRORS).map(TemplateMirrorValue) },
+    suggest | _context,
+    builder | { suggest_list(builder, TEMPLATE_MIRRORS.iter().map(|(name, _)| *name)) },
+    protocol(ProtocolArgumentType::TemplateMirror, None)
+);
+unit_argument_parser!(
     IdentifierParser,
     "steel:command/parser/identifier",
     IdentifierValue,
@@ -2082,6 +2150,60 @@ fn parse_loot_table(reader: &mut StringReader<'_>) -> Result<LootTableRef, Comma
                 .component(),
         )))
     })
+}
+
+/// Vanilla `ResourceOrIdArgument.FeatureArgument.parse` for a configured
+/// feature id. An inline feature fails to parse, as an inline loot table does.
+fn parse_feature(
+    reader: &mut StringReader<'_>,
+) -> Result<ConfiguredFeatureEntryRef, CommandSyntaxError> {
+    let inline = !reader.peek().is_some_and(is_allowed_in_identifier);
+    let key = parse_identifier(reader);
+    let (false, Ok(key)) = (inline, key) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
+                .message(["inline features are not supported".to_owned()])
+                .component(),
+        ))));
+    };
+    REGISTRY.configured_features.by_key(&key).ok_or_else(|| {
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                .message([key.to_string(), "minecraft:worldgen/feature".to_owned()])
+                .component(),
+        )))
+    })
+}
+
+/// Vanilla `Rotation` serialized names, in declaration order.
+const TEMPLATE_ROTATIONS: [(&str, Rotation); 4] = [
+    ("none", Rotation::None),
+    ("clockwise_90", Rotation::Clockwise90),
+    ("180", Rotation::Clockwise180),
+    ("counterclockwise_90", Rotation::CounterClockwise90),
+];
+
+/// Vanilla `Mirror` serialized names, in declaration order.
+const TEMPLATE_MIRRORS: [(&str, StructureMirror); 3] = [
+    ("none", StructureMirror::None),
+    ("left_right", StructureMirror::LeftRight),
+    ("front_back", StructureMirror::FrontBack),
+];
+
+/// Vanilla `StringRepresentableArgument.parse`: an unquoted serialized name,
+/// matched exactly.
+fn parse_named<T: Copy>(
+    reader: &mut StringReader<'_>,
+    values: &[(&str, T)],
+) -> Result<T, CommandSyntaxError> {
+    let raw = reader.read_unquoted_string();
+    if let Some((_, value)) = values.iter().find(|(name, _)| *name == raw) {
+        return Ok(*value);
+    }
+    let message = translations::ARGUMENT_ENUM_INVALID
+        .message([raw.to_owned()])
+        .component();
+    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
 }
 
 const fn is_allowed_in_identifier(character: char) -> bool {
