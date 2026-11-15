@@ -409,7 +409,17 @@ minecarts off the line as it passes (`trains::smash_empty`, the Fabric `Trains.s
 the cart left on the rails breaks into its item instead of stopping the ride. Carts of the
 same train, carts with a passenger and chest, hopper and other carts are left alone.
 
-Not ported yet: the lines on the web map.
+`content/map_markers.rs` puts the metro on the web map and the site (the Fabric
+`BlueMapMarkers`). It writes the stations, the lines between them and the transfers as the
+`BlueMap` marker set `minehouse-metro`, in the files `BlueMap` serves:
+`maps/<map>/live/markers.json` (`world`, `world_the_nether`, `world_the_end`) and, if the
+directory has none of its own, a `settings.json` that lists the maps. The directory is
+`MINEHOUSE_METRO_MAP_DIR`, or `metro-map` in the data directory; point the site's
+`BLUEMAP_URL` at a web server that gives it out. Other marker sets in a `markers.json` are
+kept. The files are written by a thread of their own, at most every two seconds after a
+station or the track changed. A line is the track the rail graph knows between two
+stations, through the forks on the way (the Fabric mod draws the trips its trains
+recorded).
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
