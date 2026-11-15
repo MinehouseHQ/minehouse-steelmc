@@ -131,7 +131,7 @@ fn is_station(state: BlockStateId) -> bool {
 }
 
 /// Makes the block show the line the metro has for it.
-fn sync(world: &Arc<World>, pos: BlockPos) {
+pub(super) fn sync(world: &Arc<World>, pos: BlockPos) {
     let state = world.get_block_state(pos);
     if !is_station(state) {
         return;

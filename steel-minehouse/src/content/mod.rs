@@ -14,6 +14,7 @@ mod metro;
 mod papirosa;
 mod rail_graph;
 mod recipes;
+mod ride;
 mod stations;
 
 use std::{str::FromStr as _, sync::LazyLock};
@@ -347,6 +348,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     if !extend_registry(recipes::register) {
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
     }
+    ride::register(registry)?;
     commands::register(registry)
 }
 
@@ -358,7 +360,7 @@ pub fn start() {
         recipes::registered(),
         recipes::KEYS.len()
     );
-    if !set_minecart_observer(&rail_graph::CARTS) {
+    if !set_minecart_observer(&ride::RIDE) {
         log::warn!("MineHouse metro: minecarts are already observed, the track is not learned");
     }
     log::info!(
