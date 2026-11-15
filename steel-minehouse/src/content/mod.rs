@@ -10,6 +10,7 @@ mod cauldron;
 mod cloud;
 mod commands;
 mod couplings;
+mod first_join;
 mod herbs;
 mod map_markers;
 mod map_view;
@@ -44,6 +45,7 @@ use steel_core::{
     },
     inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
+    server::Server,
 };
 use steel_registry::{
     data_components::{
@@ -370,6 +372,11 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     }
     ride::register(registry)?;
     commands::register(registry)
+}
+
+/// Starts what runs on the server tick. Call once the server is ready for players.
+pub fn start_jobs(server: &Server) {
+    first_join::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
