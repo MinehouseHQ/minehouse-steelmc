@@ -16,6 +16,7 @@ use steel_utils::{BlockPos, locks::Shared};
 use crate::{
     inventory::{
         container::{ResultContainer, SimpleContainer},
+        craft_observer::craft_observer,
         prelude::*,
     },
     world::World,
@@ -37,9 +38,13 @@ pub fn assemble_smithing(
     addition: &ItemStack,
 ) -> ItemStack {
     let input = SmithingRecipeInput::new(template.clone(), base.clone(), addition.clone());
+    let observer = craft_observer();
     let Some(recipe) = REGISTRY
         .recipes
-        .find_match(&vanilla_recipe_types::SMITHING, &input)
+        .matching(&vanilla_recipe_types::SMITHING, &input)
+        .find(|recipe| {
+            !observer.is_some_and(|observer| observer.blocks_smithing(recipe.data(), &input))
+        })
     else {
         return ItemStack::empty();
     };

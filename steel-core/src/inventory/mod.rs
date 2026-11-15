@@ -5,6 +5,7 @@
 
 pub mod click;
 pub mod container;
+pub mod craft_observer;
 pub mod ender_chest;
 pub mod equipment;
 pub mod fuel_values;

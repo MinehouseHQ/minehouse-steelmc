@@ -13,6 +13,7 @@ use steel_utils::{
 };
 
 use crate::behavior::on_crafted_by;
+use crate::inventory::craft_observer::craft_observer;
 use crate::{
     inventory::{
         container::{ResultContainer, SimpleContainer},
@@ -38,6 +39,7 @@ pub fn is_cartography_additional(stack: &ItemStack) -> bool {
     stack.is(&vanilla_items::PAPER)
         || stack.is(&vanilla_items::MAP)
         || stack.is(&vanilla_items::GLASS_PANE)
+        || craft_observer().is_some_and(|observer| observer.cartography_additional(stack))
 }
 
 /// Vanilla `CartographyTableMenu.slotsChanged` with `setupResultSlot`.
@@ -63,7 +65,10 @@ pub fn cartography_result(
         let data = data.lock();
         (data.locked, data.scale)
     };
-    let result = if additional.is(&vanilla_items::PAPER)
+    let custom = craft_observer().and_then(|observer| observer.cartography_result(map, additional));
+    let result = if let Some(custom) = custom {
+        custom
+    } else if additional.is(&vanilla_items::PAPER)
         && map.item().has_tag(&ItemTag::EXTENDABLE_MAPS)
         && !locked
         && scale < MAX_SCALE

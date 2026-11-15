@@ -442,6 +442,16 @@ a frame on a chest opens the chest. Sneaking shears hide or show a frame that ho
 item, and a hidden frame shows again once its item is out. `steel-core` has
 `ItemFrameObserver` (`display_ui/item_frame.rs`) and `player::game_mode::use_block` for this.
 
+Waxed maps and smithing templates (`content/waxed_items.rs`, the Fabric `MapLock` and
+`TemplateLock`): on the cartography table a filled map with honeycomb in the lower slot
+gives the same map, waxed; on the smithing table a template with honeycomb in the middle
+slot gives the same template, waxed (recipes `minehouse-tweaks:waxed_<template>`). A waxed
+map is not copied, neither with an empty map on the cartography table nor in the crafting
+grid, and a waxed template is in no shaped recipe, so it is not duplicated with diamonds.
+Both still work as before: the map updates, zooms out and locks, the template trims and
+upgrades. The mark is `custom_data.minehouse_waxed`, as in the Fabric mod, plus a lore
+line. The core hook is `inventory::craft_observer::CraftObserver`.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

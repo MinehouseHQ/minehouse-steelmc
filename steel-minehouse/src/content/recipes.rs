@@ -245,6 +245,7 @@ pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*LEAF_BLOCK_RECIPE);
     registry.recipes.register(&*LEAF_RECIPE);
     registry.recipes.register(&*PAPIROSA_RECIPE);
+    super::waxed_items::register(registry);
 }
 
 #[cfg(test)]
