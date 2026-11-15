@@ -15,9 +15,10 @@ use text_components::TextComponent;
 use super::CommandDispatcher;
 use super::brigadier::{CommandSyntaxError, StringReader};
 use super::execution::{CommandSource, SteelContextChain};
-use template::{StringTemplate, check_command_line_length};
+use template::check_command_line_length;
 
 pub(crate) use library::{FunctionLibrary, ServerFunctions};
+pub(crate) use template::{StringTemplate, is_valid_variable_name};
 pub(crate) use timer::{DomainTimerQueues, TimerCallback, TimerQueue};
 
 /// One compiled function line, run as if typed by the function's source.
