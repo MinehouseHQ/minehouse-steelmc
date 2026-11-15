@@ -247,7 +247,7 @@ log, and can be run again: it goes on after the last row it brought over. Nickna
 brought over, only the item and the amount.
 
 A rollback reads its rows on the reader thread and changes the world on the tick, 1500
-rows a tick, without neighbour updates. Rows in chunks that are not loaded are left for
+rows a tick, without neighbor updates. Rows in chunks that are not loaded are left for
 another run, and so are items that have no container or no room; only what was really
 changed is marked as rolled back. One run takes at most 500 000 rows.
 

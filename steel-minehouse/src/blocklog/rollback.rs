@@ -21,7 +21,7 @@ pub(super) const ROWS_PER_TICK: usize = 1500;
 /// The most rows one rollback takes; a wider one is run again.
 pub(super) const MAX_ROWS: u32 = 500_000;
 
-/// The world is told and redrawn, but neighbours are not updated: a rollback puts back what
+/// The world is told and redrawn, but neighbors are not updated: a rollback puts back what
 /// was, it does not replay physics.
 const FLAGS: UpdateFlags = UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
 
