@@ -22,6 +22,7 @@ use steel_registry::{
 };
 
 use crate::inventory::container::CraftingContainer;
+use crate::inventory::craft_observer::craft_observer;
 use crate::world::World;
 
 use super::container::Container;
@@ -84,9 +85,13 @@ pub fn positioned_grid_input(
 /// Finds the first crafting recipe in deterministic registry order.
 #[must_use]
 pub fn find_recipe(input: &CraftingInput) -> Option<CraftingRecipeRef> {
+    let observer = craft_observer();
     REGISTRY
         .recipes
-        .find_match(&vanilla_recipe_types::CRAFTING, input)
+        .matching(&vanilla_recipe_types::CRAFTING, input)
+        .find(|recipe| {
+            !observer.is_some_and(|observer| observer.blocks_crafting(recipe.data(), input))
+        })
 }
 
 /// Finds and interprets the output for the current crafting container.
