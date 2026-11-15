@@ -154,3 +154,16 @@ the shape of the mod's `minehouse-chat-mutes.json`, so it can be copied from the
 Like the mod, chat lines go out as system messages, so nothing depends on signed chat. The
 core hook is `ChatInterceptor` (`steel-core/src/server/chat_interceptor.rs`). Not ported:
 the `{lp_prefix}` and `{lp_suffix}` placeholders of `LuckPerms`.
+
+## Tab list
+
+`src/tab/`: what Styled Player List did on the Fabric server. `config/minehouse/tab.toml`
+holds the header and footer lines (`{title}`, `{online}`, `{max}`, `{ping}`, `{tps}`; the
+title is bold with a color gradient), the look of a nickname and `[[styles]]`: the first
+style whose `group` a player is in (and none of `not_groups`, and not a nickname of `except`)
+replaces the look and sets `order`, where higher is higher in the list. The defaults are our
+style: a red dot and the top of the list for `admin`.
+
+Header and footer go out once a second with the player's own ping; names and order when
+someone joins or leaves or a player's style changes. The core hook is `TabListProvider`
+(`steel-core/src/server/tab_list.rs`), which replaces the built-in header and footer.
