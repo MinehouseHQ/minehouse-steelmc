@@ -426,7 +426,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn spawn_data(&self) -> i32 {
-        i32::from(self.block_state().0)
+        i32::from(self.block_state().to_client().0)
     }
 
     fn blocks_building(&self) -> bool {

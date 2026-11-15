@@ -169,7 +169,7 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
         EntityData::OptionalBlockState(v) => {
             // Vanilla encodes: 0 = absent, otherwise raw block state ID
             match v {
-                Some(state) => VarInt(i32::from(state.0)).write(buf),
+                Some(state) => VarInt(i32::from(state.to_client().0)).write(buf),
                 None => VarInt(0).write(buf),
             }
         }

@@ -9,7 +9,9 @@ use std::{
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, RegistryExt as _};
-use steel_utils::{BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo};
+use steel_utils::{
+    BlockStateId, codec::VarInt, mth::ceil_log2, serial::WriteTo, types::client_block_state_count,
+};
 
 mod encode;
 
@@ -20,8 +22,9 @@ pub trait ToGlobalId {
 }
 
 impl ToGlobalId for BlockStateId {
+    /// The id of the state a client is shown, see [`BlockStateId::to_client`].
     fn to_global_id(&self) -> u32 {
-        u32::from(self.0)
+        u32::from(self.to_client().0)
     }
 }
 
@@ -458,7 +461,10 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
 /// constant here. Matches vanilla, which sizes the global palette from the
 /// registry rather than a fixed width.
 fn block_state_global_bits() -> u8 {
-    ceil_log2(usize::from(REGISTRY.blocks.next_state_id))
+    // Sized for the client's game: a server with blocks of its own has more states.
+    ceil_log2(usize::from(
+        client_block_state_count().unwrap_or(REGISTRY.blocks.next_state_id),
+    ))
 }
 
 /// Bits per entry for the biome global palette. See [`block_state_global_bits`].
