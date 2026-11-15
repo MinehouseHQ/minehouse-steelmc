@@ -89,17 +89,17 @@ fn slots_node(target: AccessorKind, distributor: Distributor) -> Builder {
 
 /// Which of vanilla's item accessor providers a node reads or writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AccessorKind {
+pub(in crate::command::builtins) enum AccessorKind {
     Entity,
     Block,
 }
 
 impl AccessorKind {
     /// Vanilla `ItemCommands.ALL_PROVIDERS` order.
-    const ALL: [Self; 2] = [Self::Entity, Self::Block];
+    pub(in crate::command::builtins) const ALL: [Self; 2] = [Self::Entity, Self::Block];
 
     /// Vanilla `ArgProvider.wrap`: `<builder> <kind> <argument> ...`.
-    fn wrap(
+    pub(in crate::command::builtins) fn wrap(
         self,
         builder: Builder,
         argument_name: &'static str,
@@ -182,16 +182,21 @@ fn container_slots(container: &ContainerRef, range: &SlotRange) -> Vec<SlotAcces
         .collect()
 }
 
-/// Vanilla `ItemCommands.getItems`: copies of the source slots' items.
-fn get_items(context: &Context, kind: AccessorKind) -> Result<Vec<ItemStack>, CommandSyntaxError> {
-    let range = context.slot_source("sourceSlots")?;
+/// Vanilla `ItemAccessor.getSlots` for the `source` accessor: copies of
+/// what each slot of the `slots_argument` range holds.
+pub(in crate::command::builtins) fn source_slot_items(
+    context: &Context,
+    kind: AccessorKind,
+    slots_argument: &str,
+) -> Result<Vec<ItemStack>, CommandSyntaxError> {
+    let range = context.slot_source(slots_argument)?;
     let accessor = ItemAccessor::access(
         context,
         kind,
         "source",
         &translations::COMMANDS_ITEM_SOURCE_NOT_A_CONTAINER,
     )?;
-    let items: Vec<ItemStack> = match &accessor {
+    Ok(match &accessor {
         ItemAccessor::Entity(entities) => entities
             .iter()
             .flat_map(|entity| {
@@ -205,8 +210,14 @@ fn get_items(context: &Context, kind: AccessorKind) -> Result<Vec<ItemStack>, Co
             .iter()
             .map(SlotAccess::get)
             .collect(),
-    };
+    })
+}
+
+/// Vanilla `ItemCommands.getItems`: copies of the source slots' items.
+fn get_items(context: &Context, kind: AccessorKind) -> Result<Vec<ItemStack>, CommandSyntaxError> {
+    let items = source_slot_items(context, kind, "sourceSlots")?;
     if items.is_empty() {
+        let range = context.slot_source("sourceSlots")?;
         return Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_ITEM_SOURCE_NO_SUCH_SLOT
                 .message([range.name().to_owned()])
