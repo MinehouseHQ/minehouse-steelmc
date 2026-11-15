@@ -167,3 +167,37 @@ style: a red dot and the top of the list for `admin`.
 Header and footer go out once a second with the player's own ping; names and order when
 someone joins or leaves or a player's style changes. The core hook is `TabListProvider`
 (`steel-core/src/server/tab_list.rs`), which replaces the built-in header and footer.
+
+## Voice chat
+
+Proximity voice for clients with the [Plasmo Voice](https://github.com/plasmoapp/plasmo-voice)
+mod, version 2: the server speaks its protocol itself, so players keep the mod they have.
+On the Fabric server this was the Plasmo Voice server mod.
+
+Settings: `config/minehouse/voice.toml`, off by default. The names follow
+`plasmovoice/server/config.toml`.
+
+```toml
+enabled = true
+# Clients keep their volumes per server id: take the one of the Fabric server.
+server_id = "72a2a425-e7fe-4db8-9ac1-ecd979766d0c"
+host = "0.0.0.0"
+port = 24454          # UDP: open it next to the game port
+public_host = ""      # empty: the address the client joined the game with
+public_port = 0       # 0: port
+distances = [8, 16, 32]
+default_distance = 16
+```
+
+How it works: the client answers a question on the plugin channel `plasmo:voice/v2` with an
+RSA key, gets the UDP address and a secret, and its first datagram opens the connection. The
+sound is opus under an AES key that every client gets encrypted with its own RSA key; the
+server never decodes it and passes each datagram on to the players within earshot in the
+same world (the chosen distance plus `max_extra_audio_broadcast_distance`, at most twice
+the distance). A client silent for `keep_alive_timeout_ms` is dropped and asked again.
+
+Not ported: groups and other addons, `/vmute` and the other commands, hiding vanished
+players. The core hook is `PluginChannelHandler`
+(`steel-core/src/server/plugin_channels.rs`); answers go out as `CPluginMessage`.
+
+The packet formats follow the `protocol` module of Plasmo Voice (LGPL-3.0, by Apehum).

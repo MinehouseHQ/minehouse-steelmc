@@ -853,9 +853,13 @@ impl Player {
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
-    /// Handles a custom payload packet.
-    #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
+    /// Handles a custom payload packet: hands it to the plugin channel handler, if any.
+    pub fn handle_custom_payload(&self, packet: SCustomPayload) {
+        let server = self.server();
+        if let Some(handler) = server.plugin_channel_handler() {
+            handler.plugin_message(&server, self, &packet.identifier, &packet.payload.0);
+        }
+    }
 
     /// Handles the end of a client tick.
     pub fn handle_client_tick_end(&self) {

@@ -6,6 +6,7 @@ pub mod chat_interceptor;
 pub mod jobs;
 pub mod login_gate;
 mod packet_processor;
+pub mod plugin_channels;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
@@ -268,6 +269,7 @@ pub async fn test_server_with_worlds_and_config(
         login_gate: OnceLock::new(),
         chat_interceptor: OnceLock::new(),
         tab_list_provider: OnceLock::new(),
+        plugin_channel_handler: OnceLock::new(),
         status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
@@ -514,6 +516,8 @@ pub struct Server {
     chat_interceptor: OnceLock<Arc<dyn chat_interceptor::ChatInterceptor>>,
     /// Draws the tab list, see [`tab_list`].
     tab_list_provider: OnceLock<Arc<dyn tab_list::TabListProvider>>,
+    /// Talks to client mods over plugin channels, see [`plugin_channels`].
+    plugin_channel_handler: OnceLock<Arc<dyn plugin_channels::PluginChannelHandler>>,
     /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
     status_motd: SyncMutex<Option<String>>,
     /// The tick rate manager for the server.
@@ -879,6 +883,7 @@ impl Server {
             login_gate: OnceLock::new(),
             chat_interceptor: OnceLock::new(),
             tab_list_provider: OnceLock::new(),
+            plugin_channel_handler: OnceLock::new(),
             status_motd: SyncMutex::new(None),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),

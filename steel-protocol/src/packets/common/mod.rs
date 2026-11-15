@@ -12,7 +12,7 @@ mod s_keep_alive;
 mod s_ping_request;
 
 pub use c_clear_dialog::CClearDialog;
-pub use c_custom_payload::CCustomPayload;
+pub use c_custom_payload::{CCustomPayload, CPluginMessage};
 pub use c_disconnect::CDisconnect;
 pub use c_keep_alive::CKeepAlive;
 pub use c_pong_response::CPongResponse;
