@@ -338,8 +338,14 @@ items that behave differently.
 
 The blocks so far, each with its recipe: the cloud («Облачко»), the metro station («Станция
 метро»), the metro junction («Стрелка метро») and the block of magic leaves («Блок магических
-листьев», nine magic leaves and back). The two metro blocks are only blocks for now: naming
-a station, its line and the trains are not ported yet.
+листьев», nine magic leaves and back). A station takes its name from a name tag
+with a name (right click, up to 48 characters) and its line from a dye, which also turns
+the sign on the block to the color of the line; an empty hand tells what the station is.
+`content/stations.rs` keeps the names and lines in `metro-stations.json` of the data
+directory, by world, with the line as the name of its dye (as the saved data
+`minehouse-tweaks:metro_stations` of the Fabric mod has it, so a world can be carried over).
+A station that is broken is forgotten. Junctions, the graph of tracks and the trains are
+not ported yet.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four

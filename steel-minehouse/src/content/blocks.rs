@@ -28,7 +28,7 @@ use steel_registry::{
 use steel_utils::{BlockStateId, Identifier};
 
 use super::{
-    CustomItem, JUNCTION, LEAF_BLOCK as LEAF_BLOCK_ITEM, STATION,
+    CustomItem, JUNCTION, LEAF_BLOCK as LEAF_BLOCK_ITEM,
     cauldron::{self, BROTH_CAULDRON, MILK_CAULDRON},
     cloud::{self, CLOUD_BLOCK},
     herbs::{self, CROP_BLOCK, LEAF_BLOCK, WILD_BLOCK},
@@ -253,12 +253,12 @@ pub(super) fn register(registry: &mut Registry) {
 pub(super) fn register_behaviors(behaviors: &mut BlockBehaviorRegistry) {
     behaviors.set_behavior(&CLOUD_BLOCK, Box::new(cloud::CloudBehavior));
     for (block, item) in [
-        (&STATION_BLOCK, &STATION),
         (&JUNCTION_BLOCK, &JUNCTION),
         (&LEAF_BLOCK, &LEAF_BLOCK_ITEM),
     ] {
         behaviors.set_behavior(block, Box::new(OwnBlock { block, item }));
     }
+    behaviors.set_behavior(&STATION_BLOCK, Box::new(metro::Station));
     behaviors.set_behavior(&CROP_BLOCK, Box::new(herbs::HerbCrop));
     behaviors.set_behavior(&WILD_BLOCK, Box::new(herbs::WildHerb));
     behaviors.set_behavior(&MILK_CAULDRON, Box::new(cauldron::MilkCauldron));

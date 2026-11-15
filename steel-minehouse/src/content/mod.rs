@@ -13,6 +13,7 @@ mod herbs;
 mod metro;
 mod papirosa;
 mod recipes;
+mod stations;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -354,6 +355,10 @@ pub fn start() {
         ITEMS.len(),
         recipes::registered(),
         recipes::KEYS.len()
+    );
+    log::info!(
+        "MineHouse metro on: {} stations",
+        stations::with(|stations| stations.count())
     );
 }
 
