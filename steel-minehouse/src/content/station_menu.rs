@@ -43,6 +43,7 @@ use super::{
     ride, stations, trains,
     transfers::{self, Track},
 };
+use crate::bank::zones::markup;
 
 /// The size of the map on the panel, blocks.
 const WIDTH: f32 = 2.6;
@@ -941,6 +942,7 @@ impl PlayerInputObserver for Input {
     ) -> Option<InteractionResult> {
         end_lock::clicked(player, world, hand, hit)
             .or_else(|| anvil_repair::clicked(player, world, hand, hit))
+            .or_else(|| markup::clicked(player, world, hand, hit))
     }
 
     fn carried_item(&self, player: &Player, from: u8, to: u8) {

@@ -345,12 +345,25 @@ is protected. The site keeps everything; the server asks for the list every 30 s
   window is open (open windows ask the site again every 3 s). The player whose bid was beaten is
   told if they are online.
 - On join a tenant whose lease ends within two days is reminded to renew.
+- Boss bars: one per announced or running auction, the soonest three, with a countdown to
+  its start or end (red in the last ten minutes), redrawn every second. `/zones bossbar` hides
+  them for one player; who hid them is kept in `zones-hidden-bars.txt` of the data directory.
+- `/zones show [num]` (every player) draws the borders with dust particles for 30 seconds, in
+  the color of the zone's status, at the player's height and within 64 blocks.
 - `/zones auction <num> [hours] [price] [delay minutes]` (`minehouse.zones.auction` or
   `minehouse.zones.admin`, and the console), `/zones delete <num>` and `/zones reload`
   (`minehouse.zones.admin`, and the console).
+- Markup (`minehouse.zones.admin`): `/zones wand` gives the stick «Разметка зон». A right click
+  on a block adds a corner, with Shift the last one is taken back, a left click tells what the
+  draft holds and breaks nothing. While the stick is held the draft, its corners and every
+  saved zone are drawn. `/zones height <min> <max>`, `/zones circle <radius>` (a circle around
+  the admin), `/zones edit <num>` (a saved zone into the draft), `/zones clear`,
+  `/zones save <num> [title]` and `/zones savecommon <num> [title]` send the draft to the site.
 
-Not here yet: the banker, and of the zones the map, the borders, the boss bars, the BlueMap
-markers and the commands that mark a zone out.
+The Fabric server hands the shapes to the client mod, which draws lines and walls instead of
+particles. Steel does not know which channels a client listens to, so everyone gets particles.
+
+Not here yet: the banker, and of the zones the map item, the BlueMap markers and the guides.
 
 `config/minehouse/bank.toml`:
 
