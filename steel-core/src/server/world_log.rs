@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{inventory::menu::Menu, player::Player, server::Server, world::World};
 
@@ -25,13 +25,14 @@ pub trait WorldLog: Send + Sync {
         placed: BlockStateId,
     );
 
-    /// A player hit (`hit`) or used the block at `pos`. Returning `true` swallows the click:
-    /// nothing is broken, placed or opened.
+    /// A player hit (`hit`) or used the `face` of the block at `pos`. Returning `true`
+    /// swallows the click: nothing is broken, placed or opened.
     fn block_clicked(
         &self,
         player: &Arc<Player>,
         world: &Arc<World>,
         pos: BlockPos,
+        face: Direction,
         hit: bool,
     ) -> bool;
 

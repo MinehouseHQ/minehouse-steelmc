@@ -21,6 +21,7 @@ pub mod blocklog;
 pub mod chat;
 pub mod config;
 pub mod console;
+pub mod content;
 pub mod downtime;
 pub mod moderation;
 pub mod roles;
@@ -77,7 +78,12 @@ impl Minehouse {
             moderation,
             downtime: Downtime::register(registry),
             chat: Chat::register(registry),
-            blocklog: BlockLog::register(registry),
+            blocklog: {
+                if let Err(error) = content::register(registry) {
+                    log::error!("MineHouse items: /mhgive is off: {error}");
+                }
+                BlockLog::register(registry)
+            },
         }
     }
 

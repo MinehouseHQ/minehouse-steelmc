@@ -117,6 +117,8 @@ pub struct Query {
     pub world: Option<String>,
     /// The middle of the searched box and how far it reaches; `0` is the one block.
     pub around: Option<((i32, i32, i32), i32)>,
+    /// More single blocks besides `around`: the other half of a double chest.
+    pub also: Vec<(i32, i32, i32)>,
     /// Nicknames (or `#causes`), any of them.
     pub actors: Vec<String>,
     /// Only events at or after this time.
@@ -593,12 +595,17 @@ fn condition(query: &Query, actions: Actions) -> (String, Vec<Value>) {
         values.push(Value::Text(world.clone()));
     }
     if let Some(((x, y, z), radius)) = query.around {
-        clauses
-            .push("t.x BETWEEN ? AND ? AND t.z BETWEEN ? AND ? AND t.y BETWEEN ? AND ?".to_owned());
+        let mut places =
+            vec!["t.x BETWEEN ? AND ? AND t.z BETWEEN ? AND ? AND t.y BETWEEN ? AND ?".to_owned()];
         for middle in [x, z, y] {
             values.push(Value::Integer(i64::from(middle) - i64::from(radius)));
             values.push(Value::Integer(i64::from(middle) + i64::from(radius)));
         }
+        for (x, y, z) in &query.also {
+            places.push("t.x = ? AND t.z = ? AND t.y = ?".to_owned());
+            values.extend([x, z, y].map(|at| Value::Integer(i64::from(*at))));
+        }
+        clauses.push(format!("({})", places.join(" OR ")));
     }
     if !query.actors.is_empty() {
         clauses.push(format!(
@@ -920,6 +927,45 @@ mod tests {
         wait.recv()
             .expect("the reader answers")
             .expect("the lookup runs")
+    }
+
+    #[test]
+    fn a_lookup_takes_more_single_blocks_besides_its_place() {
+        let file = scratch("also");
+        let store = Store::open(&file, None).expect("the log opens");
+        store.record(items(
+            1_000,
+            "Steve",
+            (1, 64, 1),
+            "minecraft:diamond",
+            5,
+            PUT,
+        ));
+        store.record(items(
+            2_000,
+            "Steve",
+            (2, 64, 1),
+            "minecraft:emerald",
+            3,
+            PUT,
+        ));
+        store.record(items(3_000, "Steve", (3, 64, 1), "minecraft:coal", 1, PUT));
+        let both_halves = ask(
+            &store,
+            Query {
+                around: Some(((1, 64, 1), 0)),
+                also: vec![(2, 64, 1)],
+                ..all()
+            },
+        );
+        let kinds: Vec<&str> = both_halves
+            .rows
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect();
+        assert_eq!(kinds, ["minecraft:emerald", "minecraft:diamond"]);
+        assert_eq!(both_halves.total, 2);
+        store.stop();
     }
 
     #[test]

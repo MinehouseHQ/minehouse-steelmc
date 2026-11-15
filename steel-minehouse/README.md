@@ -254,3 +254,26 @@ changed is marked as rolled back. One run takes at most 500 000 rows.
 Not there yet: blocks changed by anything but a player's hand (explosions, fire, fluids,
 buckets), signs, chat and sessions. The core hook is `WorldLog`
 (`steel-core/src/server/world_log.rs`).
+
+## Our items
+
+`src/content`: the items of our mods on a vanilla client. On the Fabric server they were
+registry items that Polymer swapped for vanilla ones on the way to the client. Here an item
+of ours is a vanilla item from the start: the base item with `item_name`, `lore`,
+`max_stack_size`, an `item_model` and its id in `custom_data` (`minehouse_item`). The id and
+the model are the ones of the Fabric mods (`minehouse-tweaks:magnifier`), so the resource
+pack the players already have draws them.
+
+| Command | What it does |
+| --- | --- |
+| `/mhgive <item> [count]` | Gives an item of ours to the player who asks. Permission `minehouse.command.mhgive`. |
+
+Items so far:
+
+- `magnifier`, «Лупа»: shows the history of a block from the block log to any player.
+  Hitting a block shows who placed and broke it, using a container shows who put in and
+  took out what, using another block shows the spot in front of the clicked face. The same
+  click within a minute turns the page. The click itself does nothing to the world.
+
+Not there yet: recipes for our items, turning the registry items of a Fabric world
+(`minehouse-tweaks:magnifier` as an item id) into these on load, our blocks.
