@@ -22,7 +22,7 @@ use crate::world::World;
 
 const CHEST: BlockPos = BlockPos::new(0, 64, 0);
 
-fn setup(world: &Arc<World>, server: &Arc<Server>) {
+pub(super) fn setup(world: &Arc<World>, server: &Arc<Server>) {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     assert_eq!(run(server, "setblock 0 64 0 minecraft:chest"), Some(1));
     assert_eq!(run(server, "setblock 1 64 1 minecraft:stone"), Some(1));
@@ -39,7 +39,7 @@ fn parse_error(server: &Arc<Server>, command: &str) -> String {
     }
 }
 
-fn chest_slot(world: &World, slot: usize) -> ItemStack {
+pub(super) fn chest_slot(world: &World, slot: usize) -> ItemStack {
     let container = world
         .get_block_entity(CHEST)
         .and_then(ContainerRef::from_block_entity)

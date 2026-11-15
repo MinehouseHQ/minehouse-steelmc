@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use simdnbt::owned::NbtTag;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{
     BlockPos, BoundingBox, ChunkPos, SectionPos,
@@ -18,6 +19,7 @@ use super::super::super::{
         literal,
     },
 };
+use super::super::item::{AccessorKind, source_slot_items};
 use super::{objective, source_command_storage, source_scoreboard};
 use crate::{block_entity::SharedBlockEntity, command::missing_argument, world::World};
 
@@ -27,8 +29,6 @@ const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 const MAX_BLOCKS_REGION: i64 = 32_768;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
-    // TODO: Add items after every vanilla command-slot provider and container inventory is
-    // modeled, including deferred loot-table unpacking.
     // TODO: Add predicate and function after their runtime registries are ported.
     // TODO: Restore Steel stopwatch conditions with the stopwatch command system.
     literal(name)
@@ -38,8 +38,78 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(data_condition(expected))
         .then(dimension_condition(expected))
         .then(entity_condition(expected))
+        .then(items_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))
+        .then(slots_condition(expected))
+}
+
+/// Vanilla `items <source> <slots> <item_predicate>`: the total count of
+/// the matching items in those slots.
+fn items_condition(expected: bool) -> Builder {
+    AccessorKind::ALL
+        .into_iter()
+        .fold(literal("items"), |builder, kind| {
+            kind.wrap(builder, "source", move |source| {
+                source.then(
+                    argument("slots", SteelArgumentType::slot_source()).then(
+                        argument("item_predicate", SteelArgumentType::item_predicate())
+                            .forks(EXECUTE_ROOT, move |context| {
+                                let matches = count_items(context, kind)? > 0;
+                                Ok(conditional_sources(context.source(), expected, matches))
+                            })
+                            .executes(move |context| {
+                                let count = count_items(context, kind)?;
+                                execute_numeric_condition(context, expected, count)
+                            }),
+                    ),
+                )
+            })
+        })
+}
+
+/// Vanilla `slots <source> <slots>`: how many of those slots the source has.
+fn slots_condition(expected: bool) -> Builder {
+    AccessorKind::ALL
+        .into_iter()
+        .fold(literal("slots"), |builder, kind| {
+            kind.wrap(builder, "source", move |source| {
+                source.then(
+                    argument("slots", SteelArgumentType::slot_source())
+                        .forks(EXECUTE_ROOT, move |context| {
+                            let matches = count_slots(context, kind)? > 0;
+                            Ok(conditional_sources(context.source(), expected, matches))
+                        })
+                        .executes(move |context| {
+                            let count = count_slots(context, kind)?;
+                            execute_numeric_condition(context, expected, count)
+                        }),
+                )
+            })
+        })
+}
+
+/// Vanilla `ExecuteCommand.countItems`.
+fn count_items(
+    context: &SteelCommandContext<CommandSource>,
+    kind: AccessorKind,
+) -> Result<i32, CommandSyntaxError> {
+    let items = source_slot_items(context, kind, "slots")?;
+    let predicate = context.item_predicate("item_predicate")?;
+    Ok(items
+        .iter()
+        .filter(|stack| predicate.matches(stack))
+        .map(ItemStack::count)
+        .fold(0_i32, i32::wrapping_add))
+}
+
+/// Vanilla `ExecuteCommand.countSlots`.
+fn count_slots(
+    context: &SteelCommandContext<CommandSource>,
+    kind: AccessorKind,
+) -> Result<i32, CommandSyntaxError> {
+    let slots = source_slot_items(context, kind, "slots")?.len();
+    Ok(i32::try_from(slots).unwrap_or(i32::MAX))
 }
 
 fn data_condition(expected: bool) -> Builder {
