@@ -13,7 +13,9 @@ mod vehicle_container;
 mod vehicle_entity;
 
 pub use abstract_boat::{AbstractBoat, BoatCore, BoatStatus};
-pub use abstract_minecart::{AbstractMinecart, MinecartCore};
+pub use abstract_minecart::{
+    AbstractMinecart, MinecartCore, MinecartObserver, set_minecart_observer,
+};
 pub use boat::{BoatEntity, ChestBoatEntity, ChestRaftEntity, RaftEntity};
 pub use chest_minecart::ChestMinecartEntity;
 pub use furnace_minecart::FurnaceMinecartEntity;

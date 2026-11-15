@@ -12,6 +12,7 @@ mod commands;
 mod herbs;
 mod metro;
 mod papirosa;
+mod rail_graph;
 mod recipes;
 mod stations;
 
@@ -21,6 +22,7 @@ use simdnbt::owned::NbtCompound;
 use steel_core::{
     behavior::{ItemBehavior, extend_block_behaviors, set_item_behavior_override},
     command::{CommandRegistrationError, CommandRegistry},
+    entity::entities::objects::vehicles::set_minecart_observer,
 };
 use steel_registry::{
     data_components::{
@@ -356,9 +358,13 @@ pub fn start() {
         recipes::registered(),
         recipes::KEYS.len()
     );
+    if !set_minecart_observer(&rail_graph::CARTS) {
+        log::warn!("MineHouse metro: minecarts are already observed, the track is not learned");
+    }
     log::info!(
-        "MineHouse metro on: {} stations",
-        stations::with(|stations| stations.count())
+        "MineHouse metro on: {} stations, {} runs of track",
+        stations::with(|stations| stations.count()),
+        rail_graph::with(|graphs| graphs.count()) / 2
     );
 }
 
