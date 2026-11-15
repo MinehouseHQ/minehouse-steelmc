@@ -514,6 +514,36 @@ where
         );
     }
 
+    /// Vanilla `BuildContexts.Continuation`, with its sources gathered only
+    /// when it runs, after the work queued before it.
+    pub(crate) fn queue_continuation(
+        &mut self,
+        chain: SteelContextChain<S>,
+        original_source: Arc<S>,
+        sources: impl FnOnce() -> Vec<Arc<S>> + Send + 'static,
+        modifiers: ChainModifiers,
+    ) {
+        self.queue_next(ContinuationAction {
+            chain,
+            original_source,
+            sources: Box::new(sources),
+            modifiers,
+        });
+    }
+
+    /// Vanilla `IsolatedCall`: `producer` queues work in a new frame whose
+    /// returned value goes to `output`.
+    pub(crate) fn queue_isolated_call(
+        &mut self,
+        output: CommandResultCallback,
+        producer: impl FnOnce(&mut ExecutionControl<'_, S>) + Send + 'static,
+    ) {
+        self.queue_next(IsolatedCallAction {
+            output,
+            producer: Box::new(producer),
+        });
+    }
+
     pub(crate) fn discard_frame(&mut self) {
         self.context.discard(&self.frame);
     }
@@ -903,6 +933,58 @@ fn complete_command_result<S>(
                 source.handle_error(&error, false);
             }
         }
+    }
+}
+
+/// Vanilla `BuildContexts.Continuation`.
+struct ContinuationAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    chain: SteelContextChain<S>,
+    original_source: Arc<S>,
+    sources: Box<dyn FnOnce() -> Vec<Arc<S>> + Send>,
+    modifiers: ChainModifiers,
+}
+
+impl<S> EntryAction<S> for ContinuationAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        let build = Box::new(BuildContextsAction {
+            chain: self.chain,
+            original_source: self.original_source,
+            sources: (self.sources)(),
+            modifiers: self.modifiers,
+        });
+        build.execute(context, frame);
+    }
+}
+
+type IsolatedCallProducer<S> = Box<dyn FnOnce(&mut ExecutionControl<'_, S>) + Send>;
+
+/// Vanilla `IsolatedCall`.
+struct IsolatedCallAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    output: CommandResultCallback,
+    producer: IsolatedCallProducer<S>,
+}
+
+impl<S> EntryAction<S> for IsolatedCallAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        let depth = frame.depth + 1;
+        let frame = Frame {
+            depth,
+            return_value_consumer: self.output,
+            discard: FrameDiscard::AtOrAbove(depth),
+        };
+        (self.producer)(&mut ExecutionControl::new(context, frame));
     }
 }
 

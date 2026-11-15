@@ -20,6 +20,7 @@ use super::super::super::{
     },
 };
 use super::super::item::{AccessorKind, source_slot_items};
+use super::function_condition::function_condition;
 use super::{objective, source_command_storage, source_scoreboard};
 use crate::{block_entity::SharedBlockEntity, command::missing_argument, world::World};
 
@@ -29,7 +30,7 @@ const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 const MAX_BLOCKS_REGION: i64 = 32_768;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
-    // TODO: Add predicate and function after their runtime registries are ported.
+    // TODO: Add predicate after its runtime registry is ported.
     // TODO: Restore Steel stopwatch conditions with the stopwatch command system.
     literal(name)
         .then(biome_condition(expected))
@@ -38,6 +39,7 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(data_condition(expected))
         .then(dimension_condition(expected))
         .then(entity_condition(expected))
+        .then(function_condition(expected))
         .then(items_condition(expected))
         .then(loaded_condition(expected))
         .then(score_condition(expected))

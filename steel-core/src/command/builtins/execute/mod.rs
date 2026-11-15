@@ -1,6 +1,7 @@
 //! Vanilla command execution context composition.
 
 mod condition;
+mod function_condition;
 mod source;
 mod store;
 

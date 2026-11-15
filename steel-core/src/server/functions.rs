@@ -21,15 +21,20 @@ impl Server {
     /// with a gamemaster source; Steel has no permission levels to lower it to.
     pub(crate) fn reload_functions(self: &Arc<Self>) {
         for domain in self.worlds.domain_names() {
-            let Some(world) = self.worlds.default_world(domain) else {
-                continue;
-            };
-            let packs = world
-                .level_path
-                .as_ref()
-                .map_or_else(Vec::new, |path| find_packs(&path.join("datapacks")));
-            self.load_functions(domain, world, &packs);
+            self.reload_domain_functions(domain);
         }
+    }
+
+    /// [`Self::reload_functions`] for one domain, finding its packs anew.
+    pub(crate) fn reload_domain_functions(self: &Arc<Self>, domain: &str) {
+        let Some(world) = self.worlds.default_world(domain) else {
+            return;
+        };
+        let packs = world
+            .level_path
+            .as_ref()
+            .map_or_else(Vec::new, |path| find_packs(&path.join("datapacks")));
+        self.load_functions(domain, world, &packs);
     }
 
     /// Compiles `packs` into `domain`'s function library, replacing the last.

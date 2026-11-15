@@ -43,11 +43,24 @@ pub(super) fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
 /// Runs `command` from `sender` and returns its result, or `None` when the
 /// command failed.
 pub(super) fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str) -> Option<i32> {
+    let (success, result) = run_reported(server, sender, command)
+        .unwrap_or_else(|| panic!("{command} should report a result"));
+    success.then_some(result)
+}
+
+/// Runs `command` from `sender` and returns its reported success and result;
+/// `None` when it reported none, as when every source of an `/execute` was
+/// filtered out.
+pub(super) fn run_reported(
+    server: &Arc<Server>,
+    sender: CommandSender,
+    command: &str,
+) -> Option<(bool, i32)> {
     let outcome = Arc::new(SyncMutex::new(None));
     let callback = {
         let outcome = Arc::clone(&outcome);
         CommandResultCallback::new(move |success, result| {
-            *outcome.lock() = Some(success.then_some(result));
+            *outcome.lock() = Some((success, result));
         })
     };
     let source = CommandSource::new(sender, Arc::clone(server)).with_callback(callback);
@@ -69,8 +82,7 @@ pub(super) fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str)
         stop = execution.poll_suspension();
     }
     assert!(matches!(stop, ExecutionStop::Completed));
-    let result = *outcome.lock();
-    result.unwrap_or_else(|| panic!("{command} should report a result"))
+    *outcome.lock()
 }
 
 fn scoreboard<'a>(server: &'a Server, domain: &str) -> &'a Scoreboard {
