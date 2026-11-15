@@ -29,13 +29,13 @@ use steel_registry::{
         BlockDisplayEntityData, DisplayEntityData, InteractionEntityData, TextDisplayEntityData,
     },
 };
-use steel_utils::{BlockPos, BlockStateId, locks::SyncMutex, types::InteractionHand};
+use steel_utils::{BlockPos, BlockStateId, Identifier, locks::SyncMutex, types::InteractionHand};
 use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
 use super::{
     map_view::MapView,
-    metro,
+    metro, nametags,
     rail_graph::{self, Edge},
     ride, stations, trains,
     transfers::{self, Track},
@@ -923,6 +923,10 @@ impl PlayerInputObserver for Input {
             click(player, &*cart, &player.get_world(), rail, target);
         }
         true
+    }
+
+    fn custom_click(&self, player: &Player, id: &Identifier) {
+        nametags::clicked(player, id);
     }
 
     fn carried_item(&self, player: &Player, from: u8, to: u8) {

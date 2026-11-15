@@ -18,6 +18,7 @@ mod map_markers;
 mod map_view;
 mod metro;
 mod minecart_names;
+mod nametags;
 mod papirosa;
 mod rail_graph;
 mod recipes;
@@ -47,6 +48,7 @@ use steel_core::{
     },
     inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
+    scoreboard::set_team_packet_observer,
     server::Server,
     set_portal_shape_observer,
     world::set_sleep_observer,
@@ -375,6 +377,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
     }
     ride::register(registry)?;
+    nametags::register(registry)?;
     commands::register(registry)
 }
 
@@ -382,6 +385,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
 pub fn start_jobs(server: &Server) {
     first_join::start(server);
     afk::start(server);
+    nametags::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
@@ -407,6 +411,9 @@ pub fn start() {
     map_markers::changed();
     if !set_sleep_observer(&afk::AFK_SLEEP) {
         log::warn!("MineHouse AFK: sleep is already observed, AFK players count as awake");
+    }
+    if !set_team_packet_observer(&nametags::NAMETAGS) {
+        log::warn!("MineHouse nametags: team packets are already observed, names can't be hidden");
     }
     if !set_portal_shape_observer(&any_shape_portals::ANY_SHAPE_PORTALS) {
         log::warn!("MineHouse portals: portal shapes are already observed, only rectangles light");

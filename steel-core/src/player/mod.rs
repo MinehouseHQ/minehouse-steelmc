@@ -153,7 +153,7 @@ use crate::world::player_spawn_finder::{
 use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
-    common::SCustomPayload,
+    common::{SCustomClickAction, SCustomPayload},
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
@@ -871,6 +871,14 @@ impl Player {
             .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
+    /// Handles a custom click action: a dialog button or a text click. Vanilla ignores
+    /// them; the input observer, if any, gets the id.
+    pub fn handle_custom_click_action(&self, packet: &SCustomClickAction) {
+        if let Some(observer) = input_observer::player_input_observer() {
+            observer.custom_click(self, &packet.id);
+        }
+    }
+
     /// Handles a custom payload packet: hands it to the plugin channel handler, if any.
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         let server = self.server();
@@ -1187,6 +1195,12 @@ impl Player {
     /// Returns the world the player is currently in.
     pub fn get_world(&self) -> Arc<World> {
         self.world.load_full()
+    }
+
+    /// The server this player belongs to, unless it is already gone. For content crates.
+    #[must_use]
+    pub fn try_server(&self) -> Option<Arc<Server>> {
+        self.server.upgrade()
     }
 
     /// Returns the server this player belongs to.
