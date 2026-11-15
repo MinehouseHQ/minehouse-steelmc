@@ -8,11 +8,12 @@ use super::{
 };
 use crate::behavior::blocks::PowderSnowBlock;
 use crate::enchantment_helper;
-use crate::entity::SharedEntity;
-use crate::portal::{PortalKind, WorldChangeRequest};
+use crate::entity::{SharedEntity, change_entity_world};
+use crate::portal::{PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest};
 use crate::world::World;
+use glam::DVec3;
 use std::sync::Arc;
-use steel_protocol::packets::game::SPunch;
+use steel_protocol::packets::game::{RelativeMovement, SPunch};
 use steel_utils::types::InteractionHand;
 
 impl Player {
@@ -357,6 +358,35 @@ impl Player {
         }
         self.use_portal_as_spectator(&world, PortalKind::End, self.block_position());
         true
+    }
+
+    /// Moves the player to `position` in `world` of the same domain, facing `rotation` (yaw,
+    /// pitch), like `/execute in <world> run tp`: a sleeper wakes and the camera returns to
+    /// the player. Returns whether the player arrived.
+    pub fn teleport_to_world(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        position: DVec3,
+        rotation: (f32, f32),
+    ) -> bool {
+        if self.is_sleeping() {
+            self.stop_sleeping();
+        }
+        self.send_packet(CSetCamera {
+            camera_id: self.id(),
+        });
+        let entity: SharedEntity = Arc::<Self>::clone(self);
+        let transition = TeleportTransition {
+            target_world: Arc::clone(world),
+            position,
+            rotation,
+            velocity: DVec3::ZERO,
+            relatives: RelativeMovement::NONE,
+            portal_cooldown: 0,
+            as_passenger: false,
+            post_transition: TeleportPostTransition::do_nothing(),
+        };
+        change_entity_world(entity, &transition).is_some()
     }
 
     /// Returns true if player is sneaking (secondary use active).

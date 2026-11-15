@@ -7,6 +7,7 @@ pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
 mod container_counter;
+pub mod death_observer;
 mod entity_state;
 /// Experience System
 pub mod experience;
@@ -1135,6 +1136,9 @@ impl Player {
             self.tell_neutral_mobs_that_i_died(&world);
         }
 
+        if let Some(observer) = death_observer::player_death_observer() {
+            observer.before_drops(self);
+        }
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
             let drops = self.inventory.lock().take_death_drops();
             for item in drops {
