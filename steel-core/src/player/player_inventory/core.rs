@@ -4,9 +4,12 @@ use simdnbt::owned::{NbtList, NbtTag};
 use steel_registry::{enchantment_effect::EnchantmentEffectComponent, item_stack::ItemStack};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use steel_registry::recipe::IngredientItem;
+
 use crate::inventory::{
     container::Container,
     equipment::{EntityEquipment, EquipmentSlot},
+    stacked_contents::{StackedItemContents, is_usable_for_crafting},
 };
 
 use super::container::InvalidHotbarSlot;
@@ -238,6 +241,48 @@ impl PlayerInventory {
         (0..Self::INVENTORY_SIZE)
             .find(|&i| self.items[i].is_empty())
             .map(|i| i as u8)
+    }
+
+    /// Vanilla `Inventory.hasRemainingSpaceForItem`.
+    fn has_remaining_space_for_item(&self, slot_stack: &ItemStack, new_stack: &ItemStack) -> bool {
+        !slot_stack.is_empty()
+            && ItemStack::is_same_item_same_components(slot_stack, new_stack)
+            && slot_stack.is_stackable()
+            && slot_stack.count() < self.get_max_stack_size_for_item(slot_stack)
+    }
+
+    /// Vanilla `Inventory.getSlotWithRemainingSpace`: the selected slot, the offhand,
+    /// then the first main slot holding `stack`'s item with room for more.
+    #[must_use]
+    pub fn get_slot_with_remaining_space(&self, stack: &ItemStack) -> Option<usize> {
+        let selected = usize::from(self.selected);
+        [selected, Self::SLOT_OFFHAND]
+            .into_iter()
+            .chain(0..Self::INVENTORY_SIZE)
+            .find(|&slot| self.has_remaining_space_for_item(&self.items[slot], stack))
+    }
+
+    /// Vanilla `Inventory.findSlotMatchingCraftingIngredient`: the first main slot with
+    /// `item` usable for crafting and, unless `existing` is empty, stacking with it.
+    #[must_use]
+    pub fn find_slot_matching_crafting_ingredient(
+        &self,
+        item: IngredientItem,
+        existing: &ItemStack,
+    ) -> Option<usize> {
+        self.get_items().iter().position(|stack| {
+            !stack.is_empty()
+                && IngredientItem::of(stack) == item
+                && is_usable_for_crafting(stack)
+                && (existing.is_empty() || ItemStack::is_same_item_same_components(existing, stack))
+        })
+    }
+
+    /// Vanilla `Inventory.fillStackedContents`: counts the main slots usable for crafting.
+    pub fn fill_stacked_contents(&self, contents: &mut StackedItemContents) {
+        for stack in self.get_items() {
+            contents.account_simple_stack(stack);
+        }
     }
 
     /// Finds next empty slot in hotbar (and returns)

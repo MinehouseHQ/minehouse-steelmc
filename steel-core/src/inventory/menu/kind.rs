@@ -7,6 +7,7 @@ use steel_utils::{BlockPos, ErasedType};
 
 use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::menu::behavior::MenuBehavior;
+use crate::inventory::place_recipe::{PostPlaceAction, RecipePlacement};
 use crate::world::World;
 use crate::{
     inventory::lock::{ContainerId, ContainerLockGuard},
@@ -62,6 +63,19 @@ pub trait MenuKind: ErasedType + Send + Sync {
         _player: &Player,
     ) -> bool {
         false
+    }
+
+    /// Vanilla `RecipeBookMenu.handlePlacement`: places `recipe` from the player's
+    /// inventory onto the menu's grid. `None` for a menu without a recipe book, or for
+    /// a recipe the menu's book does not hold (vanilla fails a cast on those, which no
+    /// vanilla client sends).
+    fn handle_placement(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _placement: RecipePlacement,
+        _player: &Player,
+    ) -> Option<PostPlaceAction> {
+        None
     }
 
     /// Runs after initial contents are built but before they're sent, so

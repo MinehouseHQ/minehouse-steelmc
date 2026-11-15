@@ -10,6 +10,8 @@ use crate::{
             Menu,
             kinds::{INVENTORY_MENU_CONTAINER_ID, InventoryKind},
         },
+        place_recipe::{PostPlaceAction, RecipePlacement, placement_of},
+        recipe_displays::RECIPE_DISPLAYS,
         slots::CraftingHandler,
     },
     player::{Player, connection::NetworkConnection as _, input_observer::player_input_observer},
@@ -18,10 +20,10 @@ use glam::DVec3;
 use steel_math::trig;
 use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
-    CContainerClose, CMountScreenOpen, COpenScreen, CSetPlayerInventory, ClickType,
-    SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
-    SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot,
-    SoundSource,
+    CContainerClose, CMountScreenOpen, COpenScreen, CPlaceGhostRecipe, CSetPlayerInventory,
+    ClickType, SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
+    SPlaceRecipe, SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem,
+    SSetCreativeModeSlot, SoundSource,
 };
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::item_stack::ItemStack;
@@ -433,6 +435,67 @@ impl Player {
             }
             Err(OpenMenuUnavailable::Unavailable) => {}
         }
+    }
+
+    /// Vanilla `handlePlaceRecipe`: places a known recipe from the recipe book onto the
+    /// grid of the menu the player has open, or shows it as a ghost when the
+    /// ingredients are missing.
+    pub fn handle_place_recipe(&self, packet: &SPlaceRecipe) {
+        self.reset_last_action_time();
+        if self.is_spectator() {
+            return;
+        }
+        match self.take_open_menu_for_callback(Some(packet.container_id)) {
+            Ok(mut menu) => {
+                self.place_recipe_in(&mut menu, packet);
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                let mut menu = self.inventory_menu.lock();
+                if i32::from(menu.container_id()) == packet.container_id {
+                    self.place_recipe_in(&mut menu, packet);
+                }
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
+        self.fire_inventory_slot_changes();
+    }
+
+    fn place_recipe_in(&self, menu: &mut Menu, packet: &SPlaceRecipe) {
+        if !menu.still_valid(self) {
+            log::debug!(
+                "Player {} interacted with invalid menu {menu:?}",
+                self.gameprofile.name()
+            );
+            return;
+        }
+        let Some(display_info) = RECIPE_DISPLAYS.by_display_id(packet.recipe) else {
+            return;
+        };
+        let recipe = display_info.parent;
+        if !self.knows_recipe(recipe.key()) {
+            return;
+        }
+        if placement_of(recipe).is_none() {
+            log::debug!(
+                "Player {} tried to place impossible recipe {}",
+                self.gameprofile.name(),
+                recipe.key()
+            );
+            return;
+        }
+        let placement = RecipePlacement {
+            recipe,
+            use_max_items: packet.use_max_items,
+            allow_dropping_items_to_clear: self.game_mode() == GameType::Creative,
+        };
+        if menu.handle_placement(placement, self) == Some(PostPlaceAction::PlaceGhostRecipe) {
+            self.send_packet(CPlaceGhostRecipe {
+                container_id: i32::from(menu.container_id()),
+                recipe_display: display_info.display.display.clone(),
+            });
+        }
+        menu.behavior_mut().broadcast_changes(&self.connection);
     }
 
     /// Vanilla `handleSelectTrade`: picks the clicked offer in an open trading menu.

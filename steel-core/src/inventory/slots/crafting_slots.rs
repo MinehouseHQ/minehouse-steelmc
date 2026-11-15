@@ -3,11 +3,17 @@ use std::sync::Arc;
 
 use steel_registry::REGISTRY;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::recipe::{CraftingRecipe, RecipeMatches as _, UntypedRecipeRef};
 use steel_utils::locks::Shared;
 
 use crate::behavior::on_crafted_by;
 use crate::inventory::container::{CraftingContainer, ResultContainer};
+use crate::inventory::place_recipe::{
+    CraftingMenuAccess, PlacementGrid, PostPlaceAction, RecipePlacement, place_recipe,
+};
 use crate::inventory::recipe_crafting_holder::may_use_recipe;
+use crate::inventory::slots::Slot;
+use crate::inventory::stacked_contents::StackedItemContents;
 use crate::{
     inventory::{
         container::Container,
@@ -76,30 +82,41 @@ impl CraftingHandler {
     }
 }
 
-impl ResultHandler for CraftingHandler {
-    fn result_container(&self) -> ContainerRef {
-        ContainerRef::from(Arc::clone(&self.result_container))
-    }
-
-    fn dependencies(&self) -> Vec<ContainerRef> {
-        vec![ContainerRef::from(Arc::clone(&self.crafting_container))]
-    }
-
-    /// Vanilla `CraftingMenu.slotChangedCraftingGrid`.
-    fn update_result(&self, guard: &mut ContainerLockGuard, player: &Player) {
+impl CraftingHandler {
+    /// Vanilla `CraftingMenu.slotChangedCraftingGrid` with its recipe hint: `hint` is
+    /// tried first, then every crafting recipe in order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `guard` does not hold the crafting and result containers.
+    pub fn update_result_with_hint(
+        &self,
+        guard: &mut ContainerLockGuard,
+        player: &Player,
+        hint: Option<UntypedRecipeRef>,
+    ) {
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())
             .expect("crafting container not locked");
         let positioned = recipe_manager::positioned_input(crafting, &player.get_world());
 
+        let hinted = hint.and_then(|hint| {
+            hint.downcast_data::<CraftingRecipe>()
+                .filter(|data| data.matches(&positioned.input))
+                .map(|data| (hint, data))
+        });
+        let found = hinted.or_else(|| {
+            let recipe = recipe_manager::find_recipe(&positioned.input)?;
+            Some((REGISTRY.recipes.by_key(recipe.key())?, recipe.data()))
+        });
+
         let mut result_stack = ItemStack::empty();
         let mut recipe_used = None;
-        if let Some(recipe) = recipe_manager::find_recipe(&positioned.input)
-            && let Some(untyped) = REGISTRY.recipes.by_key(recipe.key())
+        if let Some((untyped, data)) = found
             && may_use_recipe(player, untyped)
         {
-            recipe_used = Some(recipe.key().clone());
-            result_stack = recipe_manager::assemble_recipe(recipe, &positioned.input);
+            recipe_used = Some(untyped.key().clone());
+            result_stack = recipe_manager::assemble_crafting(data, &positioned.input);
         }
 
         let result_container = guard
@@ -111,6 +128,79 @@ impl ResultHandler for CraftingHandler {
         }
         result_container.set_item(0, result_stack);
         result_container.set_changed();
+    }
+
+    /// Vanilla `AbstractCraftingMenu.handlePlacement` over this grid, whose slots follow
+    /// the result slot. `None` for a recipe that is not a crafting recipe.
+    pub fn handle_placement(
+        &self,
+        slots: &[Box<dyn Slot>],
+        guard: &mut ContainerLockGuard,
+        player: &Player,
+        placement: RecipePlacement,
+    ) -> Option<PostPlaceAction> {
+        placement.recipe.downcast_data::<CraftingRecipe>()?;
+        let input_slots: Vec<usize> = (1..=self.grid_size * self.grid_size).collect();
+        let grid = PlacementGrid {
+            width: self.grid_size,
+            height: self.grid_size,
+            input_slots: &input_slots,
+            slots_to_clear: &input_slots,
+        };
+        Some(place_recipe(guard, player, self, slots, grid, placement))
+    }
+}
+
+/// Vanilla `AbstractCraftingMenu`'s `CraftingMenuAccess`.
+impl CraftingMenuAccess for CraftingHandler {
+    fn fill_craft_slots_stacked_contents(
+        &self,
+        guard: &ContainerLockGuard,
+        contents: &mut StackedItemContents,
+    ) {
+        if let Some(crafting) = guard.get_typed::<CraftingContainer>(self.crafting_id()) {
+            for stack in crafting.items() {
+                contents.account_simple_stack(stack);
+            }
+        }
+    }
+
+    fn clear_crafting_content(&self, guard: &mut ContainerLockGuard) {
+        for id in [self.result_id(), self.crafting_id()] {
+            if let Some(container) = guard.get_mut(id) {
+                container.clear_content();
+            }
+        }
+    }
+
+    fn recipe_matches(
+        &self,
+        guard: &ContainerLockGuard,
+        player: &Player,
+        recipe: UntypedRecipeRef,
+    ) -> bool {
+        let Some(crafting) = guard.get_typed::<CraftingContainer>(self.crafting_id()) else {
+            return false;
+        };
+        let positioned = recipe_manager::positioned_input(crafting, &player.get_world());
+        recipe
+            .downcast_data::<CraftingRecipe>()
+            .is_some_and(|data| data.matches(&positioned.input))
+    }
+}
+
+impl ResultHandler for CraftingHandler {
+    fn result_container(&self) -> ContainerRef {
+        ContainerRef::from(Arc::clone(&self.result_container))
+    }
+
+    fn dependencies(&self) -> Vec<ContainerRef> {
+        vec![ContainerRef::from(Arc::clone(&self.crafting_container))]
+    }
+
+    /// Vanilla `CraftingMenu.slotChangedCraftingGrid`.
+    fn update_result(&self, guard: &mut ContainerLockGuard, player: &Player) {
+        self.update_result_with_hint(guard, player, None);
     }
 
     fn on_result_taken(

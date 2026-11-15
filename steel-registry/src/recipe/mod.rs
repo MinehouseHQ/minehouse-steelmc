@@ -18,7 +18,7 @@ pub use crafting::{
     ShapelessRecipe, ShieldDecorationRecipe, TransmuteRecipe,
 };
 pub use display::{RecipeDisplay, RecipeDisplayEntry, SlotDisplay};
-pub use ingredient::{ExtensionItemId, Ingredient, set_extension_item_id};
+pub use ingredient::{ExtensionItemId, Ingredient, IngredientItem, set_extension_item_id};
 pub use properties::{
     CookingBookCategory, CraftingBookCategory, PlacementInfo, RecipeBookCategory,
     RecipeBookCategoryKind, RecipeBookCategoryRef, RecipeBookCategoryRegistry,

@@ -33,6 +33,7 @@ use steel_utils::{BlockPos, Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::{CrafterKind, InventoryKind, MerchantKind};
+use crate::inventory::place_recipe::{PostPlaceAction, RecipePlacement};
 use crate::{
     entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
@@ -201,6 +202,16 @@ impl Menu {
     pub fn click_menu_button(&mut self, button_id: i32, player: &Player) -> bool {
         let Self { behavior, kind, .. } = self;
         kind.click_menu_button(behavior, button_id, player)
+    }
+
+    /// Vanilla `RecipeBookMenu.handlePlacement`, see [`MenuKind::handle_placement`].
+    pub fn handle_placement(
+        &mut self,
+        placement: RecipePlacement,
+        player: &Player,
+    ) -> Option<PostPlaceAction> {
+        let Self { behavior, kind, .. } = self;
+        kind.handle_placement(behavior, placement, player)
     }
 
     /// Clears or counts crafting-grid items in the base inventory menu,
