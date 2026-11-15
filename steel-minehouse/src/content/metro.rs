@@ -122,7 +122,7 @@ fn describe(station: &stations::Station) -> String {
 }
 
 /// Tells the player above the hotbar, as the Fabric `Trains.tell` does.
-fn tell(player: &Player, text: String) {
+pub(super) fn tell(player: &Player, text: String) {
     player.send_overlay_message(&TextComponent::plain(text).color(Color::Yellow));
 }
 

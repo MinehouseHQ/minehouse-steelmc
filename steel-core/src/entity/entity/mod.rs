@@ -6,7 +6,9 @@ use crate::entity::entities::mobs::hostile::cube_mob::AbstractCubeMob;
 use crate::entity::entities::mobs::passive::AbstractNautilus;
 use crate::entity::entities::mobs::passive::equine::{AbstractHorse, Llama, PlayerRideableJumping};
 use crate::entity::entities::mobs::villagers::Merchant;
-use crate::entity::entities::objects::vehicles::{AbstractBoat, AbstractMinecart};
+use crate::entity::entities::objects::vehicles::{
+    AbstractBoat, AbstractMinecart, minecart_observer,
+};
 use crate::entity::entities::{Guardian, LightningBoltEntity, Squid};
 use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
@@ -1346,6 +1348,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// The base removal body, for overrides that call `super.remove`.
     fn default_set_removed(&self, reason: RemovalReason) {
+        if let Some(cart) = self.as_abstract_minecart()
+            && let Some(observer) = minecart_observer()
+        {
+            observer.removed(cart, reason);
+        }
         if matches!(reason, RemovalReason::Killed | RemovalReason::Discarded)
             && let Some(living) = self.as_living_entity()
             && let Some(world) = self.level()

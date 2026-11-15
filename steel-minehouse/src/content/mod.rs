@@ -9,6 +9,7 @@ mod blocks;
 mod cauldron;
 mod cloud;
 mod commands;
+mod couplings;
 mod herbs;
 mod metro;
 mod papirosa;
@@ -16,6 +17,7 @@ mod rail_graph;
 mod recipes;
 mod ride;
 mod stations;
+mod trains;
 
 use std::{str::FromStr as _, sync::LazyLock};
 
@@ -364,9 +366,10 @@ pub fn start() {
         log::warn!("MineHouse metro: minecarts are already observed, the track is not learned");
     }
     log::info!(
-        "MineHouse metro on: {} stations, {} runs of track",
+        "MineHouse metro on: {} stations, {} runs of track, {} coupled carts",
         stations::with(|stations| stations.count()),
-        rail_graph::with(|graphs| graphs.count()) / 2
+        rail_graph::with(|graphs| graphs.count()) / 2,
+        trains::count()
     );
 }
 

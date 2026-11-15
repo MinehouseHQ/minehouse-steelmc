@@ -18,13 +18,16 @@ use steel_registry::vanilla_entity_data::AbstractMinecartEntityData;
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
+use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::vehicle_entity::VehicleEntity;
+use crate::behavior::InteractionResult;
 use crate::behavior::blocks::is_rail_state;
 use crate::block_entity::block_state_nbt;
-use crate::entity::{Entity, dismount_helper};
+use crate::entity::{Entity, RemovalReason, dismount_helper};
 use crate::physics::MoverType;
+use crate::player::Player;
 use crate::world::World;
 use crate::world::is_redstone_conductor;
 
@@ -156,7 +159,11 @@ pub trait AbstractMinecart: VehicleEntity {
 
     /// Per-tick speed retention while on rails.
     fn slowdown_factor(&self) -> f64 {
-        if self.is_vehicle() { 0.997 } else { 0.96 }
+        if self.is_vehicle() || observer_says(self, |observer, cart| observer.rolls_freely(cart)) {
+            0.997
+        } else {
+            0.96
+        }
     }
 
     /// Vanilla `applyNaturalSlowdown`.
@@ -287,6 +294,16 @@ pub trait AbstractMinecart: VehicleEntity {
     /// other entities get a small shove and push the cart back.
     fn push_minecart_entity(&self, entity: &dyn Entity) {
         if entity.no_physics() || self.no_physics() || self.has_passenger(entity) {
+            return;
+        }
+        if observer_says(self, |observer, cart| {
+            observer.passes_through(cart, entity)
+                || entity.vehicle().is_some_and(|ridden| {
+                    ridden.id() != cart.id()
+                        && ridden.as_abstract_minecart().is_some()
+                        && observer.passes_through(cart, &*ridden)
+                })
+        }) {
             return;
         }
         let mut xa = entity.position().x - self.position().x;
@@ -495,13 +512,44 @@ pub(super) fn tick_minecart<M: AbstractMinecart>(minecart: &Arc<M>) {
 }
 
 /// Hears about every minecart around its tick. Installed once with
-/// [`set_minecart_observer`], by an extension that follows carts along the track.
+/// [`set_minecart_observer`], by an extension that follows carts along the track and
+/// couples them into trains.
 pub trait MinecartObserver: Send + Sync {
     /// `cart` is about to tick in `world`: the place to set the speed it moves with.
     fn before_tick(&self, _cart: &dyn Entity, _world: &Arc<World>) {}
 
     /// `cart` ended its tick in `world`. `rail` is the rail it is on, `None` off the track.
     fn ticked(&self, cart: &dyn Entity, world: &Arc<World>, rail: Option<BlockPos>);
+
+    /// `player` used `hand` on `cart`. `Some` takes the click instead of the cart.
+    fn interact(
+        &self,
+        _cart: &dyn Entity,
+        _player: &Player,
+        _hand: InteractionHand,
+    ) -> Option<InteractionResult> {
+        None
+    }
+
+    /// Whether `cart` and `other` go through each other: no collision, no push, and
+    /// `cart` does not pick `other` up.
+    fn passes_through(&self, _cart: &dyn Entity, _other: &dyn Entity) -> bool {
+        false
+    }
+
+    /// Whether `cart` is put in place by another cart, so it does not move off the track
+    /// by itself.
+    fn follows(&self, _cart: &dyn Entity) -> bool {
+        false
+    }
+
+    /// Whether an empty `cart` keeps its speed on rails the way a ridden one does.
+    fn rolls_freely(&self, _cart: &dyn Entity) -> bool {
+        false
+    }
+
+    /// `cart` left its world for `reason`.
+    fn removed(&self, _cart: &dyn Entity, _reason: RemovalReason) {}
 }
 
 static MINECART_OBSERVER: OnceLock<&'static dyn MinecartObserver> = OnceLock::new();
@@ -509,6 +557,35 @@ static MINECART_OBSERVER: OnceLock<&'static dyn MinecartObserver> = OnceLock::ne
 /// Installs the minecart observer. Returns `false` if one is already installed.
 pub fn set_minecart_observer(observer: &'static dyn MinecartObserver) -> bool {
     MINECART_OBSERVER.set(observer).is_ok()
+}
+
+/// The installed minecart observer, if any.
+pub(crate) fn minecart_observer() -> Option<&'static dyn MinecartObserver> {
+    MINECART_OBSERVER.get().copied()
+}
+
+/// Asks the observer about `cart`. `false` with no observer.
+fn observer_says<M: AbstractMinecart + ?Sized>(
+    cart: &M,
+    question: impl FnOnce(&dyn MinecartObserver, &dyn Entity) -> bool,
+) -> bool {
+    let Some(observer) = minecart_observer() else {
+        return false;
+    };
+    let Some(cart) = cart.as_abstract_minecart() else {
+        return false;
+    };
+    question(observer, cart)
+}
+
+/// Whether the observer lets `cart` and `other` go through each other.
+pub(super) fn passes_through(cart: &dyn Entity, other: &dyn Entity) -> bool {
+    minecart_observer().is_some_and(|observer| observer.passes_through(cart, other))
+}
+
+/// Whether the observer has another cart put `cart` in place.
+pub(super) fn follows(cart: &dyn Entity) -> bool {
+    minecart_observer().is_some_and(|observer| observer.follows(cart))
 }
 
 fn notify_observer<M: AbstractMinecart>(minecart: &M) {

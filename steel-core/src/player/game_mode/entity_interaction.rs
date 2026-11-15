@@ -10,6 +10,7 @@ use super::{
     vanilla_damage_types, vanilla_entities,
 };
 
+use crate::entity::entities::objects::vehicles::minecart_observer;
 use crate::entity::{EntityReference, ProjectileDeflection};
 use crate::player::food_data::food_constants;
 use steel_math::trig;
@@ -814,7 +815,11 @@ impl Player {
 
         let inventory_access = InventoryAccess::new(Arc::clone(&self.inventory), hand);
         let original_count = inventory_access.with_item(|item| item.count);
-        let result = entity.interact(self, hand, location);
+        let taken = entity
+            .as_abstract_minecart()
+            .and_then(|_| minecart_observer())
+            .and_then(|observer| observer.interact(entity, self, hand));
+        let result = taken.unwrap_or_else(|| entity.interact(self, hand, location));
 
         if self.has_infinite_materials() {
             inventory_access.with_item(|item| {

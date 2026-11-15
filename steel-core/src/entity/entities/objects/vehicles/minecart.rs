@@ -189,6 +189,7 @@ impl Entity for MinecartEntity {
     fn can_collide_with(&self, other: &dyn Entity) -> bool {
         (other.can_be_collided_with(Some(self)) || other.is_pushable())
             && !self.is_passenger_of_same_vehicle(other)
+            && !super::abstract_minecart::passes_through(self, other)
     }
 
     fn push_entity(&self, entity: &dyn Entity) {
