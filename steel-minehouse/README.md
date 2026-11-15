@@ -352,8 +352,23 @@ block with track coming in from three or four sides. Any minecart learns the run
 between two nodes it drives, both ways, through the `MinecartObserver` hook of `steel-core`
 (`set_minecart_observer`), which hears of every cart at the end of its tick. The graph is
 kept in `metro-rail-graph.json` of the data directory and written at most every five
-seconds; breaking a station or junction block forgets the runs through its rail. Routing
-over the graph, turning the junctions and the trains are not ported yet.
+seconds; breaking a station or junction block forgets the runs through its rail.
+
+`content/ride.rs` is riding (the Fabric `Stations` and `Routes`, for a cart on its own). A
+cart that reaches a station rail stops there, with the bell and the name of the station as
+a title for its rider. Where the network knows another station from there, the cart is
+docked: pulled to the middle of the rail, deaf to pushes, until its rider sends it on with
+`/metro <station>` (bare `/metro` lists the stations in reach; the start of a name is
+enough) or drives off by pressing forward. A sent cart goes past every other station, the
+junctions on its way are turned for it four blocks ahead (only the shape, with no neighbour
+updates), and it plans again from where it is when it ends up off the way. Where no other
+station is known yet, a cart with a rider counts down five seconds and leaves the way it
+was going, or back at the end of the track, so that the line gets learned; an unpowered
+powered rail on the station keeps it there. An empty cart never leaves by itself. The
+observer also gets `before_tick` from `steel-core` for this.
+
+Not ported yet: trains of coupled carts and their speed, the station map in the cart
+(`/metro` stands in for it), transfers, and the lines on the web map.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
