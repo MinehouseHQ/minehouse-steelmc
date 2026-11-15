@@ -183,6 +183,7 @@ pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
 pub(crate) use signal_getter::get_best_neighbor_signal;
 pub use signal_getter::{SignalGetter, SignalQueryContext};
 pub(crate) use signal_getter::{get_control_input_signal, get_signal, is_redstone_conductor};
+pub use sleep_status::{SleepObserver, set_sleep_observer};
 pub use tick_scheduler::ScheduledTick;
 
 #[cfg(test)]
