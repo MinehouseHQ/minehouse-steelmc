@@ -1,6 +1,6 @@
 //! Experience orb entity implementation.
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -73,6 +73,19 @@ pub struct ExperienceOrbEntity {
 // SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrbEntity`.
 unsafe impl DowncastType for ExperienceOrbEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/experience_orb");
+}
+
+/// Lets a content crate act on experience orbs. With no observer orbs are vanilla.
+pub trait ExperienceOrbObserver: Send + Sync {
+    /// `orb` ticked in `world`, after vanilla's own merge scan. The observer may remove it.
+    fn tick(&self, _orb: &ExperienceOrbEntity, _world: &Arc<World>) {}
+}
+
+static EXPERIENCE_ORB_OBSERVER: OnceLock<&'static dyn ExperienceOrbObserver> = OnceLock::new();
+
+/// Installs the experience orb observer. Returns `false` if one is already installed.
+pub fn set_experience_orb_observer(observer: &'static dyn ExperienceOrbObserver) -> bool {
+    EXPERIENCE_ORB_OBSERVER.set(observer).is_ok()
 }
 
 impl ExperienceOrbEntity {
@@ -207,6 +220,11 @@ impl ExperienceOrbEntity {
     #[must_use]
     pub fn count(&self) -> i32 {
         self.state.lock().count
+    }
+
+    /// Sets this orb's merge count: how many times it is picked up, each time for its value.
+    pub fn set_count(&self, count: i32) {
+        self.state.lock().count = count;
     }
 
     /// Returns this orb's age.
@@ -503,6 +521,13 @@ impl Entity for ExperienceOrbEntity {
 
         if self.tick_count() % ENTITY_SCAN_PERIOD == 1 {
             self.scan_for_merges(&world);
+            if self.is_removed() {
+                return;
+            }
+        }
+
+        if let Some(observer) = EXPERIENCE_ORB_OBSERVER.get() {
+            observer.tick(&self, &world);
             if self.is_removed() {
                 return;
             }
