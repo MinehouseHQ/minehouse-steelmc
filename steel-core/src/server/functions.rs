@@ -8,7 +8,7 @@ use crate::command::PendingCommandExecutionQueue;
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionStop,
 };
-use crate::command::function::{CommandFunction, FunctionLibrary};
+use crate::command::function::{CommandFunction, FunctionLibrary, TimerCallback};
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::datapack::{DataPack, find_packs};
 use crate::world::World;
@@ -63,6 +63,42 @@ impl Server {
                 .with_suppressed_output();
             for function in functions {
                 self.execute_function(pending, &function, &source);
+            }
+        }
+    }
+
+    /// Vanilla `TimerQueue.tick` from `ServerLevel.tickTime`: runs each
+    /// domain's due `/schedule` events once its game time has advanced.
+    pub(crate) fn tick_scheduled_functions(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+        runs_normally: bool,
+    ) {
+        if !runs_normally {
+            return;
+        }
+        for domain in self.worlds.domain_names() {
+            let (Some(queue), Some(world)) = (
+                self.scheduled_events.get(domain),
+                self.worlds.default_world(domain),
+            ) else {
+                continue;
+            };
+            let current_tick = world.game_time();
+            // An event's function may schedule or clear others, so each one is
+            // taken from the queue before it runs.
+            while let Some(callback) = queue.pop_due(current_tick) {
+                let library = self.functions.library(domain).unwrap_or_default();
+                let functions = match &callback {
+                    TimerCallback::Function(id) => library.function(id).into_iter().collect(),
+                    TimerCallback::FunctionTag(id) => library.tag(id).iter().collect::<Vec<_>>(),
+                };
+                // Vanilla `getGameLoopSender`.
+                let source = CommandSource::server_in(Arc::clone(self), Arc::clone(world))
+                    .with_suppressed_output();
+                for function in functions {
+                    self.execute_function(pending, function, &source);
+                }
             }
         }
     }
