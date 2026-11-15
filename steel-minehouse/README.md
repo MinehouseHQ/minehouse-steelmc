@@ -363,7 +363,14 @@ is protected. The site keeps everything; the server asks for the list every 30 s
 The Fabric server hands the shapes to the client mod, which draws lines and walls instead of
 particles. Steel does not know which channels a client listens to, so everyone gets particles.
 
-Not here yet: the banker, and of the zones the map item, the BlueMap markers and the guides.
+The zones are on the web map too (`bank/zones/bluemap.rs`, the Fabric `ZoneBlueMap`): the
+marker set `minehouse-zones` in the same `markers.json` files as the metro (see
+`content/map_markers.rs`), a shape for each zone in the color of its status. Its popup is the
+card of the lot: the area, the rent, the tenant or the bid, when the auction ends (Moscow
+time) and a button to the zone on the site. The set is rewritten when the site's list changes
+and taken off while the zones are closed.
+
+Not here yet: the banker, and of the zones the map item and the guides.
 
 `config/minehouse/bank.toml`:
 
@@ -546,7 +553,7 @@ same train, carts with a passenger and chest, hopper and other carts are left al
 directory has none of its own, a `settings.json` that lists the maps. The directory is
 `MINEHOUSE_METRO_MAP_DIR`, or `metro-map` in the data directory; point the site's
 `BLUEMAP_URL` at a web server that gives it out. Other marker sets in a `markers.json` are
-kept. The files are written by a thread of their own, at most every two seconds after a
+kept. Other modules put sets of their own through `map_markers::put_extra` (the spawn zones do). The files are written by a thread of their own, at most every two seconds after a
 station or the track changed. A line is the track the rail graph knows between two
 stations, through the forks on the way (the Fabric mod draws the trips its trains
 recorded).

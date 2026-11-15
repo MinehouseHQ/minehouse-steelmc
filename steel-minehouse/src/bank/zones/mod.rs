@@ -6,6 +6,7 @@
 //! action bar, tells the site who stands in which lot (a bid is taken only from inside the
 //! zone) and announces auctions in chat.
 
+mod bluemap;
 mod bossbars;
 pub mod commands;
 pub mod gui;
@@ -309,6 +310,7 @@ impl Bank {
             *list = Arc::clone(&next);
             before
         };
+        self.draw_zones_on_map();
         if before.is_empty() || !self.zones_open() {
             return;
         }
