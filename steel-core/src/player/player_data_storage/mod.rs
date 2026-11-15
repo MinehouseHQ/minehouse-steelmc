@@ -672,6 +672,18 @@ fn effect_from_nbt_bytes(bytes: &[u8]) -> io::Result<ActiveMobEffect> {
     Ok(ActiveMobEffect::from_registry_instance(&effect))
 }
 
+/// Encodes what a player's data file holds (not statistics or advancements, which have
+/// files of their own), for a copy kept outside the player storage.
+pub fn encode_player_data(data: &PersistentPlayerData) -> io::Result<Vec<u8>> {
+    encode_player_file(&PlayerDataFile::from_persistent(data)?)
+}
+
+/// Decodes [`encode_player_data`] bytes, of this or an older layout. Statistics and
+/// advancements come back empty.
+pub fn decode_player_data(bytes: &[u8]) -> io::Result<PersistentPlayerData> {
+    decode_player_file(bytes)?.into_persistent()
+}
+
 fn encode_player_file(file: &PlayerDataFile) -> io::Result<Vec<u8>> {
     encode_file(
         PLAYER_MAGIC,

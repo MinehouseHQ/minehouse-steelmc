@@ -515,6 +515,18 @@ The whole recipe book (`content/all_recipes.rs`, the Fabric `RecipeBookAll`): on
 player's book is filled with every vanilla recipe a book can show, quietly, and sent again.
 Recipes of ours still unlock the vanilla way.
 
+Admin mode (`content/admin_mode.rs`, the Fabric `AdminMode`): `/adminmode on
+[creative|spectator]` puts the admin's inventory, ender chest, experience, effects, health,
+food, game mode and place aside and leaves a clean creative (or spectator) player;
+`/adminmode off` gives it all back and returns them; the bare command toggles. The backup
+is a whole player data file, `adminmode/<uuid>.dat` in the data directory, written before
+anything is cleared; the file being there is what "in admin mode" means, so it survives a
+restart, and the player is reminded on joining. Used backups move to `adminmode/history/`
+(the last five per player stay) and every enter and exit goes to `adminmode/log.txt`. Needs
+`minehouse.adminmode`; whoever is in admin mode may always leave. A death in admin mode
+drops nothing. The player storage is not saved at once on exit: until the next autosave a
+crash leaves the admin player in the save and the survival one in `history/`.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
