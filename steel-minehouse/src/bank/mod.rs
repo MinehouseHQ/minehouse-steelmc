@@ -18,6 +18,7 @@ pub mod terminal;
 pub mod terminal_block;
 pub mod terminals;
 pub mod transfer;
+pub mod zones;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -69,6 +70,8 @@ pub struct Bank {
     pub journal: Journal,
     /// What each payment terminal is set to.
     pub terminals: Terminals,
+    /// The spawn zones.
+    pub zones: zones::Zones,
     /// None without a secret: the bank is offline.
     site: Option<SiteClient>,
     runtime: Handle,
@@ -206,6 +209,7 @@ impl Bank {
             config,
             journal,
             terminals: Terminals::load(config::data_path("bank-terminals.json")),
+            zones: zones::Zones::new(),
             site,
             runtime,
             done: SyncMutex::new(Vec::new()),
@@ -406,6 +410,9 @@ impl Bank {
                 ));
             }
         });
+        if let Some(running) = self::bank() {
+            zones::gui::remind(running, uuid);
+        }
         self.call("sales", &body(uuid), move |server, answer| {
             if !ok(&answer) {
                 return;
@@ -419,6 +426,7 @@ impl Bank {
     }
 
     fn on_leave(self: &Arc<Self>, player: Uuid) {
+        self.leave_zones(player);
         // Sales while online were announced live; the join summary counts only the time away.
         if self.account_numbers.lock().remove(&player).is_some() {
             self.sales_seen(player);
@@ -460,6 +468,7 @@ impl ServerJob for Tick {
         if context.tick_count.is_multiple_of(LABEL_TICKS) {
             terminal::tick_labels(&self.bank, &server);
         }
+        self.bank.tick_zones(&server, context.tick_count);
         if context.tick_count.is_multiple_of(RETRY_TICKS) {
             self.bank.retry();
         }
