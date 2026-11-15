@@ -91,6 +91,7 @@ impl Minehouse {
     #[must_use]
     pub fn start(server: &Arc<Server>, setup: Setup) -> Self {
         content::start();
+        content::start_jobs(server);
         if let Some(moderation) = &setup.moderation {
             moderation.start(server);
         }

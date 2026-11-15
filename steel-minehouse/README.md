@@ -458,6 +458,12 @@ worth all of them, so the pile of a farm is picked up in one touch instead of on
 every 2 ticks. The total never changes; a sum above 32767 (an orb saves a short) is not
 merged. The core hook is `ExperienceOrbObserver`, called from the orb's tick.
 
+A newcomer's fireworks (`content/first_join.rs`, the Fabric `FirstJoin`): on a player's
+very first join (their stats have never counted a `leave_game`) everyone gets one line in
+chat, and 40 ticks later four waves of six rockets, 15 ticks apart, go up in a ring of 3
+blocks around the newcomer. The rockets hurt no one (`FireworkRocketEntity::set_harmless`).
+It runs as a job of the server tick (`server.jobs`), which also notices who came online.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
