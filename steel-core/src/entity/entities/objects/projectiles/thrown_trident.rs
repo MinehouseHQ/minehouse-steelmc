@@ -27,6 +27,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::inventory::container::Container as _;
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
@@ -296,6 +297,15 @@ fn loyalty_from_item(trident_item: &ItemStack, trident: &dyn Entity) -> i8 {
 }
 
 impl Entity for ThrownTridentEntity {
+    /// Vanilla `AbstractArrow.getSlot`: slot 0 is the item picked back up.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        (slot == 0).then(|| {
+            SlotAccess::of(
+                || self.pickup_item_stack(),
+                |stack| self.set_pickup_item_stack(stack),
+            )
+        })
+    }
     fn base(&self) -> &EntityBase {
         &self.base
     }

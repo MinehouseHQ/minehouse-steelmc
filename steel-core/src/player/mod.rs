@@ -124,6 +124,10 @@ use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::kinds::inventory_menu;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::{
+    CURSOR_OR_HORSE_CHEST_SLOT, ENDER_CHEST_SLOT_OFFSET, PLAYER_CRAFTING_SLOT_OFFSET,
+};
 use crate::level_data::RespawnData;
 use crate::permission::{
     PermissionContext, PermissionExpr, PermissionMetadataSet, PermissionMetadataValue,
@@ -1450,6 +1454,34 @@ impl Player {
 impl Entity for Player {
     fn is_hard_collision_relevant(&self) -> bool {
         false
+    }
+
+    /// Vanilla `Player.getSlot`: the cursor, the 2x2 crafting grid, the main
+    /// inventory, the ender chest, then the living entity's equipment.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        if slot == CURSOR_OR_HORSE_CHEST_SLOT {
+            return Some(SlotAccess::of(
+                || self.carried_item(),
+                |stack| self.set_carried_item(stack),
+            ));
+        }
+        let craft_slot = slot - PLAYER_CRAFTING_SLOT_OFFSET;
+        if let Ok(craft_slot @ 0..4) = usize::try_from(craft_slot) {
+            return Some(SlotAccess::of(
+                move || {
+                    self.crafting_container()
+                        .lock()
+                        .get_item(craft_slot)
+                        .clone()
+                },
+                move |stack| self.set_crafting_grid_item(craft_slot, stack),
+            ));
+        }
+        if usize::try_from(slot).is_ok_and(|slot| slot < PlayerInventory::INVENTORY_SIZE) {
+            return SlotAccess::for_container(&self.inventory, slot);
+        }
+        SlotAccess::for_container(&self.ender_chest_inventory, slot - ENDER_CHEST_SLOT_OFFSET)
+            .or_else(|| self.default_living_slot(slot))
     }
 
     /// Vanilla `ServerPlayer.onExplosionHit`: a wind charge's own burst spares

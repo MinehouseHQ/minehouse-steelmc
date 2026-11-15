@@ -31,6 +31,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
     EntitySpawnReason, LivingEntity, LivingEntityBase, Mob, MobBase, SharedEntity, SpawnGroupData,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::player::Player;
 use crate::world::World;
 
@@ -279,6 +280,11 @@ impl AbstractHorse for SkeletonHorseEntity {
 impl_equine_entity!(
     SkeletonHorseEntity, abstract_horse, abstract_horse_mut,
     entity {
+        /// Vanilla `AbstractHorse.getSlot`.
+        fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+            self.default_horse_slot(slot)
+        }
+
         /// Vanilla `SkeletonHorse.getSwimSound`.
         fn swim_sound(&self) -> SoundEventRef {
             if self.on_ground() {

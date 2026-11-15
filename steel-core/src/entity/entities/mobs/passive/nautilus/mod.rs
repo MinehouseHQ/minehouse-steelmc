@@ -40,6 +40,8 @@ use crate::entity::{
     SharedEntity, TamableAnimal,
 };
 use crate::inventory::container::SimpleContainer;
+use crate::inventory::slot_access::SlotAccess;
+use crate::inventory::slot_range::HORSE_INVENTORY_SLOT_OFFSET;
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::player::player_inventory::Prediction;
@@ -154,6 +156,16 @@ impl Default for AbstractNautilusBase {
 pub trait AbstractNautilus: TamableAnimal + PathfinderMob {
     /// The nautilus' field state.
     fn nautilus_base(&self) -> &AbstractNautilusBase;
+
+    /// Vanilla `AbstractNautilus.getSlot`: the (empty) inventory from slot
+    /// 500, then the living entity's equipment.
+    fn default_nautilus_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        SlotAccess::for_container(
+            &self.nautilus_base().inventory,
+            slot - HORSE_INVENTORY_SLOT_OFFSET,
+        )
+        .or_else(|| self.default_living_slot(slot))
+    }
 
     /// Vanilla `isDashing`, the synced `DASH` flag.
     fn is_dashing(&self) -> bool;

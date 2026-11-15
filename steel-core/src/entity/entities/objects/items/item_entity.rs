@@ -27,6 +27,7 @@ use crate::entity::{
     EntityMovementEmission, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
+use crate::inventory::slot_access::SlotAccess;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::{Explosion, World};
@@ -529,6 +530,10 @@ impl ItemEntity {
 impl DefaultEntityPush for ItemEntity {}
 
 impl Entity for ItemEntity {
+    /// Vanilla `ItemEntity.getSlot`: slot 0 is the item.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        (slot == 0).then(|| SlotAccess::of(|| self.get_item(), |stack| self.set_item(stack)))
+    }
     fn is_hard_collision_relevant(&self) -> bool {
         false
     }

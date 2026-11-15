@@ -15,6 +15,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 
 use super::display::{load_display, save_display, tick_display};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::inventory::slot_access::SlotAccess;
 use crate::world::World;
 
 const TAG_ITEM: &str = "item";
@@ -154,6 +155,11 @@ impl ItemDisplayEntity {
 }
 
 impl Entity for ItemDisplayEntity {
+    /// Vanilla `Display.ItemDisplay.getSlot`: slot 0 is the displayed item.
+    fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+        (slot == 0)
+            .then(|| SlotAccess::of(|| self.item_stack(), |stack| self.set_item_stack(stack)))
+    }
     fn base(&self) -> &EntityBase {
         &self.base
     }

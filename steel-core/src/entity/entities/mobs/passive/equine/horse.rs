@@ -34,6 +34,7 @@ use crate::entity::{
     EntityBaseLoad, EntitySpawnReason, LivingEntity, LivingEntityBase, Mob, MobBase, SharedEntity,
     SpawnGroupData,
 };
+use crate::inventory::slot_access::SlotAccess;
 use crate::player::Player;
 use crate::world::World;
 
@@ -374,6 +375,11 @@ impl AbstractHorse for HorseEntity {
 impl_equine_entity!(
     HorseEntity, abstract_horse, abstract_horse_mut,
     entity {
+        /// Vanilla `AbstractHorse.getSlot`.
+        fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
+            self.default_horse_slot(slot)
+        }
+
         fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
             if let Some(variant) = item_stack.get(HORSE_VARIANT) {
                 self.set_variant(*variant);
