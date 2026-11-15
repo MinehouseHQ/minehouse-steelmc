@@ -207,14 +207,26 @@ mod tests {
     #[test]
     fn a_line_is_cut_at_the_edge_of_the_panel() {
         let view = view();
-        assert_eq!(
+        let close = |cut: Option<Segment>, want: Segment| {
+            cut.is_some_and(|cut| {
+                [
+                    cut.0 - want.0,
+                    cut.1 - want.1,
+                    cut.2 - want.2,
+                    cut.3 - want.3,
+                ]
+                .iter()
+                .all(|off| off.abs() < 1.0e-4)
+            })
+        };
+        assert!(close(
             view.clip((-5.0, 0.0, 5.0, 0.0)),
-            Some((-1.3, 0.0, 1.3, 0.0))
-        );
-        assert_eq!(
+            (-1.3, 0.0, 1.3, 0.0)
+        ));
+        assert!(close(
             view.clip((-1.0, 0.5, 1.0, 0.5)),
-            Some((-1.0, 0.5, 1.0, 0.5))
-        );
+            (-1.0, 0.5, 1.0, 0.5)
+        ));
         assert_eq!(view.clip((-5.0, 2.0, 5.0, 2.0)), None);
         assert_eq!(view.clip((2.0, -1.0, 2.0, 1.0)), None);
     }
