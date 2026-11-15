@@ -15,11 +15,11 @@ use super::{
     IntRange, ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
-        ComponentValue, CompoundTagValue, CoordinateAxes, DomainValue, EnchantmentValue,
-        EntityTypeValue, FeatureValue, FunctionReference, FunctionValue, GameModeValue,
-        IdentifierValue, ItemSlotValue, ItemStackValue, LootTableValue, NbtPathValue, NbtTagValue,
-        ObjectiveValue, SlotSourceValue, SteelArgumentValue, TemplateMirrorValue,
-        TemplateRotationValue, TimeValue, TimelineValue, WorldClockValue,
+        ComponentValue, CompoundTagValue, CoordinateAxes, DialogValue, DomainValue,
+        EnchantmentValue, EntityTypeValue, FeatureValue, FunctionReference, FunctionValue,
+        GameModeValue, IdentifierValue, ItemSlotValue, ItemStackValue, LootTableValue,
+        NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue, SteelArgumentValue,
+        TemplateMirrorValue, TemplateRotationValue, TimeValue, TimelineValue, WorldClockValue,
     },
     argument::{
         CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
@@ -53,6 +53,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
+use steel_registry::dialog::DialogRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::mob_effect::MobEffectRef;
@@ -438,6 +439,12 @@ where
     /// Vanilla `ResourceOrIdArgument.getLootTable`.
     pub(crate) fn loot_table(&self, name: &str) -> Result<LootTableRef, CommandSyntaxError> {
         self.typed_argument::<LootTableValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getDialog`.
+    pub(crate) fn dialog(&self, name: &str) -> Result<DialogRef, CommandSyntaxError> {
+        self.typed_argument::<DialogValue>(name)
             .map(|value| value.0)
     }
 
