@@ -42,7 +42,7 @@ pub(super) fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
 
 /// Runs `command` from `sender` and returns its result, or `None` when the
 /// command failed.
-fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str) -> Option<i32> {
+pub(super) fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str) -> Option<i32> {
     let outcome = Arc::new(SyncMutex::new(None));
     let callback = {
         let outcome = Arc::clone(&outcome);

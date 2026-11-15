@@ -3068,7 +3068,7 @@ fn test_player_with_uuid_and_packets(
     (player, sent_packets)
 }
 
-fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
+pub(super) fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
     let mut cursor = Cursor::new(packet.encoded_data.as_slice());
     let packet_length = VarInt::read(&mut cursor);
     assert!(packet_length.is_ok(), "packet length should decode");
@@ -4875,6 +4875,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 
 mod damage_history;
 mod game_time;
+mod help_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;

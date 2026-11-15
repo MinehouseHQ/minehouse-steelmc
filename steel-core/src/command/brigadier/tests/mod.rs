@@ -4,6 +4,7 @@ mod parsing;
 mod registration;
 mod runtime_model;
 mod suggestion;
+mod usage;
 
 use super::{CommandSyntaxError, CommandSyntaxErrorKind, StringRange, StringReader};
 use steel_utils::translations;

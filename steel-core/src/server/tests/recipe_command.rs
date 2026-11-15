@@ -34,7 +34,7 @@ fn learnable_displays() -> i32 {
 }
 
 /// Adds an online player who has joined `world`, with the packets sent to them.
-fn join_with_packets(
+pub(super) fn join_with_packets(
     server: &Arc<Server>,
     world: &Arc<World>,
     name: &str,
