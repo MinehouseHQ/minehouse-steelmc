@@ -527,6 +527,15 @@ restart, and the player is reminded on joining. Used backups move to `adminmode/
 drops nothing. The player storage is not saved at once on exit: until the next autosave a
 crash leaves the admin player in the save and the survival one in `history/`.
 
+Other players' items (`content/see.rs`, the rest of the Fabric `Invsee`; the inventory of
+a player who is online is the core `/invsee`): `/endersee <nick>` opens an ender chest,
+live if the player is online, and `/offlinesee <nick>` the inventory, armor and offhand of
+a player who is offline. For an offline player the stored data is read once and every
+change is written back at once; admins on the same player share one copy, and the windows
+close when the player logs in. Every open and every changed slot goes to `invsee/log.txt`
+in the data directory and to the server log. Both need `minehouse.invsee`. Changes made
+through the core `/invsee` are not logged.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
