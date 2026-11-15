@@ -14,6 +14,7 @@ mod cauldron_conversion;
 mod cloud;
 mod commands;
 mod couplings;
+mod end_lock;
 mod first_join;
 mod herbs;
 mod leaf_decay;
@@ -390,6 +391,7 @@ pub fn start_jobs(server: &Server) {
     first_join::start(server);
     afk::start(server);
     nametags::start(server);
+    end_lock::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.

@@ -36,7 +36,7 @@ use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
 use super::{
-    anvil_repair,
+    anvil_repair, end_lock,
     map_view::MapView,
     metro, nametags,
     rail_graph::{self, Edge},
@@ -939,7 +939,8 @@ impl PlayerInputObserver for Input {
         hand: InteractionHand,
         hit: &BlockHitResult,
     ) -> Option<InteractionResult> {
-        anvil_repair::clicked(player, world, hand, hit)
+        end_lock::clicked(player, world, hand, hit)
+            .or_else(|| anvil_repair::clicked(player, world, hand, hit))
     }
 
     fn carried_item(&self, player: &Player, from: u8, to: u8) {

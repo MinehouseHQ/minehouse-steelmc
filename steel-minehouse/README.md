@@ -504,6 +504,13 @@ become mud and take no water; concrete powder becomes concrete of its color and 
 level of water for a stack. The core hook is `ItemEntityObserver`, asked at the end of an
 item's tick.
 
+The closed End (`content/end_lock.rs`, the Fabric `EndLock`): with `closed = true` under
+`[end]` in `config/minehouse/tweaks.toml` nobody can put an eye of ender into a portal frame,
+and a player who still ends up in the End is sent out within a second, to where the exit
+portal leads (the Fabric mod used the player's own respawn point). A spectator with
+`minehouse.end.bypass` may stay. `message` is what the player is told. The setting is read at
+start. The core gets `Player::leave_end`.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop
