@@ -17,6 +17,7 @@ use steel_core::{
 use text_components::TextComponent;
 
 pub mod auth;
+pub mod chat;
 pub mod config;
 pub mod console;
 pub mod downtime;
@@ -25,6 +26,7 @@ pub mod roles;
 pub mod site;
 
 use auth::{Auth, AuthSetup};
+use chat::Chat;
 use console::Console;
 use downtime::Downtime;
 use moderation::Moderation;
@@ -35,6 +37,7 @@ pub struct Setup {
     auth: Option<AuthSetup>,
     moderation: Option<Arc<Moderation>>,
     downtime: Option<Arc<Downtime>>,
+    chat: Option<Arc<Chat>>,
 }
 
 /// The running `MineHouse` modules of one server.
@@ -66,6 +69,7 @@ impl Minehouse {
             auth,
             moderation,
             downtime: Downtime::register(registry),
+            chat: Chat::register(registry),
         }
     }
 
@@ -82,6 +86,9 @@ impl Minehouse {
             .and_then(|auth| Roles::start(server, auth.site.clone()));
         if let Some(downtime) = &setup.downtime {
             downtime.start(server);
+        }
+        if let Some(chat) = &setup.chat {
+            chat.start(server);
         }
         let auth = setup.auth.map(|auth| Auth::start(server, auth));
         // One gate serves both: maintenance refuses first, then the login check asks the site.

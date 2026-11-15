@@ -1,6 +1,7 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
 mod autosave;
 mod broadcasting;
+pub mod chat_interceptor;
 /// Tick-polled server jobs.
 pub mod jobs;
 pub mod login_gate;
@@ -264,6 +265,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
         login_gate: OnceLock::new(),
+        chat_interceptor: OnceLock::new(),
         status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
@@ -506,6 +508,8 @@ pub struct Server {
     server_tick_changed: Notify,
     /// Holds verified logins in the configuration phase, see [`login_gate`].
     login_gate: OnceLock<Arc<dyn login_gate::LoginGate>>,
+    /// Takes over player chat, see [`chat_interceptor`].
+    chat_interceptor: OnceLock<Arc<dyn chat_interceptor::ChatInterceptor>>,
     /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
     status_motd: SyncMutex<Option<String>>,
     /// The tick rate manager for the server.
@@ -869,6 +873,7 @@ impl Server {
             player_admission_changed: Notify::new(),
             server_tick_changed: Notify::new(),
             login_gate: OnceLock::new(),
+            chat_interceptor: OnceLock::new(),
             status_motd: SyncMutex::new(None),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),

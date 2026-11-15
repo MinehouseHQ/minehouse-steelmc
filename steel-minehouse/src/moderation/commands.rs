@@ -95,7 +95,7 @@ impl Moderation {
 
 /// What a single-word argument completes to.
 #[derive(Debug, PartialEq, Eq)]
-enum WordParser {
+pub(crate) enum WordParser {
     /// A nickname: online players are offered.
     Player,
     /// A ban length.
@@ -109,7 +109,7 @@ unsafe impl DowncastType for WordParser {
 
 /// The value of a [`WordParser`] argument.
 #[derive(Debug)]
-struct Word(String);
+pub(crate) struct Word(String);
 
 // SAFETY: This key is used for `Word` alone.
 unsafe impl DowncastType for Word {
@@ -165,7 +165,7 @@ impl CommandArgumentParser for WordParser {
     }
 }
 
-fn player() -> CommandNode {
+pub(crate) fn player() -> CommandNode {
     argument("player", CommandArgument::custom(WordParser::Player))
 }
 
@@ -173,7 +173,7 @@ fn reason() -> CommandNode {
     argument("reason", CommandArgument::greedy_string())
 }
 
-fn word(context: CommandContext<'_>, name: &str) -> Result<String, CommandError> {
+pub(crate) fn word(context: CommandContext<'_>, name: &str) -> Result<String, CommandError> {
     context.value::<Word>(name).map(|word| word.0.clone())
 }
 
