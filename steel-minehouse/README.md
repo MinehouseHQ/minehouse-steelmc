@@ -255,6 +255,41 @@ Not there yet: blocks changed by anything but a player's hand (explosions, fire,
 buckets), signs, chat and sessions. The core hook is `WorldLog`
 (`steel-core/src/server/world_log.rs`).
 
+## Bank
+
+The Fabric `MineHouse Bank`, piece by piece. One diamond ore (plain or deepslate) is one АР. The
+money lives on the site: every operation is a signed `POST /api/mc/bank/<action>` (the contract is
+in minehouse-landing `bank-mod/README.md`), the server only moves ores in and out of inventories.
+
+What is here so far is the base the ATM, the cards, the terminals and the spawn zones stand on:
+
+- **Calls to the site** never block the tick: the answer comes back on a later tick. A call that
+  fails (no secret, timeout, HTTP error) answers `{ok: false, error: "offline"}`.
+- **The journal** `bank-journal.json` in the data directory (`MINEHOUSE_DATA_DIR`) keeps what is
+  half done, so a crash or a lost answer never loses or doubles ores. It is rewritten (temp file
+  and rename) after every change. Kinds: `deposit`, `delivered`, `vending`, `owed`.
+- **On join** a player gets the items the bank owes them (`owed`), the ores of withdrawals that
+  were paid but not handed out (`pending`, then `delivered`), and one line about what their
+  terminals sold while they were away (`sales`). On leave the sales are marked seen.
+- **Every 30 seconds** and on start, a `delivered` the site has not heard yet is sent again.
+
+`config/minehouse/bank.toml`:
+
+| Key | Default | |
+| --- | --- | --- |
+| `enabled` | `true` | Turns the bank off entirely |
+| `api_url`, `server_id`, `api_secret` | empty | Empty: taken from `console.toml`; the bank signs with the same per-server secret as the console (env `MINEHOUSE_CONSOLE_SECRET`) |
+| `http_timeout_ms` | `10000` | Timeout of one call |
+| `terminal_price` | `5` | What the ATM charges for a payment terminal |
+| `max_withdraw` | `640` | Most ores one withdrawal hands out |
+| `invoice_seconds` | `120` | How long a till's invoice lives |
+| `use_distance` | `6.0` | How far from a terminal or an ATM a player may use it |
+
+Differences from the Fabric mod: the journal is in the data directory instead of the world
+folder, and its items are hex of their NBT, not SNBT, so a Fabric journal with items in it is not
+read. Move a server with an empty journal. An entry whose items can't be read stays in the file
+and is logged instead of being dropped.
+
 ## Our items
 
 `src/content`: the items of our mods on a vanilla client. On the Fabric server they were
