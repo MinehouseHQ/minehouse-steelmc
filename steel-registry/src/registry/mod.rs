@@ -101,6 +101,8 @@ use crate::{
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
+use steel_utils::types::set_client_block_states;
+
 use std::{
     fmt::Debug,
     mem,
@@ -139,9 +141,18 @@ pub fn init_vanilla_registry() -> bool {
     let mut published = false;
     INIT.call_once(|| {
         let mut registry = Registry::new_vanilla();
+        // What the client's game has: extensions can only add to it.
+        let vanilla_block_states = registry.blocks.next_state_id;
         let extensions = mem::take(&mut *EXTENSIONS.lock());
         for extension in extensions {
             extension(&mut registry);
+        }
+        let (shown, problems) = registry.blocks.client_states(vanilla_block_states);
+        for problem in problems {
+            log::error!("Registry extension: {problem}; clients will see air");
+        }
+        if let Some(shown) = shown {
+            set_client_block_states(shown, vanilla_block_states);
         }
         registry.freeze();
         published = REGISTRY.init(registry).is_ok();

@@ -45,6 +45,21 @@ fn sound_packet_for_player(
     ))
 }
 
+/// The data of a level event as a client reads it: where it is a block state, the state
+/// the client is shown for it.
+fn client_event_data(event_type: i32, data: i32) -> i32 {
+    let carries_block_state = matches!(
+        event_type,
+        level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK
+            | level_events::PARTICLES_DESTROY_BLOCK
+            | level_events::PARTICLES_AND_SOUND_BRUSH_BLOCK_COMPLETE
+    );
+    match u16::try_from(data) {
+        Ok(state) if carries_block_state => i32::from(BlockStateId(state).to_client().0),
+        _ => data,
+    }
+}
+
 impl World {
     /// Broadcasts a level event to nearby players within 64 blocks.
     ///
@@ -57,7 +72,7 @@ impl World {
     /// * `data` - Event-specific data (e.g., block state ID for block destruction)
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn level_event(&self, event_type: i32, pos: BlockPos, data: i32, exclude: Option<i32>) {
-        let packet = CLevelEvent::new(event_type, pos, data, false);
+        let packet = CLevelEvent::new(event_type, pos, client_event_data(event_type, data), false);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
@@ -252,7 +267,7 @@ impl World {
             return;
         }
 
-        let packet = CLevelEvent::new(event_type, pos, data, true);
+        let packet = CLevelEvent::new(event_type, pos, client_event_data(event_type, data), true);
         self.players.iter_players(|_, player| {
             player.send_packet(packet.clone());
             true

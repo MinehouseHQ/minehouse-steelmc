@@ -509,6 +509,8 @@ pub struct BlockRegistry {
     pub block_to_base_state: Vec<u16>,
     /// The next state ID to be allocated
     pub next_state_id: u16,
+    /// States that clients are shown as another state, see [`Self::show_to_clients_as`].
+    shown_to_clients: Vec<(BlockStateId, BlockStateId)>,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the block registry.
@@ -563,7 +565,53 @@ impl BlockRegistry {
             state_ticking_metadata: Vec::new(),
             block_to_base_state: Vec::new(),
             next_state_id: 0,
+            shown_to_clients: Vec::new(),
         }
+    }
+
+    /// Makes clients see `state` as `shown`. Every state of a block the client's game does
+    /// not have needs this; a vanilla state can be given one too, to free it for such a
+    /// block. Only while the registry is being extended, before it is frozen.
+    pub fn show_to_clients_as(&mut self, state: BlockStateId, shown: BlockStateId) {
+        assert!(
+            self.allows_registering,
+            "Cannot change what clients are shown after the registry has been frozen"
+        );
+        self.shown_to_clients.push((state, shown));
+    }
+
+    /// The table for [`steel_utils::types::set_client_block_states`]: the state shown for
+    /// each state, given that the client's game has the first `client_states` states. `None`
+    /// when clients are shown every state as it is.
+    ///
+    /// A state that would reach clients as one they do not have is shown as air (state 0)
+    /// and named in the returned problems.
+    #[must_use]
+    pub fn client_states(&self, client_states: u16) -> (Option<Box<[u16]>>, Vec<String>) {
+        if self.shown_to_clients.is_empty() && self.next_state_id == client_states {
+            return (None, Vec::new());
+        }
+        let mut problems = Vec::new();
+        let mut shown: Box<[u16]> = (0..self.next_state_id).collect();
+        for (state, shown_as) in &self.shown_to_clients {
+            match shown.get_mut(usize::from(state.0)) {
+                Some(slot) => *slot = shown_as.0,
+                None => problems.push(format!("block state {} is not registered", state.0)),
+            }
+        }
+        for (state, shown_as) in shown.iter_mut().enumerate() {
+            if *shown_as >= client_states {
+                let block = self.state_to_block_lookup.get(state).map_or_else(
+                    || "an unknown block".to_owned(),
+                    |block| block.key.to_string(),
+                );
+                problems.push(format!(
+                    "state {state} of {block} would be sent to clients as state {shown_as}, which they do not have"
+                ));
+                *shown_as = 0;
+            }
+        }
+        (Some(shown), problems)
     }
 
     pub fn register(&mut self, block: BlockRef) -> usize {
@@ -1283,6 +1331,49 @@ mod tests {
         vanilla_blocks::register_blocks(&mut registry);
         registry.freeze();
         registry
+    }
+
+    #[test]
+    fn clients_are_shown_every_state_as_it_is_by_default() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+
+        let (shown, problems) = registry.client_states(registry.next_state_id);
+        assert!(shown.is_none());
+        assert_eq!(problems, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_state_can_be_shown_to_clients_as_another() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+        let stone = registry.get_base_state_id(&vanilla_blocks::STONE);
+        let dirt = registry.get_base_state_id(&vanilla_blocks::DIRT);
+        registry.show_to_clients_as(stone, dirt);
+
+        let (shown, problems) = registry.client_states(registry.next_state_id);
+        let shown = shown.expect("a table is built once a state is shown as another");
+        assert_eq!(problems, Vec::<String>::new());
+        assert_eq!(shown.len(), usize::from(registry.next_state_id));
+        assert_eq!(shown[usize::from(stone.0)], dirt.0);
+        assert_eq!(shown[usize::from(dirt.0)], dirt.0);
+    }
+
+    #[test]
+    fn a_state_the_client_lacks_is_shown_as_air_and_reported() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+        // As if the last two states belonged to a block the client's game does not have.
+        let client_states = registry.next_state_id - 2;
+        let stone = registry.get_base_state_id(&vanilla_blocks::STONE);
+        registry.show_to_clients_as(BlockStateId(client_states), stone);
+
+        let (shown, problems) = registry.client_states(client_states);
+        let shown = shown.expect("a table is built when the server has more states");
+        assert_eq!(shown[usize::from(client_states)], stone.0);
+        assert_eq!(shown[usize::from(client_states) + 1], 0);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("which they do not have"));
     }
 
     #[test]
