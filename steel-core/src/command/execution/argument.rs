@@ -16,6 +16,10 @@ use super::{
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
+    scoreboard_arguments::{
+        ScoreOperation, parse_criteria, parse_display_slot, parse_operation, parse_style,
+        suggest_criteria, suggest_display_slots, suggest_operations,
+    },
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
     suggestions::{matches_substring_ignore_case, suggest_list, suggest_resources},
@@ -33,6 +37,7 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use crate::inventory::slot_range::{SlotRange, all_slot_range_names, slot_range};
+use crate::scoreboard::{DisplaySlot, ObjectiveCriteria};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
@@ -298,6 +303,26 @@ impl SteelArgumentType {
 
     pub(crate) fn objective() -> Self {
         Self::new(ObjectiveParser)
+    }
+
+    /// Vanilla `ObjectiveCriteriaArgument.criteria`.
+    pub(crate) fn objective_criteria() -> Self {
+        Self::new(ObjectiveCriteriaParser)
+    }
+
+    /// Vanilla `ScoreboardSlotArgument.displaySlot`.
+    pub(crate) fn scoreboard_slot() -> Self {
+        Self::new(ScoreboardSlotParser)
+    }
+
+    /// Vanilla `OperationArgument.operation`.
+    pub(crate) fn operation() -> Self {
+        Self::new(OperationParser)
+    }
+
+    /// Vanilla `StyleArgument.style`.
+    pub(crate) fn style() -> Self {
+        Self::new(StyleParser)
     }
 
     pub(crate) fn int_range() -> Self {
@@ -576,6 +601,19 @@ macro_rules! argument_value_wrapper {
 argument_value_wrapper!(TimeValue(i32), "steel:command/value/time");
 argument_value_wrapper!(ObjectiveValue(Box<str>), "steel:command/value/objective");
 argument_value_wrapper!(GameModeValue(GameType), "steel:command/value/game_mode");
+argument_value_wrapper!(
+    CriteriaValue(ObjectiveCriteria),
+    "steel:command/value/objective_criteria"
+);
+argument_value_wrapper!(
+    DisplaySlotValue(DisplaySlot),
+    "steel:command/value/scoreboard_slot"
+);
+argument_value_wrapper!(
+    OperationValue(ScoreOperation),
+    "steel:command/value/operation"
+);
+argument_value_wrapper!(StyleValue(TextComponent), "steel:command/value/style");
 argument_value_wrapper!(DomainValue(Box<str>), "steel:command/value/domain");
 argument_value_wrapper!(
     EntityTypeValue(EntityTypeRef),
@@ -999,6 +1037,46 @@ unit_argument_parser!(
         ProtocolArgumentType::Objective,
         Some(ProtocolSuggestionType::AskServer),
     )
+);
+unit_argument_parser!(
+    ObjectiveCriteriaParser,
+    "steel:command/parser/objective_criteria",
+    CriteriaValue,
+    parse | reader,
+    _source | { parse_criteria(reader).map(CriteriaValue) },
+    suggest | _context,
+    builder | { suggest_criteria(builder) },
+    protocol(ProtocolArgumentType::ObjectiveCriteria, None)
+);
+unit_argument_parser!(
+    ScoreboardSlotParser,
+    "steel:command/parser/scoreboard_slot",
+    DisplaySlotValue,
+    parse | reader,
+    _source | { parse_display_slot(reader).map(DisplaySlotValue) },
+    suggest | _context,
+    builder | { suggest_display_slots(builder) },
+    protocol(ProtocolArgumentType::ScoreboardSlot, None)
+);
+unit_argument_parser!(
+    OperationParser,
+    "steel:command/parser/operation",
+    OperationValue,
+    parse | reader,
+    _source | { parse_operation(reader).map(OperationValue) },
+    suggest | _context,
+    builder | { suggest_operations(builder) },
+    protocol(ProtocolArgumentType::Operation, None)
+);
+unit_argument_parser!(
+    StyleParser,
+    "steel:command/parser/style",
+    StyleValue,
+    parse | reader,
+    _source | { parse_style(reader).map(StyleValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Style, None)
 );
 unit_argument_parser!(
     IntRangeParser,

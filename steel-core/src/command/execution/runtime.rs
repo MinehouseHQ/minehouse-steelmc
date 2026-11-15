@@ -20,6 +20,8 @@ use super::{
         ObjectiveValue, SlotSourceValue, SteelArgumentValue, TimeValue, TimelineValue,
         WorldClockValue,
     },
+    argument::{CriteriaValue, DisplaySlotValue, OperationValue, StyleValue},
+    scoreboard_arguments::ScoreOperation,
     selector::EntitySelector,
 };
 use crate::command::brigadier::{
@@ -35,7 +37,7 @@ use crate::{
     entity::{EntityAnchor, SharedEntity},
     permission::{PermissionMetadataExpression, PermissionRuleExpression},
     player::Player,
-    scoreboard::ScoreHolder,
+    scoreboard::{DisplaySlot, ObjectiveCriteria, ScoreHolder, Scoreboard, ScoreboardObjective},
 };
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
@@ -288,6 +290,33 @@ where
         self.typed_argument::<IntRange>(name).copied()
     }
 
+    /// Vanilla `ObjectiveCriteriaArgument.getCriteria`.
+    pub(crate) fn objective_criteria(
+        &self,
+        name: &str,
+    ) -> Result<ObjectiveCriteria, CommandSyntaxError> {
+        self.typed_argument::<CriteriaValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `ScoreboardSlotArgument.getDisplaySlot`.
+    pub(crate) fn scoreboard_slot(&self, name: &str) -> Result<DisplaySlot, CommandSyntaxError> {
+        self.typed_argument::<DisplaySlotValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `OperationArgument.getOperation`.
+    pub(crate) fn operation(&self, name: &str) -> Result<ScoreOperation, CommandSyntaxError> {
+        self.typed_argument::<OperationValue>(name)
+            .map(|value| value.0)
+    }
+
+    /// Vanilla `StyleArgument.getStyle`, as the style of an empty component.
+    pub(crate) fn style(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
+        self.typed_argument::<StyleValue>(name)
+            .map(|value| &value.0)
+    }
+
     pub(crate) fn biome_or_tag(&self, name: &str) -> Result<&BiomeOrTag, CommandSyntaxError> {
         self.typed_argument(name)
     }
@@ -444,6 +473,29 @@ where
     }
 }
 
+/// The source domain's scoreboard.
+pub(crate) fn domain_scoreboard(source: &CommandSource) -> Result<&Scoreboard, CommandSyntaxError> {
+    source
+        .server()
+        .scoreboards
+        .get(source.world().domain())
+        .ok_or_else(|| {
+            CommandSyntaxError::dynamic(format!(
+                "Domain '{}' has no command scoreboard",
+                source.world().domain()
+            ))
+        })
+}
+
+impl SteelSuggestionContext<'_, CommandSource> {
+    /// Vanilla `ScoreHolderArgument.getNamesWithDefaultWildcard` while
+    /// suggesting.
+    pub(crate) fn score_holders(&self, name: &str) -> Result<Vec<ScoreHolder>, CommandSyntaxError> {
+        self.typed_argument::<ScoreHolderArgument>(name)?
+            .resolve(self.source(), ScoreHolderWildcard::Tracked)
+    }
+}
+
 impl<S> SteelSuggestionContext<'_, S> {
     fn typed_argument<T: DowncastType>(&self, name: &str) -> Result<&T, CommandSyntaxError> {
         self.argument(name)?
@@ -479,6 +531,39 @@ impl SteelCommandContext<CommandSource> {
     pub(crate) fn score_holder(&self, name: &str) -> Result<ScoreHolder, CommandSyntaxError> {
         let mut holders = self.score_holders(name, ScoreHolderWildcard::Empty)?;
         Ok(holders.remove(0))
+    }
+
+    /// The source domain's scoreboard, vanilla's `getServer().getScoreboard()`.
+    pub(crate) fn scoreboard(&self) -> Result<&Scoreboard, CommandSyntaxError> {
+        domain_scoreboard(self.source())
+    }
+
+    /// Vanilla `ObjectiveArgument.getObjective`.
+    pub(crate) fn objective(&self, name: &str) -> Result<ScoreboardObjective, CommandSyntaxError> {
+        let objective_name = self.objective_name(name)?;
+        self.scoreboard()?.objective(objective_name).ok_or_else(|| {
+            CommandSyntaxError::dynamic(
+                translations::ARGUMENTS_OBJECTIVE_NOT_FOUND
+                    .message([objective_name.to_owned()])
+                    .component(),
+            )
+        })
+    }
+
+    /// Vanilla `ObjectiveArgument.getWritableObjective`.
+    pub(crate) fn writable_objective(
+        &self,
+        name: &str,
+    ) -> Result<ScoreboardObjective, CommandSyntaxError> {
+        let objective = self.objective(name)?;
+        if objective.is_read_only() {
+            return Err(CommandSyntaxError::dynamic(
+                translations::ARGUMENTS_OBJECTIVE_READONLY
+                    .message([objective.name().to_owned()])
+                    .component(),
+            ));
+        }
+        Ok(objective)
     }
 
     pub(crate) fn optional_entities(
