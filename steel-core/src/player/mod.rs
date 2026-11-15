@@ -23,6 +23,7 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 mod profile;
+pub mod recipe_book;
 mod session;
 mod shoulder;
 mod sleep;
@@ -313,6 +314,8 @@ pub struct Player {
     raid_omen_position: SyncMutex<Option<BlockPos>>,
     /// Vanilla `ServerPlayer.wardenSpawnTracker`.
     warden_spawn_tracker: SyncMutex<WardenSpawnTracker>,
+    /// Vanilla `ServerPlayer.recipeBook`.
+    recipe_book: SyncMutex<recipe_book::ServerRecipeBook>,
     /// Vanilla `shoulderEntityLeft`/`shoulderEntityRight`: perched parrots.
     shoulder_entities: SyncMutex<shoulder::ShoulderEntities>,
 
@@ -714,6 +717,7 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             raid_omen_position: SyncMutex::new(None),
             warden_spawn_tracker: SyncMutex::new(WardenSpawnTracker::default()),
+            recipe_book: SyncMutex::new(recipe_book::ServerRecipeBook::default()),
             shoulder_entities: SyncMutex::new(shoulder::ShoulderEntities::default()),
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
@@ -1415,6 +1419,10 @@ impl Player {
             NbtTag::Byte(i8::from(self.has_seen_credits())),
         );
         nbt.insert("warden_spawn_tracker", self.warden_spawn_tracker().save());
+        nbt.insert(
+            recipe_book::RECIPE_BOOK_TAG,
+            NbtTag::Compound(self.recipe_book().save()),
+        );
         nbt.insert("Dimension", self.get_world().key.to_string());
 
         if let Some(vehicle) = self.vehicle()

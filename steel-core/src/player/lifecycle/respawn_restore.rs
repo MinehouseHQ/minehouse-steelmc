@@ -75,6 +75,7 @@ impl Player {
         *self.advancements.lock() = old_player.advancements.lock().clone();
         *self.seen_credits.lock() = *old_player.seen_credits.lock();
         self.set_warden_spawn_tracker(old_player.warden_spawn_tracker());
+        self.set_recipe_book(old_player.recipe_book());
         self.set_shoulder_entity_left(old_player.shoulder_entity_left());
         self.set_shoulder_entity_right(old_player.shoulder_entity_right());
         let residence = old_player.residence.lock().clone();

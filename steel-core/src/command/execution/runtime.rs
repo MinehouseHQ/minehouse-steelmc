@@ -30,9 +30,12 @@ use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
-use crate::command::execution::argument::{AdvancementValue, DamageTypeValue, MobEffectValue};
+use crate::command::execution::argument::{
+    AdvancementValue, DamageTypeValue, MobEffectValue, RecipeKeyValue,
+};
 use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
+use crate::inventory::recipe_displays::is_special;
 use crate::inventory::slot_range::SlotRange;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -48,8 +51,9 @@ use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::recipe::UntypedRecipeRef;
 use steel_registry::{
-    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
+    REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
@@ -451,6 +455,25 @@ where
     pub(crate) fn advancement(&self, name: &str) -> Result<AdvancementRef, CommandSyntaxError> {
         self.typed_argument::<AdvancementValue>(name)
             .map(|value| value.0)
+    }
+
+    /// Vanilla `ResourceKeyArgument.getRecipe`: a recipe that exists and is not special.
+    pub(crate) fn learnable_recipe(
+        &self,
+        name: &str,
+    ) -> Result<UntypedRecipeRef, CommandSyntaxError> {
+        let key = &self.typed_argument::<RecipeKeyValue>(name)?.0;
+        REGISTRY
+            .recipes
+            .by_key(key)
+            .filter(|&recipe| !is_special(recipe))
+            .ok_or_else(|| {
+                CommandSyntaxError::dynamic(
+                    translations::RECIPE_NOT_FOUND
+                        .message([key.to_string()])
+                        .component(),
+                )
+            })
     }
 
     pub(crate) fn entity_selector(

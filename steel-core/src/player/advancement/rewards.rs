@@ -5,7 +5,8 @@ use crate::player::Player;
 use steel_registry::advancement::AdvancementRewards;
 use steel_registry::loot_table::LootContext;
 
-/// Grants experience and loot rewards but recipes and functions are not handled yet
+/// Vanilla `AdvancementRewards.grant`. Function rewards are not run: Steel has no
+/// datapack functions.
 pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
     player.give_experience_points(reward.experience);
 
@@ -34,5 +35,7 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
         player.broadcast_inventory_changes();
     }
 
-    //TODO grant recipes and functions when implemented
+    if !reward.recipes.is_empty() {
+        player.award_recipes(&reward.recipes);
+    }
 }

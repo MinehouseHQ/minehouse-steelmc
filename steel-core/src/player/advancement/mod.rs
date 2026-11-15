@@ -15,6 +15,7 @@ use crate::player::Player;
 use crate::player::advancement::rewards::grant_reward;
 use progress::{AdvancementProgress, AdvancementProgressMap};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::mem;
 use std::time::UNIX_EPOCH;
 use steel_protocol::packets::game::CSelectAdvancementsTab;
 use steel_protocol::packets::game::CUpdateAdvancements;
@@ -35,6 +36,9 @@ pub struct PlayerAdvancement {
     roots_to_update: FxHashSet<AdvancementNodeRef>,
     visible: FxHashSet<AdvancementRef>,
     progress_changed: FxHashSet<AdvancementRef>,
+    /// Completed advancements whose rewards wait for the advancement lock to
+    /// be released; see [`Player::grant_pending_advancement_rewards`].
+    pending_rewards: Vec<AdvancementRef>,
     /// represent the las selected advancement tab
     pub last_selected_tab: Option<AdvancementRef>,
 }
@@ -47,6 +51,7 @@ impl Default for PlayerAdvancement {
             roots_to_update: FxHashSet::default(),
             visible: FxHashSet::default(),
             progress_changed: FxHashSet::default(),
+            pending_rewards: Vec::new(),
             last_selected_tab: Option::default(),
         }
     }
@@ -54,7 +59,12 @@ impl Default for PlayerAdvancement {
 
 impl PlayerAdvancement {
     /// Award a criterion to a player. If this completes the advancement,
-    /// grant the advancement along with its rewards and display the corresponding chat message.
+    /// grant the advancement, queue its rewards and display the corresponding chat message.
+    ///
+    /// Vanilla grants the rewards right here. Steel holds the advancement lock
+    /// while awarding, and rewards can award criteria again (a recipe reward fires
+    /// `recipe_unlocked`), so they are queued and granted by
+    /// [`Player::grant_pending_advancement_rewards`] once the lock is released.
     pub(crate) fn award(
         &mut self,
         player: &Player,
@@ -69,7 +79,7 @@ impl PlayerAdvancement {
             self.progress_changed.insert(advancement);
             result = true;
             if !was_done && progress.is_done() {
-                grant_reward(player, advancement.rewards());
+                self.pending_rewards.push(advancement);
                 if let Some(display) = advancement.display()
                     && display.announce_chat
                     && player
@@ -275,6 +285,22 @@ impl PlayerAdvancement {
             self.progress.start_progress(advancement, progress);
             self.progress_changed.insert(advancement);
             self.mark_for_visibility_update(advancement);
+        }
+    }
+}
+
+impl Player {
+    /// Grants the rewards of the advancements completed since the last call, in
+    /// completion order. Callers run it after releasing the advancement lock.
+    pub(crate) fn grant_pending_advancement_rewards(&self) {
+        loop {
+            let pending = mem::take(&mut self.advancements.lock().pending_rewards);
+            if pending.is_empty() {
+                return;
+            }
+            for advancement in pending {
+                grant_reward(self, advancement.rewards());
+            }
         }
     }
 }

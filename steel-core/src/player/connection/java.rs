@@ -18,8 +18,9 @@ use steel_protocol::packets::game::{
     SContainerSlotStateChanged, SEditBook, SInteract, SMovePlayer, SMovePlayerPos,
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
     SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
-    SPunch, SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SRenameItem, SSeenAdvancement,
+    SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction,
+    SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -106,6 +107,8 @@ enum ScheduledPlayPacketKind {
     PlayerAbilities(SPlayerAbilities),
     RenameItem(SRenameItem),
     SelectTrade(SSelectTrade),
+    RecipeBookSeenRecipe(SRecipeBookSeenRecipe),
+    RecipeBookChangeSettings(SRecipeBookChangeSettings),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
     SetBeacon(SSetBeacon),
@@ -182,6 +185,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::Punch(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
             | ScheduledPlayPacketKind::EditBook(_)
+            | ScheduledPlayPacketKind::RecipeBookSeenRecipe(_)
+            | ScheduledPlayPacketKind::RecipeBookChangeSettings(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
                 PlayerCommandAction::StartSprinting
@@ -282,22 +287,13 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::MovePlayer(packet) => player.handle_move_player(packet),
             ScheduledPlayPacketKind::MoveVehicle(packet) => player.handle_move_vehicle(packet),
             ScheduledPlayPacketKind::PaddleBoat(packet) => player.handle_paddle_boat(&packet),
-            ScheduledPlayPacketKind::PlayerLoaded => {
-                if player.mark_client_loaded_from_network() {
-                    player.send_inventory_to_remote();
-                }
-            }
+            ScheduledPlayPacketKind::PlayerLoaded => handle_player_loaded(&player),
             ScheduledPlayPacketKind::ChatCommand(packet) => player.handle_chat_command(packet),
             ScheduledPlayPacketKind::ChatCommandSigned(packet) => {
                 player.handle_signed_chat_command(*packet);
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
-                if server
-                    .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
-                    .is_err()
-                {
-                    player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
-                }
+                handle_command_suggestion(player, server, packet);
             }
             ScheduledPlayPacketKind::ContainerButtonClick(packet) => {
                 player.handle_container_button_click(packet);
@@ -326,6 +322,12 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::RenameItem(packet) => player.handle_rename_item(packet),
             ScheduledPlayPacketKind::SelectTrade(packet) => player.handle_select_trade(packet),
+            ScheduledPlayPacketKind::RecipeBookSeenRecipe(packet) => {
+                player.handle_recipe_book_seen_recipe(&packet);
+            }
+            ScheduledPlayPacketKind::RecipeBookChangeSettings(packet) => {
+                player.handle_recipe_book_change_settings(&packet);
+            }
             ScheduledPlayPacketKind::UseItemOn(packet) => player.handle_use_item_on(packet),
             ScheduledPlayPacketKind::UseItem(packet) => player.handle_use_item(packet),
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
@@ -356,6 +358,28 @@ impl ScheduledPlayPacket {
                 player.handle_seen_advancement(packet);
             }
         }
+    }
+}
+
+/// Marks the client loaded and sends it its inventory the first time.
+fn handle_player_loaded(player: &Player) {
+    if player.mark_client_loaded_from_network() {
+        player.send_inventory_to_remote();
+    }
+}
+
+/// Runs a command suggestion request, answering with no suggestions when the
+/// server cannot take it.
+fn handle_command_suggestion(
+    player: Arc<Player>,
+    server: &Arc<Server>,
+    packet: SCommandSuggestion,
+) {
+    if server
+        .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
+        .is_err()
+    {
+        player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
     }
 }
 
@@ -794,6 +818,16 @@ impl JavaConnection {
             play::S_SELECT_TRADE => scheduled(ScheduledPlayPacketKind::SelectTrade(
                 SSelectTrade::read_packet(data)?,
             )),
+            play::S_RECIPE_BOOK_SEEN_RECIPE => {
+                scheduled(ScheduledPlayPacketKind::RecipeBookSeenRecipe(
+                    SRecipeBookSeenRecipe::read_packet(data)?,
+                ))
+            }
+            play::S_RECIPE_BOOK_CHANGE_SETTINGS => {
+                scheduled(ScheduledPlayPacketKind::RecipeBookChangeSettings(
+                    SRecipeBookChangeSettings::read_packet(data)?,
+                ))
+            }
             play::S_USE_ITEM_ON => scheduled(ScheduledPlayPacketKind::UseItemOn(
                 SUseItemOn::read_packet(data)?,
             )),

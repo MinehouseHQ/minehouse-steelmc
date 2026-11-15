@@ -54,6 +54,8 @@ use steel_registry::{
     mob_effect::MobEffectRef, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
+
+use crate::inventory::recipe_displays::RECIPE_DISPLAYS;
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -443,6 +445,11 @@ impl SteelArgumentType {
         Self::new(AdvancementParser)
     }
 
+    /// Vanilla `ResourceKeyArgument.key(Registries.RECIPE, LEARNABLE_RECIPE)`.
+    pub(crate) fn learnable_recipe() -> Self {
+        Self::new(LearnableRecipeParser)
+    }
+
     pub(crate) fn world_clock() -> Self {
         Self::new(WorldClockParser)
     }
@@ -640,6 +647,7 @@ argument_value_wrapper!(
     AdvancementValue(AdvancementRef),
     "steel:command/value/advancement"
 );
+argument_value_wrapper!(RecipeKeyValue(Identifier), "steel:command/value/recipe_key");
 argument_value_wrapper!(
     DamageTypeValue(DamageTypeRef),
     "steel:command/value/damage_type"
@@ -1367,6 +1375,29 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::ResourceLocation,
         Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    LearnableRecipeParser,
+    "steel:command/parser/learnable_recipe",
+    RecipeKeyValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(RecipeKeyValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            RECIPE_DISPLAYS
+                .learnable()
+                .iter()
+                .map(|recipe| recipe.key()),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::ResourceKey {
+            identifier: "minecraft:recipe",
+        },
+        None,
     )
 );
 unit_argument_parser!(
