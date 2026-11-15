@@ -212,7 +212,7 @@ pub use c_set_subtitle_text::CSetSubtitleText;
 pub use c_set_time::CSetTime;
 pub use c_set_title_text::CSetTitleText;
 pub use c_set_titles_animation::CSetTitlesAnimation;
-pub use c_show_dialog::CShowDialog;
+pub use c_show_dialog::{CShowDialog, DialogHolder};
 pub use c_sound::{CSound, SoundSource};
 pub use c_stop_sound::CStopSound;
 pub use c_swing_animation::CSwingAnimation;

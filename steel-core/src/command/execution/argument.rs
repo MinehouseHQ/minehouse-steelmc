@@ -55,6 +55,7 @@ use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::dialog::DialogRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::vanilla_template_pools::vanilla_template_pools;
@@ -463,6 +464,11 @@ impl SteelArgumentType {
         Self::new(LootTableParser)
     }
 
+    /// Vanilla `ResourceOrIdArgument.dialog`, by id only, like [`Self::loot_table`].
+    pub(crate) fn dialog() -> Self {
+        Self::new(DialogParser)
+    }
+
     /// Vanilla `ResourceOrIdArgument.feature`, by id only, like [`Self::loot_table`].
     pub(crate) fn feature() -> Self {
         Self::new(FeatureParser)
@@ -750,6 +756,7 @@ argument_value_wrapper!(
     LootTableValue(LootTableRef),
     "steel:command/value/loot_table"
 );
+argument_value_wrapper!(DialogValue(DialogRef), "steel:command/value/dialog");
 argument_value_wrapper!(
     FeatureValue(ConfiguredFeatureEntryRef),
     "steel:command/value/feature"
@@ -1677,6 +1684,21 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::LootTable, None)
 );
 unit_argument_parser!(
+    DialogParser,
+    "steel:command/parser/dialog",
+    DialogValue,
+    parse | reader,
+    _source | { parse_dialog(reader).map(DialogValue) },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY.dialogs.iter().map(|(_, dialog)| &dialog.key),
+            builder,
+        );
+    },
+    protocol(ProtocolArgumentType::Dialog, None)
+);
+unit_argument_parser!(
     FeatureParser,
     "steel:command/parser/feature",
     FeatureValue,
@@ -2262,6 +2284,27 @@ fn parse_loot_table(reader: &mut StringReader<'_>) -> Result<LootTableRef, Comma
         reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
             translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
                 .message([key.to_string(), "minecraft:loot_table".to_owned()])
+                .component(),
+        )))
+    })
+}
+
+/// Vanilla `ResourceOrIdArgument.DialogArgument.parse` for a dialog id. An
+/// inline dialog fails to parse, as an inline loot table does.
+fn parse_dialog(reader: &mut StringReader<'_>) -> Result<DialogRef, CommandSyntaxError> {
+    let inline = !reader.peek().is_some_and(is_allowed_in_identifier);
+    let key = parse_identifier(reader);
+    let (false, Ok(key)) = (inline, key) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
+                .message(["inline dialogs are not supported".to_owned()])
+                .component(),
+        ))));
+    };
+    REGISTRY.dialogs.by_key(&key).ok_or_else(|| {
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                .message([key.to_string(), "minecraft:dialog".to_owned()])
                 .component(),
         )))
     })
