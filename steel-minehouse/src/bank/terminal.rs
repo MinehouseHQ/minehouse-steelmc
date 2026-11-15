@@ -63,6 +63,7 @@ use super::{
     ok, online, ores,
     terminal_block::{self, is_terminal},
     terminals::{TILL, Terminal, VENDING},
+    zones::markup,
 };
 
 /// Who may break the stock of someone else's vending terminal.
@@ -316,6 +317,10 @@ pub struct StockGuard;
 
 impl BlockGuard for StockGuard {
     fn keeps_from_breaking(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
+        // The stick that marks zones out breaks nothing.
+        if markup::struck(player) {
+            return true;
+        }
         let Some(bank) = bank() else {
             return false;
         };

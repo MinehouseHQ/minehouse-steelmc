@@ -13,14 +13,15 @@ use steel_core::{
         CommandArgument, CommandContext, CommandError, CommandNode, CommandRegistration,
         CommandRegistrationError, CommandRegistry, CommandSource, argument, literal,
     },
+    entity::Entity as _,
     permission::{PermissionExpr, PermissionKey},
     player::Player,
 };
 use steel_utils::Identifier;
 use text_components::{Modifier as _, TextComponent, format::Color};
 
-use super::{gui, left, standing_in};
-use crate::bank::{Bank, bank, error, ok};
+use super::{gui, left, markup, standing_in};
+use crate::bank::{Bank, bank, error, ok, ores::give_stack};
 
 const ADMIN: &str = "minehouse.zones.admin";
 const AUCTION: &str = "minehouse.zones.auction";
@@ -71,6 +72,44 @@ fn tree() -> CommandNode {
     literal("zones")
         .executes(|context| list(*context))
         .then(literal("bid").executes(|context| bid(*context)))
+        .then(literal("bossbar").executes(|context| bossbar(*context)))
+        .then(
+            literal("show")
+                .executes(|context| show(*context, None))
+                .then(
+                    argument("num", CommandArgument::integer(0, 99))
+                        .executes(|context| show(*context, Some(context.integer("num")?))),
+                ),
+        )
+        .then(
+            literal("wand")
+                .requires(admin)
+                .executes(|context| wand(*context)),
+        )
+        .then(
+            literal("clear")
+                .requires(admin)
+                .executes(|context| clear(*context)),
+        )
+        .then(
+            literal("height").requires(admin).then(
+                argument("min", CommandArgument::integer(-64, 320)).then(
+                    argument("max", CommandArgument::integer(-64, 320))
+                        .executes(|context| height(*context)),
+                ),
+            ),
+        )
+        .then(
+            literal("circle").requires(admin).then(
+                argument("radius", CommandArgument::integer(3, 500))
+                    .executes(|context| circle(*context)),
+            ),
+        )
+        .then(literal("edit").requires(admin).then(
+            argument("num", CommandArgument::integer(0, 99)).executes(|context| edit(*context)),
+        ))
+        .then(literal("save").requires(admin).then(saving(1, false)))
+        .then(literal("savecommon").requires(admin).then(saving(0, true)))
         .then(literal("auction").requires(auctioneer).then(num))
         .then(literal("delete").requires(admin).then(
             argument("num", CommandArgument::integer(0, 99)).executes(|context| delete(*context)),
@@ -127,6 +166,149 @@ fn bid(context: CommandContext<'_>) -> Result<i32, CommandError> {
              Список зон: /zones",
         )),
     }
+}
+
+/// `/zones bossbar`: hides the auction bars for this player, or shows them again.
+fn bossbar(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let shown = running()?.zones.bars.toggle(player(context)?);
+    let text = if shown {
+        "Полоски аукционов снова видны."
+    } else {
+        "Полоски аукционов скрыты. Вернуть: /zones bossbar"
+    };
+    context
+        .source()
+        .send_success(&TextComponent::plain(text).color(Color::Green), false);
+    Ok(1)
+}
+
+fn done(context: CommandContext<'_>, text: String) -> i32 {
+    context
+        .source()
+        .send_success(&TextComponent::plain(text).color(Color::Green), false);
+    1
+}
+
+/// `/zones show [num]`: the borders as particles for half a minute.
+fn show(context: CommandContext<'_>, num: Option<i32>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let bank = running()?;
+    bank.zones.markup.show(player.gameprofile.id(), num);
+    let text = num.map_or_else(
+        || "Границы зон видны 30 секунд.".to_owned(),
+        |num| format!("Граница зоны {num} видна 30 секунд."),
+    );
+    Ok(done(context, text))
+}
+
+fn wand(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    give_stack(player(context)?, markup::wand());
+    let text = "Палка разметки в инвентаре. ПКМ по блоку — вершина, Shift+ПКМ — убрать последнюю.";
+    Ok(done(context, text.to_owned()))
+}
+
+fn clear(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    running()?.zones.markup.clear(player.gameprofile.id());
+    Ok(done(context, "Черновик очищен.".to_owned()))
+}
+
+fn height(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let (min, max) = (context.integer("min")?, context.integer("max")?);
+    if min >= max {
+        return Err(CommandError::from(
+            "Нижняя высота должна быть меньше верхней.",
+        ));
+    }
+    running()?
+        .zones
+        .markup
+        .edit(player.gameprofile.id(), |draft| {
+            draft.y_min = min;
+            draft.y_max = max;
+        });
+    Ok(done(context, format!("Высоты черновика: {min}–{max}.")))
+}
+
+fn circle(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let radius = context.integer("radius")?;
+    let at = player.block_position();
+    let world = player.get_world().key.to_string();
+    running()?
+        .zones
+        .markup
+        .edit(player.gameprofile.id(), |draft| {
+            draft.circle(&world, at.x(), at.z(), radius);
+        });
+    Ok(done(
+        context,
+        format!(
+            "Круг радиусом {radius} вокруг тебя в черновике. Сохранить как общий: /zones \
+             savecommon 0"
+        ),
+    ))
+}
+
+fn edit(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let bank = running()?;
+    let zone = bank
+        .zones
+        .by_num(context.integer("num")?)
+        .ok_or_else(|| CommandError::from("Такой зоны нет."))?;
+    bank.zones
+        .markup
+        .edit(player.gameprofile.id(), |draft| draft.take(&zone));
+    Ok(done(
+        context,
+        format!(
+            "{} в черновике ({} вершин). Поправь палкой и сохрани тем же номером.",
+            zone.name(),
+            zone.points.len()
+        ),
+    ))
+}
+
+/// `<num> [title]` of `save` and `savecommon`.
+fn saving(least: i32, common: bool) -> CommandNode {
+    argument("num", CommandArgument::integer(least, 99))
+        .executes(move |context| save(*context, common, None))
+        .then(
+            argument("title", CommandArgument::greedy_string()).executes(move |context| {
+                let title = context.string("title")?;
+                save(*context, common, Some(title))
+            }),
+        )
+}
+
+fn save(
+    context: CommandContext<'_>,
+    common: bool,
+    title: Option<&str>,
+) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let draft = running()?
+        .zones
+        .markup
+        .draft(player.gameprofile.id())
+        .filter(|draft| draft.points.len() >= 3)
+        .ok_or_else(|| {
+            CommandError::from("Нужно хотя бы 3 вершины: /zones wand и ПКМ по блокам.")
+        })?;
+    let num = context.integer("num")?;
+    let kind = if common {
+        "Общая зона"
+    } else {
+        "Зона"
+    };
+    admin_call(
+        context,
+        "zone_save",
+        &draft.body(num, common, title),
+        format!("{kind} {num} сохранена. Черновик можно очистить: /zones clear"),
+    )
 }
 
 /// What an admin command says once the site has answered.

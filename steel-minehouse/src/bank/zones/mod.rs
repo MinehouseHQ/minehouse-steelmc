@@ -6,8 +6,10 @@
 //! action bar, tells the site who stands in which lot (a bid is taken only from inside the
 //! zone) and announces auctions in chat.
 
+mod bossbars;
 pub mod commands;
 pub mod gui;
+pub mod markup;
 mod zone;
 
 use std::{
@@ -38,6 +40,8 @@ const REFRESH_TICKS: u64 = 600;
 const HUD_TICKS: u64 = 10;
 /// The site trusts a player's place for a minute: the list also goes out this often unchanged.
 const PRESENCE_TICKS: u64 = 400;
+/// How often the boss bars of the auctions are redrawn.
+const BAR_TICKS: u64 = 20;
 /// How often an open window asks the site again, so bids by others show up live.
 const LIVE_TICKS: u64 = 60;
 
@@ -68,6 +72,10 @@ pub struct Zones {
     presence: SyncMutex<Presence>,
     loading: AtomicBool,
     live: SyncMutex<Vec<Weak<dyn Live>>>,
+    /// The boss bars of the auctions.
+    pub(super) bars: bossbars::BossBars,
+    /// The drafts of the admins and the borders players asked to see.
+    pub markup: markup::Markup,
 }
 
 impl Zones {
@@ -83,6 +91,8 @@ impl Zones {
             }),
             loading: AtomicBool::new(false),
             live: SyncMutex::new(Vec::new()),
+            bars: bossbars::BossBars::load(),
+            markup: markup::Markup::default(),
         }
     }
 
@@ -104,6 +114,7 @@ impl Zones {
 
     fn forget(&self, player: Uuid) {
         self.current.lock().remove(&player);
+        self.markup.forget(player);
         let mut presence = self.presence.lock();
         if presence.zones.remove(&player).is_some() {
             presence.dirty = true;
@@ -323,6 +334,12 @@ impl Bank {
     pub(super) fn tick_zones(self: &Arc<Self>, server: &Server, tick: u64) {
         if tick % REFRESH_TICKS == 5 {
             self.refresh_zones(None);
+        }
+        if tick.is_multiple_of(BAR_TICKS) {
+            self.tick_bars(server);
+        }
+        if tick.is_multiple_of(HUD_TICKS) {
+            self.tick_markup(server, tick);
         }
         if tick.is_multiple_of(LIVE_TICKS) {
             let windows: Vec<Arc<dyn Live>> = {
