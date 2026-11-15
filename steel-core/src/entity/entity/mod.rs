@@ -4387,7 +4387,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && position.is_finite()
         {
             self.base()
-                .set_position_local(super::clamp_loaded_entity_position(position));
+                .set_loaded_position(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {

@@ -4874,6 +4874,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 }
 
 mod damage_history;
+mod data_command;
 mod game_time;
 mod help_command;
 mod projectile_owners;
