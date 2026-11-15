@@ -4,7 +4,7 @@
 //! is sent again.
 //!
 //! Recipes of ours are left to unlock the vanilla way: some belong to features that are not
-//! open yet.
+//! open yet. The book of guides is the one of ours everybody gets.
 
 use rustc_hash::FxHashSet;
 use steel_core::{
@@ -19,13 +19,15 @@ use steel_registry::{REGISTRY, recipe::UntypedRecipeRef};
 use steel_utils::Identifier;
 use uuid::Uuid;
 
+use crate::guides::book;
+
 /// Every how many ticks newcomers are looked for.
 const CHECK_EVERY_TICKS: u64 = 10;
 
 /// Whether the recipe `key` is given to everyone: the vanilla ones.
 #[must_use]
 pub fn is_given(key: &Identifier) -> bool {
-    key.namespace == "minecraft"
+    key.namespace == "minecraft" || (&*key.namespace, &*key.path) == book::RECIPE
 }
 
 /// Adds the recipes of `keys` that `book` lacks. Returns how many were added.

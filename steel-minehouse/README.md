@@ -438,8 +438,15 @@ a block display can't show), each under an id to move, change, glow, pulse or re
 module adds its guides to the list in `guides::all` (the bank: `bank-atm`, `bank-terminal`,
 shown while the bank is on).
 
-Not here yet: the book «Гайды MineHouse», the server menu, the guides of the zones, of the
-magnifier, of the metro and of the herbs.
+The book «Гайды MineHouse» (`src/guides/book.rs`) is a vanilla written book marked in its
+custom data: a book and a sheet of paper make one on a workbench (the recipe
+`minehouse-guides:guide_book`, in everybody's recipe book from the start). Its pages are put
+together every time it is opened, so a book made long ago lists the guides of today: a first
+page, the contents five guides a page (a line runs `/guide <id>`), and a last page about
+recipes with a link to the wiki.
+
+Not here yet: the server menu, the guides of the zones, of the magnifier, of the metro and of
+the herbs.
 
 ## Our items
 
