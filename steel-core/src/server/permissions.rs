@@ -89,6 +89,13 @@ impl Server {
             .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
     }
 
+    /// Effective permissions of a player from the latest published subject and group state.
+    /// Works for a player who is offline or still logging in.
+    #[must_use]
+    pub fn player_effective_permissions(&self, uuid: Uuid) -> PermissionSet {
+        self.command_permission_snapshot(uuid)
+    }
+
     /// Captures effective command permissions from the latest published subject and group state.
     #[must_use]
     pub(crate) fn command_permission_snapshot(&self, uuid: Uuid) -> PermissionSet {

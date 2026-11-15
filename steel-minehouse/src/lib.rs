@@ -4,19 +4,29 @@
 //! work in `steel-core`. The modules talk to the site (`/api/mc/*`) with the same signed
 //! protocol as the Fabric mods, so the site, the Discord bot and Gate don't change.
 
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
-use steel_core::{command::CommandRegistry, server::Server};
+use steel_core::{
+    command::CommandRegistry,
+    player::GameProfile,
+    server::{
+        Server,
+        login_gate::{LoginAdmission, LoginDecision, LoginGate, PendingLogin},
+    },
+};
+use text_components::TextComponent;
 
 pub mod auth;
 pub mod config;
 pub mod console;
+pub mod downtime;
 pub mod moderation;
 pub mod roles;
 pub mod site;
 
 use auth::{Auth, AuthSetup};
 use console::Console;
+use downtime::Downtime;
 use moderation::Moderation;
 use roles::Roles;
 
@@ -24,6 +34,7 @@ use roles::Roles;
 pub struct Setup {
     auth: Option<AuthSetup>,
     moderation: Option<Arc<Moderation>>,
+    downtime: Option<Arc<Downtime>>,
 }
 
 /// The running `MineHouse` modules of one server.
@@ -32,6 +43,7 @@ pub struct Minehouse {
     /// Kept for the commands and syncs that will use it.
     _auth: Option<Arc<Auth>>,
     moderation: Option<Arc<Moderation>>,
+    downtime: Option<Arc<Downtime>>,
     roles: Option<Roles>,
 }
 
@@ -50,7 +62,11 @@ impl Minehouse {
                 auth.config.messages.banned.clone(),
             )
         });
-        Setup { auth, moderation }
+        Setup {
+            auth,
+            moderation,
+            downtime: Downtime::register(registry),
+        }
     }
 
     /// Starts every enabled module. Call once the server is ready for players.
@@ -64,10 +80,23 @@ impl Minehouse {
             .auth
             .as_ref()
             .and_then(|auth| Roles::start(server, auth.site.clone()));
+        if let Some(downtime) = &setup.downtime {
+            downtime.start(server);
+        }
+        let auth = setup.auth.map(|auth| Auth::start(server, auth));
+        // One gate serves both: maintenance refuses first, then the login check asks the site.
+        let gate = MinehouseGate {
+            downtime: setup.downtime.clone(),
+            auth: auth.clone(),
+        };
+        if !server.set_login_gate(Arc::new(gate)) {
+            log::error!("Another login gate is already installed: no login check, no maintenance");
+        }
         Self {
             console: Console::start(server),
-            _auth: setup.auth.and_then(|auth| Auth::start(server, auth)),
+            _auth: auth,
             moderation: setup.moderation,
+            downtime: setup.downtime,
             roles,
         }
     }
@@ -77,11 +106,53 @@ impl Minehouse {
         if let Some(moderation) = &self.moderation {
             moderation.stop();
         }
+        if let Some(downtime) = &self.downtime {
+            downtime.stop();
+        }
         if let Some(roles) = &self.roles {
             roles.stop();
         }
         if let Some(console) = &self.console {
             console.stop().await;
+        }
+    }
+}
+
+/// The login gate of the server: maintenance mode first, then the login check.
+struct MinehouseGate {
+    downtime: Option<Arc<Downtime>>,
+    auth: Option<Arc<Auth>>,
+}
+
+impl LoginGate for MinehouseGate {
+    fn private_properties(&self) -> &[&str] {
+        if self.auth.is_some() {
+            Auth::PRIVATE_PROPERTIES
+        } else {
+            &[]
+        }
+    }
+
+    fn refuse_login(
+        &self,
+        server: &Server,
+        profile: &GameProfile,
+        address: IpAddr,
+    ) -> Option<TextComponent> {
+        self.downtime
+            .as_ref()
+            .and_then(|downtime| downtime.refusal(server, profile.id(), profile.name()))
+            .or_else(|| {
+                self.auth
+                    .as_ref()
+                    .and_then(|auth| auth.refuse(server, profile, &address.to_string()))
+            })
+    }
+
+    fn admit(&self, login: PendingLogin) -> LoginAdmission {
+        match &self.auth {
+            Some(auth) => Box::pin(Arc::clone(auth).admit(login)),
+            None => Box::pin(async { LoginDecision::Allow }),
         }
     }
 }

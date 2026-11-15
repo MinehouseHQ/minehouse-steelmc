@@ -264,6 +264,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
         login_gate: OnceLock::new(),
+        status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,
@@ -505,6 +506,8 @@ pub struct Server {
     server_tick_changed: Notify,
     /// Holds verified logins in the configuration phase, see [`login_gate`].
     login_gate: OnceLock<Arc<dyn login_gate::LoginGate>>,
+    /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
+    status_motd: SyncMutex<Option<String>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
@@ -866,6 +869,7 @@ impl Server {
             player_admission_changed: Notify::new(),
             server_tick_changed: Notify::new(),
             login_gate: OnceLock::new(),
+            status_motd: SyncMutex::new(None),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             player_idle_timeout: AtomicI32::new(0),

@@ -82,6 +82,29 @@ stopped. The same happens for the resets asked for on the site, which the sync p
 the console id of the server (`MINEHOUSE_SERVER_ID`, else the id of the login check).
 Scoreboard scores are not reset.
 
+## Maintenance and restart
+
+`src/downtime/`: `/maintenance` and `/restart` of the Fabric mod `minehouse-tweaks`.
+
+| Command | What it does |
+| --- | --- |
+| `/maintenance` | Shows the mode or the countdown to it. |
+| `/maintenance on [время] [причина]` | Closes the server: everyone without `minehouse.maintenance.bypass` is kicked and refused at login, the server list shows a notice. With a time (`15m`, `1h30m`, `10с`) it counts down first. |
+| `/maintenance cancel`, `/maintenance off` | Stops the countdown; opens the server again. |
+| `/restart`, `/restart now` | Kicks everyone and stops the server as `/stop` does; the host starts it again. |
+| `/restart <время> [причина]`, `/restart status`, `/restart cancel` | The same after a countdown with a bossbar, chat warnings, titles and a sound. A bare number is seconds, a day at most. |
+
+Permissions are `minehouse.command.maintenance` and `minehouse.command.restart`; the console
+may run both, so a deploy can send `restart 5m`. One countdown runs at a time, a new one
+replaces the old. The mode is kept in `maintenance.toml` in the data directory and survives
+restarts and image updates. The texts are in `config/minehouse/downtime.toml` (`&` colors,
+`{time}`, `{reason}`), read again before every use.
+
+Maintenance refuses a login before the login check asks the site: both sit behind one login
+gate (`MinehouseGate` in `lib.rs`). `steel-core` got `Server::set_status_motd` for the notice
+in the server list and `Server::player_effective_permissions` for the bypass of a player who
+is still logging in.
+
 ## Roles
 
 `src/roles/`: Discord roles decide the permission groups, as `roleSync` of the Fabric mod did

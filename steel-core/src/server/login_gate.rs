@@ -128,6 +128,21 @@ impl Server {
         self.login_gate.set(gate).is_ok()
     }
 
+    /// Replaces the MOTD of the server list until `None` puts the configured one back: a
+    /// notice while the server is closed, for example.
+    pub fn set_status_motd(&self, motd: Option<String>) {
+        *self.status_motd.lock() = motd;
+    }
+
+    /// The MOTD for the server list.
+    #[must_use]
+    pub fn status_motd(&self) -> String {
+        self.status_motd
+            .lock()
+            .clone()
+            .unwrap_or_else(|| self.config.motd.clone())
+    }
+
     /// The installed login gate.
     #[must_use]
     pub fn login_gate(&self) -> Option<&Arc<dyn LoginGate>> {

@@ -14,7 +14,7 @@ impl JavaTcpClient {
     /// Handles a status request from the client.
     pub async fn handle_status_request(&self) {
         let res_packet = CStatusResponse::new(Status {
-            description: self.server.config.motd.clone(),
+            description: self.server.status_motd(),
             players: Some(Players {
                 max: self.server.config.max_players.cast_signed(),
                 online: self.server.player_count() as i32,
