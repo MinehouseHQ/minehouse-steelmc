@@ -283,6 +283,15 @@
         "powered": "false"
       },
       "model": "minehouse-tweaks:block/metro_junction"
+    },
+    {
+      "block": "minehouse-herbs:magic_leaf_block",
+      "state": {
+        "instrument": "banjo",
+        "note": "19",
+        "powered": "false"
+      },
+      "model": "minehouse-herbs:block/magic_leaf_block"
     }
   ]
 }

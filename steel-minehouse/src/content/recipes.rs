@@ -9,13 +9,13 @@ use steel_registry::{
     recipe::{
         CraftingBookCategory, CraftingInput, CraftingRecipe, Ingredient, Recipe,
         RecipeBookCategoryKind, RecipeBookProperties, RecipeProperties, ShapedRecipe,
-        vanilla_recipe_types,
+        ShapelessRecipe, vanilla_recipe_types,
     },
     vanilla_items,
 };
 use steel_utils::Identifier;
 
-use super::{CLOUD, CustomItem, JUNCTION, MAGNIFIER, STATION};
+use super::{CLOUD, CustomItem, JUNCTION, LEAF, LEAF_BLOCK, MAGNIFIER, STATION};
 
 /// The result of a recipe: one of `item`. Built without the registry, which is not published
 /// yet when our recipes are added to it.
@@ -155,12 +155,55 @@ static STATION_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLoc
 static JUNCTION_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> =
     LazyLock::new(|| metro_recipe(&JUNCTION, &vanilla_items::COMPASS, &vanilla_items::RAIL));
 
+const fn misc() -> RecipeProperties {
+    RecipeProperties {
+        special: false,
+        placement: None,
+        recipe_book: Some(RecipeBookProperties {
+            category: RecipeBookCategoryKind::Crafting(CraftingBookCategory::Misc),
+            group: None,
+            show_notification: true,
+        }),
+    }
+}
+
+/// Nine magic leaves make a block. Paper, which a leaf is to the client, does not.
+static LEAF_BLOCK_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock::new(|| {
+    let pattern: Vec<Ingredient> = (0..9).map(|_| LEAF.ingredient()).collect();
+    Recipe::new(
+        Identifier::new("minehouse-herbs", "magic_leaf_block"),
+        &vanilla_recipe_types::CRAFTING,
+        CraftingRecipe::Shaped(ShapedRecipe::new(
+            misc(),
+            3,
+            3,
+            pattern.into_boxed_slice(),
+            result(&LEAF_BLOCK, 1),
+        )),
+    )
+});
+
+/// And a block comes apart into its nine leaves.
+static LEAF_RECIPE: LazyLock<Recipe<CraftingRecipe, CraftingInput>> = LazyLock::new(|| {
+    Recipe::new(
+        Identifier::new("minehouse-herbs", "magic_leaf_from_block"),
+        &vanilla_recipe_types::CRAFTING,
+        CraftingRecipe::Shapeless(ShapelessRecipe::new(
+            misc(),
+            Box::new([LEAF_BLOCK.ingredient()]),
+            result(&LEAF, 9),
+        )),
+    )
+});
+
 /// The keys of our recipes.
 pub(super) const KEYS: &[(&str, &str)] = &[
     ("minehouse-tweaks", "magnifier"),
     ("minehouse-tweaks", "cloud"),
     ("minehouse-tweaks", "metro_station"),
     ("minehouse-tweaks", "metro_junction"),
+    ("minehouse-herbs", "magic_leaf_block"),
+    ("minehouse-herbs", "magic_leaf_from_block"),
 ];
 
 /// How many of our recipes the published registry holds.
@@ -181,6 +224,8 @@ pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*CLOUD_RECIPE);
     registry.recipes.register(&*STATION_RECIPE);
     registry.recipes.register(&*JUNCTION_RECIPE);
+    registry.recipes.register(&*LEAF_BLOCK_RECIPE);
+    registry.recipes.register(&*LEAF_RECIPE);
 }
 
 #[cfg(test)]
@@ -190,6 +235,8 @@ mod tests {
     };
 
     use super::*;
+    use crate::content::recipe_id;
+    use steel_registry::recipe::set_extension_item_id;
 
     fn grid(items: [Option<&'static LazyLock<Item>>; 9]) -> CraftingInput {
         CraftingInput::new(
@@ -268,5 +315,41 @@ mod tests {
         assert!(!STATION_RECIPE.data().matches(&around(clock, rail)));
         assert!(!STATION_RECIPE.data().matches(&around(compass, powered)));
         assert!(!JUNCTION_RECIPE.data().matches(&around(compass, powered)));
+    }
+
+    #[test]
+    fn nine_leaves_pack_into_a_block_and_back_but_paper_does_not() {
+        init_vanilla_registry();
+        set_extension_item_id(recipe_id);
+        let stacks = |stack: &ItemStack, count: usize| {
+            let mut items = vec![ItemStack::empty(); 9];
+            for slot in items.iter_mut().take(count) {
+                *slot = stack.clone();
+            }
+            CraftingInput::new(3, 3, items)
+        };
+        let leaf = LEAF.stack(1);
+        let paper = ItemStack::new(&vanilla_items::PAPER);
+
+        let pack = LEAF_BLOCK_RECIPE.data();
+        assert!(pack.matches(&stacks(&leaf, 9)));
+        assert!(!pack.matches(&stacks(&leaf, 8)));
+        assert!(!pack.matches(&stacks(&paper, 9)));
+        let CraftingRecipe::Shaped(shaped) = pack else {
+            panic!("packing leaves is a shaped recipe");
+        };
+        assert!(LEAF_BLOCK.is(&shaped.result.create()));
+
+        let unpack = LEAF_RECIPE.data();
+        assert!(unpack.matches(&stacks(&LEAF_BLOCK.stack(1), 1)));
+        // A real warped wart block is not nine leaves.
+        let wart = ItemStack::new(&vanilla_items::WARPED_WART_BLOCK);
+        assert!(!unpack.matches(&stacks(&wart, 1)));
+        let CraftingRecipe::Shapeless(shapeless) = unpack else {
+            panic!("unpacking a block is a shapeless recipe");
+        };
+        let leaves = shapeless.result.create();
+        assert!(LEAF.is(&leaves));
+        assert_eq!(leaves.count(), 9);
     }
 }

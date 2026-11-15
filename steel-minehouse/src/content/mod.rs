@@ -8,6 +8,7 @@
 mod blocks;
 mod cloud;
 mod commands;
+mod herbs;
 mod metro;
 mod recipes;
 
@@ -26,6 +27,7 @@ use steel_registry::{
     extend_registry,
     item_stack::ItemStack,
     items::Item,
+    recipe::{Ingredient, set_extension_item_id},
     vanilla_items,
 };
 use steel_utils::Identifier;
@@ -91,11 +93,33 @@ pub static JUNCTION: CustomItem = CustomItem {
     max_stack: 64,
 };
 
+/// «Магический лист»: what the magic herb gives.
+pub static LEAF: CustomItem = CustomItem {
+    id: "minehouse-herbs:magic_leaf",
+    base: &vanilla_items::PAPER,
+    name: "Магический лист",
+    lore: &[
+        "10 листьев в котёл с 3 вёдрами молока —",
+        "магический отвар",
+    ],
+    max_stack: 64,
+};
+
+/// «Блок магических листьев»: nine leaves in one block.
+pub static LEAF_BLOCK: CustomItem = CustomItem {
+    id: "minehouse-herbs:magic_leaf_block",
+    base: &vanilla_items::WARPED_WART_BLOCK,
+    name: "Блок магических листьев",
+    lore: &["9 магических листьев,", "на верстаке разбирается обратно"],
+    max_stack: 64,
+};
+
 /// Every item of ours.
-pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD, &STATION, &JUNCTION];
+pub static ITEMS: &[&CustomItem] = &[&MAGNIFIER, &CLOUD, &STATION, &JUNCTION, &LEAF, &LEAF_BLOCK];
 
 static STATION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::STATION_BLOCK);
 static JUNCTION_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&metro::JUNCTION_BLOCK);
+static LEAF_BLOCK_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::LEAF_BLOCK);
 
 /// What using `stack` does when it is an item of ours that does not behave as its vanilla
 /// item: clouds are white wool to the client, and must not be placed as wool.
@@ -107,6 +131,8 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&STATION_ITEM)
     } else if id == JUNCTION.id {
         Some(&JUNCTION_ITEM)
+    } else if id == LEAF_BLOCK.id {
+        Some(&LEAF_BLOCK_ITEM)
     } else {
         None
     }
@@ -141,6 +167,15 @@ impl CustomItem {
         stack
     }
 
+    /// This item as an ingredient of a recipe: the base item does not do.
+    #[must_use]
+    pub fn ingredient(&self) -> Ingredient {
+        Ingredient::Extension {
+            item: self.base,
+            id: self.id,
+        }
+    }
+
     /// Whether `stack` is this item.
     #[must_use]
     pub fn is(&self, stack: &ItemStack) -> bool {
@@ -165,6 +200,13 @@ pub fn id_of(stack: &ItemStack) -> Option<String> {
         .map(|id| id.to_str().into_owned())
 }
 
+/// The id of the item of ours `stack` is, for recipes: an item of ours is not the vanilla
+/// item it is made of, so a magnifier is not paper for a book.
+fn recipe_id(stack: &ItemStack) -> Option<&'static str> {
+    let id = id_of(stack)?;
+    ITEMS.iter().find(|item| item.id == id).map(|item| item.id)
+}
+
 /// The item of ours with this id, full or short.
 #[must_use]
 pub fn by_id(id: &str) -> Option<&'static CustomItem> {
@@ -181,6 +223,9 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
         log::warn!("MineHouse blocks: the registry is already built, our blocks are off");
     } else if !set_item_behavior_override(use_behavior) {
         log::warn!("MineHouse blocks: another extension decides what our items do when used");
+    }
+    if !set_extension_item_id(recipe_id) {
+        log::warn!("MineHouse items: another extension tells items apart for recipes");
     }
     if !extend_registry(recipes::register) {
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
@@ -223,6 +268,37 @@ mod tests {
             id_of(&ItemStack::with_count(&vanilla_items::PAPER, 1)),
             None
         );
+    }
+
+    #[test]
+    fn an_item_of_ours_is_not_its_vanilla_item_in_a_recipe() {
+        init_vanilla_registry();
+        set_extension_item_id(recipe_id);
+        let paper = ItemStack::with_count(&vanilla_items::PAPER, 1);
+        let magnifier = MAGNIFIER.stack(1);
+        let cloud = CLOUD.stack(1);
+
+        // Vanilla ingredients take the vanilla item only: no book out of magnifiers, no bed
+        // out of clouds.
+        let plain = Ingredient::Item(&vanilla_items::PAPER);
+        assert!(plain.test(&paper));
+        assert!(!plain.test(&magnifier));
+        let wool = Ingredient::Tag(Identifier::vanilla_static("wool"));
+        assert!(wool.test(&ItemStack::with_count(&vanilla_items::WHITE_WOOL, 1)));
+        assert!(!wool.test(&cloud));
+        let choice: &'static [&'static Item] = Box::leak(Box::new([&*vanilla_items::WHITE_WOOL]));
+        assert!(!Ingredient::Choice(choice).test(&cloud));
+
+        // Ours take our item only.
+        let ours = MAGNIFIER.ingredient();
+        assert!(ours.test(&magnifier));
+        assert!(!ours.test(&paper));
+        assert!(!ours.test(&cloud));
+        assert!(!ours.test(&ItemStack::empty()));
+        assert!(ours.eq_ingredient(&MAGNIFIER.ingredient()));
+        assert!(!ours.eq_ingredient(&CLOUD.ingredient()));
+        // The recipe book of the client shows the vanilla item.
+        assert_eq!(ours.get_items().len(), 1);
     }
 
     #[test]

@@ -332,5 +332,14 @@ the vanilla item (clouds would be placed as white wool). `content::use_behavior`
 items that behave differently.
 
 The blocks so far, each with its recipe: the cloud («Облачко»), the metro station («Станция
-метро») and the metro junction («Стрелка метро»). The two metro blocks are only blocks for
-now: naming a station, its line and the trains are not ported yet.
+метро»), the metro junction («Стрелка метро») and the block of magic leaves («Блок магических
+листьев», nine magic leaves and back). The two metro blocks are only blocks for now: naming
+a station, its line and the trains are not ported yet. Nor is the magic herb the leaves
+come from.
+
+To a recipe an item of ours is not the vanilla item it is made of: `content::recipe_id`
+tells them apart (`steel_registry::recipe::set_extension_item_id`), so vanilla ingredients
+turn our items down (no book out of magic leaves, no bed out of clouds), and a recipe of
+ours asks for one with `CustomItem::ingredient`. The client's recipe book still shows the
+vanilla item. This covers recipes only: a furnace, a composter or a villager still sees
+the vanilla item.
