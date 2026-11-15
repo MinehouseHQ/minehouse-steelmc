@@ -1,4 +1,5 @@
-//! `/co`: `inspect`, `lookup`, `near`, `page`, `status`, `purge`, `import`. For the console and
+//! `/co`: `inspect`, `lookup`, `near`, `page`, `rollback`, `restore`, `status`, `purge`,
+//! `import`. For the console and
 //! players with `minehouse.command.co`. Answers come from the log's own threads and finish on
 //! the server tick.
 
@@ -14,7 +15,13 @@ use text_components::TextComponent;
 use tokio::sync::oneshot::{self, error::TryRecvError};
 use uuid::Uuid;
 
-use super::{BlockLog, Lookup, format::ago, import as history, now_ms, params};
+use super::{
+    BlockLog, Lookup,
+    format::ago,
+    import as history, now_ms, params,
+    rollback::{MAX_ROWS, Run},
+    store::{Query, Row},
+};
 use crate::{
     config,
     moderation::format::{parse_duration, render},
@@ -47,6 +54,112 @@ impl SuspendedCommand for Pending {
     }
 
     fn cancel(&mut self) {}
+}
+
+/// A rollback or a restore: first waiting for its rows, then applying them tick by tick.
+struct Rewind {
+    source: DetachedCommandSource,
+    log: Arc<BlockLog>,
+    undo: bool,
+    rows: Option<oneshot::Receiver<Result<Vec<Row>, String>>>,
+    run: Option<Run>,
+    capped: bool,
+}
+
+impl SuspendedCommand for Rewind {
+    fn poll(&mut self) -> SuspendedCommandPoll {
+        if let Some(rows) = &mut self.rows {
+            match rows.try_recv() {
+                Ok(Ok(rows)) => {
+                    self.capped = rows.len() >= MAX_ROWS as usize;
+                    self.run = Some(Run::new(rows, self.undo));
+                    self.rows = None;
+                }
+                Ok(Err(error)) => {
+                    return SuspendedCommandPoll::Ready(Err(CommandError::from(format!(
+                        "Журнал не ответил: {error}"
+                    ))));
+                }
+                Err(TryRecvError::Empty) => return SuspendedCommandPoll::Pending,
+                Err(TryRecvError::Closed) => {
+                    return SuspendedCommandPoll::Ready(Err(CommandError::from(
+                        "Журнал не ответил, попробуй ещё раз.",
+                    )));
+                }
+            }
+        }
+        let source = self.source.source();
+        let Some(run) = &mut self.run else {
+            return SuspendedCommandPoll::Ready(Ok(0));
+        };
+        if !run.step(source.server()) {
+            return SuspendedCommandPoll::Pending;
+        }
+        self.finish();
+        SuspendedCommandPoll::Ready(Ok(1))
+    }
+
+    /// Whatever was already applied is marked, so the log never disagrees with the world.
+    fn cancel(&mut self) {
+        if let Some(run) = self.run.take() {
+            let (_, blocks, containers) = run.finish();
+            self.log.store.mark(blocks, containers, self.undo);
+        }
+    }
+}
+
+impl Rewind {
+    fn finish(&mut self) {
+        let Some(run) = self.run.take() else {
+            return;
+        };
+        let (outcome, blocks, containers) = run.finish();
+        self.log.store.mark(blocks, containers, self.undo);
+        let source = self.source.source();
+        let title = if self.undo {
+            "Откат"
+        } else {
+            "Восстановление"
+        };
+        source.send_success(
+            &render(
+                "&3{title} &8· &7блоков: &f{blocks}&7, записей о предметах: &f{items}",
+                &[
+                    ("title", title),
+                    ("blocks", &outcome.blocks.to_string()),
+                    ("items", &outcome.items.to_string()),
+                ],
+            ),
+            true,
+        );
+        if outcome.unloaded > 0 {
+            source.send_success(
+                &render(
+                    "&7Пропущено в незагруженных чанках: &f{rows}&7. Подойди туда и повтори команду.",
+                    &[("rows", &outcome.unloaded.to_string())],
+                ),
+                false,
+            );
+        }
+        if outcome.failed > 0 {
+            source.send_success(
+                &render(
+                    "&7Не получилось: &f{rows} &7(нет сундука, нет места или предметов, неизвестный блок).",
+                    &[("rows", &outcome.failed.to_string())],
+                ),
+                false,
+            );
+        }
+        if self.capped {
+            source.send_success(
+                &render(
+                    "&7Это не всё: за один раз берётся &f{rows} &7записей. Повтори команду.",
+                    &[("rows", &MAX_ROWS.to_string())],
+                ),
+                false,
+            );
+        }
+    }
 }
 
 pub(super) fn register(
@@ -84,6 +197,17 @@ fn tree(log: &Arc<BlockLog>) -> CommandNode {
                 .executes_suspended(move |context| self::page(&log, *context)),
         )
     };
+    let rewind_node = |name: &'static str, undo: bool| {
+        let log = Arc::clone(log);
+        literal(name).then(
+            argument("params", CommandArgument::greedy_string()).executes_suspended(
+                move |context| {
+                    let words = context.string("params")?;
+                    self::rewind(&log, *context, words, undo)
+                },
+            ),
+        )
+    };
     let near = Arc::clone(log);
     let status = Arc::clone(log);
     let purge = Arc::clone(log);
@@ -95,6 +219,10 @@ fn tree(log: &Arc<BlockLog>) -> CommandNode {
         .then(lookup_node("l"))
         .then(page_node("page"))
         .then(page_node("p"))
+        .then(rewind_node("rollback", true))
+        .then(rewind_node("rb", true))
+        .then(rewind_node("restore", false))
+        .then(rewind_node("rs", false))
         .then(literal("near").executes_suspended(move |context| {
             let words = format!("r:{}", near.config.near_radius);
             lookup(&near, *context, &words)
@@ -144,12 +272,8 @@ fn inspect(log: &Arc<BlockLog>, context: CommandContext<'_>) -> Result<i32, Comm
     Ok(1)
 }
 
-fn lookup(
-    log: &Arc<BlockLog>,
-    context: CommandContext<'_>,
-    words: &str,
-) -> Result<Pending, CommandError> {
-    let source = context.source();
+/// The query of `words`, asked from where `source` stands.
+fn query(log: &BlockLog, source: CommandSource<'_>, words: &str) -> Result<Query, CommandError> {
     let origin = source.player().map(|_| {
         let position = source.position();
         params::Origin {
@@ -165,8 +289,17 @@ fn lookup(
             ),
         }
     });
-    let query = params::parse(words, origin.as_ref(), log.config.max_radius, now_ms())
-        .map_err(CommandError::from)?;
+    params::parse(words, origin.as_ref(), log.config.max_radius, now_ms())
+        .map_err(CommandError::from)
+}
+
+fn lookup(
+    log: &Arc<BlockLog>,
+    context: CommandContext<'_>,
+    words: &str,
+) -> Result<Pending, CommandError> {
+    let source = context.source();
+    let query = query(log, source, words)?;
     let (sender, pending) = pending(source);
     log.ask(
         asker(source),
@@ -181,6 +314,44 @@ fn lookup(
         },
     );
     Ok(pending)
+}
+
+/// Starts a rollback (`undo`) or a restore. A time is a must, and so is a player or a
+/// radius: nobody means to rewind the whole server.
+fn rewind(
+    log: &Arc<BlockLog>,
+    context: CommandContext<'_>,
+    words: &str,
+    undo: bool,
+) -> Result<Rewind, CommandError> {
+    let source = context.source();
+    let mut query = query(log, source, words)?;
+    if query.since.is_none() {
+        return Err(CommandError::from(
+            "Укажи срок: t:2h откатит всё за последние два часа.",
+        ));
+    }
+    if query.actors.is_empty() && query.around.is_none() {
+        return Err(CommandError::from(
+            "Укажи игрока (u:Ник) или радиус (r:20), иначе затронет весь сервер.",
+        ));
+    }
+    // A rollback takes what is still in force, a restore what was rolled back.
+    query.rolled_back = Some(!undo);
+    query.limit = MAX_ROWS;
+    let (sender, rows) = oneshot::channel();
+    // Newest first to undo, oldest first to redo: the same block may have changed twice.
+    log.store.changes(query, !undo, move |answer| {
+        let _ = sender.send(answer);
+    });
+    Ok(Rewind {
+        source: source.detach(),
+        log: Arc::clone(log),
+        undo,
+        rows: Some(rows),
+        run: None,
+        capped: false,
+    })
 }
 
 fn page(log: &Arc<BlockLog>, context: CommandContext<'_>) -> Result<Pending, CommandError> {
