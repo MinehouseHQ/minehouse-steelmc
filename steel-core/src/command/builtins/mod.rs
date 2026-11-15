@@ -137,6 +137,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(swing::registration())?;
     builder.register(tag::registration())?;
     builder.register(team::registration())?;
+    builder.register(chat_commands::teammsg_registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
@@ -244,6 +245,8 @@ mod tests {
                 "swing",
                 "tag",
                 "team",
+                "teammsg",
+                "tm",
                 "teleport",
                 "tp",
                 "tellraw",

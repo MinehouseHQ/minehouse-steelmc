@@ -71,7 +71,7 @@ use steel_protocol::packets::game::{
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
     LookAtAnchor, RelativeMovement, SoundSource,
 };
-use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
+use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience, TeamVisibility};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
@@ -946,6 +946,41 @@ impl Player {
         LivingEntity::hurt_server(self, world, source, amount)
     }
 
+    /// Vanilla `ServerPlayer.die`'s death message broadcast, which the team's
+    /// death message visibility narrows to the team
+    /// (`broadcastSystemToTeam`) or to everyone else
+    /// (`broadcastSystemToAllExceptTeam`). Like the unteamed broadcast, it
+    /// reaches the players of this world.
+    pub(crate) fn broadcast_death_message(&self, world: &World, death_message: TextComponent) {
+        let team = self.team();
+        let visibility = team.map_or(TeamVisibility::Always, |team| {
+            team.death_message_visibility()
+        });
+        let packet = CSystemChat {
+            content: death_message,
+            overlay: false,
+        };
+        let is_teammate = |player: &Self| {
+            team.is_some_and(|team| player.team().is_some_and(|other| team.is_same_team(&other)))
+        };
+        match visibility {
+            TeamVisibility::Always => world.broadcast_system_chat(packet),
+            TeamVisibility::HideForOtherTeams => world.players.iter_players(|_, player| {
+                if player.id() != self.id() && is_teammate(player) {
+                    player.send_packet(packet.clone());
+                }
+                true
+            }),
+            TeamVisibility::HideForOwnTeam => world.players.iter_players(|_, player| {
+                if !is_teammate(player) {
+                    player.send_packet(packet.clone());
+                }
+                true
+            }),
+            TeamVisibility::Never => {}
+        }
+    }
+
     /// Vanilla `ServerPlayer.canHarmPlayer`: the `pvp` game rule, then
     /// `Player.canHarmPlayer`'s team friendly fire check.
     #[must_use]
@@ -1079,12 +1114,8 @@ impl Player {
             },
         });
 
-        // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
         if show_death_messages {
-            world.broadcast_system_chat(CSystemChat {
-                content: death_message,
-                overlay: false,
-            });
+            self.broadcast_death_message(&world, death_message);
         }
 
         self.remove_entities_on_shoulder();
@@ -1561,7 +1592,7 @@ impl Entity for Player {
     }
 
     fn display_name(&self) -> TextComponent {
-        self.name()
+        self.format_name_for_team(self.name())
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
                 self.gameprofile.name()

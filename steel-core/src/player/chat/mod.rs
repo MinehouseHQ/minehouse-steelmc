@@ -26,7 +26,6 @@ use steel_utils::translations;
 use text_components::Modifier;
 use text_components::TextComponent;
 use text_components::format::Color;
-use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
 use crate::player::Player;
@@ -311,17 +310,8 @@ impl Player {
             FilterType::PassThrough,
             ChatTypeBound {
                 registry_id,
-                sender_name: TextComponent::plain(self.gameprofile.name().to_owned())
-                    .insertion(self.gameprofile.name().to_owned())
-                    .click_event(ClickEvent::suggest_command(format!(
-                        "/tell {} ",
-                        self.gameprofile.name()
-                    )))
-                    .hover_event(HoverEvent::show_entity(
-                        "minecraft:player",
-                        self.uuid(),
-                        Some(self.gameprofile.name().to_owned()),
-                    )),
+                // Vanilla `ChatType.bind(.., player.getDisplayName())`.
+                sender_name: Entity::display_name(self),
                 target_name: None,
             },
         );
