@@ -288,6 +288,9 @@ static SEEDS_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::CROP_BLOCK)
 /// item: clouds are white wool to the client, and must not be placed as wool.
 fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
     let Some(id) = id_of(stack) else {
+        if guides::book::is_book(stack) {
+            return Some(&guides::book::GuideBook);
+        }
         return stack
             .is(&vanilla_items::MILK_BUCKET)
             .then_some(&cauldron::MilkBucket);

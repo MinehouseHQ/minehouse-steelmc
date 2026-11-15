@@ -16,6 +16,7 @@ use steel_registry::{
 use steel_utils::Identifier;
 
 use super::{CLOUD, CustomItem, JUNCTION, LEAF, LEAF_BLOCK, MAGNIFIER, PAPIROSA, STATION};
+use crate::guides::book;
 
 /// The result of a recipe: one of `item`. Built without the registry, which is not published
 /// yet when our recipes are added to it.
@@ -222,6 +223,7 @@ pub(super) const KEYS: &[(&str, &str)] = &[
     ("minehouse-herbs", "magic_leaf_block"),
     ("minehouse-herbs", "magic_leaf_from_block"),
     ("minehouse-herbs", "magic_papirosa"),
+    book::RECIPE,
 ];
 
 /// How many of our recipes the published registry holds.
@@ -246,6 +248,7 @@ pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*LEAF_RECIPE);
     registry.recipes.register(&*PAPIROSA_RECIPE);
     super::waxed_items::register(registry);
+    book::register_recipe(registry);
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@
 //! A module that has something to explain builds its guides (see `bank/guides.rs`) and adds
 //! them to [`all`].
 
+pub mod book;
 mod session;
 pub mod stage;
 
