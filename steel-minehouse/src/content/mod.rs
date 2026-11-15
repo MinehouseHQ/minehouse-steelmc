@@ -5,6 +5,7 @@
 //! a lore, an item model of the server resource pack, and its id in `custom_data`. The id and
 //! the model are the ones the Fabric mods used, so the same resource pack draws them.
 
+mod any_shape_portals;
 mod blocks;
 mod cauldron;
 mod cloud;
@@ -46,6 +47,7 @@ use steel_core::{
     inventory::craft_observer::set_craft_observer,
     player::input_observer::set_player_input_observer,
     server::Server,
+    set_portal_shape_observer,
 };
 use steel_registry::{
     data_components::{
@@ -400,6 +402,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_portal_shape_observer(&any_shape_portals::ANY_SHAPE_PORTALS) {
+        log::warn!("MineHouse portals: portal shapes are already observed, only rectangles light");
+    }
     if !set_experience_orb_observer(&xp_orbs::XP_ORBS) {
         log::warn!("MineHouse orbs: experience orbs are already observed, they do not merge");
     }
