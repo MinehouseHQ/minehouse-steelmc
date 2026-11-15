@@ -29,6 +29,7 @@ mod papirosa;
 mod rail_graph;
 mod recipes;
 mod ride;
+mod see;
 mod silent_tags;
 mod speed;
 mod station_menu;
@@ -388,6 +389,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     ride::register(registry)?;
     nametags::register(registry)?;
     admin_mode::register(registry)?;
+    see::register(registry)?;
     commands::register(registry)
 }
 
@@ -399,6 +401,7 @@ pub fn start_jobs(server: &Server) {
     end_lock::start(server);
     all_recipes::start(server);
     admin_mode::start(server);
+    see::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
