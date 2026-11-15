@@ -275,5 +275,10 @@ Items so far:
   took out what, using another block shows the spot in front of the clicked face. The same
   click within a minute turns the page. The click itself does nothing to the world.
 
-Not there yet: recipes for our items, turning the registry items of a Fabric world
+Recipes are in `src/content/recipes.rs`, under the keys of the Fabric mods
+(`minehouse-tweaks:magnifier`: copper ingots around a glass pane, on a stick). They are added
+through `steel_registry::extend_registry` before the registry is frozen; the log says at
+start how many of them the registry holds.
+
+Not there yet: turning the registry items of a Fabric world
 (`minehouse-tweaks:magnifier` as an item id) into these on load, our blocks.
