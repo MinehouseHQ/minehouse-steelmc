@@ -4,7 +4,7 @@
 //! default `OldMinecartBehavior`; `NewMinecartBehavior` belongs to the
 //! `minecart_improvements` experiment and is not ported.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use glam::{DVec3, IVec3};
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -486,4 +486,35 @@ pub(super) fn tick_minecart<M: AbstractMinecart>(minecart: &Arc<M>) {
         minecart.set_fall_distance(minecart.fall_distance() * 0.5);
     }
     minecart.set_first_tick(false);
+    notify_observer(&**minecart);
+}
+
+/// Hears about every minecart once it has moved in its tick. Installed once with
+/// [`set_minecart_observer`], by an extension that follows carts along the track.
+pub trait MinecartObserver: Send + Sync {
+    /// `cart` ended its tick in `world`. `rail` is the rail it is on, `None` off the track.
+    fn ticked(&self, cart: &dyn Entity, world: &Arc<World>, rail: Option<BlockPos>);
+}
+
+static MINECART_OBSERVER: OnceLock<&'static dyn MinecartObserver> = OnceLock::new();
+
+/// Installs the minecart observer. Returns `false` if one is already installed.
+pub fn set_minecart_observer(observer: &'static dyn MinecartObserver) -> bool {
+    MINECART_OBSERVER.set(observer).is_ok()
+}
+
+fn notify_observer<M: AbstractMinecart>(minecart: &M) {
+    let Some(observer) = MINECART_OBSERVER.get() else {
+        return;
+    };
+    if minecart.is_removed() {
+        return;
+    }
+    let Some(world) = minecart.level() else {
+        return;
+    };
+    let rail = minecart
+        .minecart_on_rails()
+        .then(|| minecart.current_block_pos_or_rail_below());
+    observer.ticked(minecart, &world, rail);
 }
