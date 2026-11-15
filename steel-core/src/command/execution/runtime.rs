@@ -31,7 +31,7 @@ use crate::command::brigadier::{
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
 use crate::command::execution::argument::{
-    AdvancementValue, AttributeValue, DamageTypeValue, MobEffectValue, RecipeKeyValue,
+    AdvancementValue, AttributeValue, BiomeValue, DamageTypeValue, MobEffectValue, RecipeKeyValue,
 };
 use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
@@ -49,6 +49,7 @@ use crate::{
 };
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::attribute::AttributeRef;
+use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::mob_effect::MobEffectRef;
@@ -399,6 +400,11 @@ where
     pub(crate) fn attribute(&self, name: &str) -> Result<AttributeRef, CommandSyntaxError> {
         self.typed_argument::<AttributeValue>(name)
             .map(|value| value.0)
+    }
+
+    /// Vanilla `ResourceArgument.getResource(context, name, Registries.BIOME)`.
+    pub(crate) fn biome(&self, name: &str) -> Result<BiomeRef, CommandSyntaxError> {
+        self.typed_argument::<BiomeValue>(name).map(|value| value.0)
     }
 
     /// Returns a parsed vanilla message argument.

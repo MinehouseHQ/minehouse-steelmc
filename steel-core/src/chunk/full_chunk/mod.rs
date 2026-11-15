@@ -1902,6 +1902,7 @@ impl FullChunkRef<'_> {
     }
 }
 
+mod biomes;
 #[cfg(test)]
 mod game_event_tests;
 
