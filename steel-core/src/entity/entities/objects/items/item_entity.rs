@@ -4,7 +4,7 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -120,6 +120,20 @@ pub struct ItemEntity {
 // SAFETY: This key is owned by Steel and uniquely identifies `ItemEntity`.
 unsafe impl DowncastType for ItemEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item");
+}
+
+/// Lets a content crate act on items lying in the world. With no observer items are vanilla.
+pub trait ItemEntityObserver: Send + Sync {
+    /// `item` ticked in `world`, after vanilla's own tick. The observer may change its
+    /// stack or remove it.
+    fn tick(&self, _item: &ItemEntity, _world: &Arc<World>) {}
+}
+
+static ITEM_ENTITY_OBSERVER: OnceLock<&'static dyn ItemEntityObserver> = OnceLock::new();
+
+/// Installs the item entity observer. Returns `false` if one is already installed.
+pub fn set_item_entity_observer(observer: &'static dyn ItemEntityObserver) -> bool {
+    ITEM_ENTITY_OBSERVER.set(observer).is_ok()
 }
 
 impl ItemEntity {
@@ -697,6 +711,13 @@ impl Entity for ItemEntity {
 
         if should_despawn {
             self.set_removed(RemovalReason::Discarded);
+            return;
+        }
+
+        if let Some(observer) = ITEM_ENTITY_OBSERVER.get()
+            && let Some(world) = self.level()
+        {
+            observer.tick(&self, &world);
         }
     }
 

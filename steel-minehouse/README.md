@@ -498,6 +498,12 @@ or damaged anvil with a block of iron in hand undoes one step of damage and take
 keeping the facing. The core hook is `PlayerInputObserver::use_on_block`, asked before the
 block and the item.
 
+Washing in a cauldron (`content/cauldron_conversion.rs`, the Fabric `CauldronConversion`): a
+stack thrown into a cauldron of water changes all at once. Dirt, coarse dirt and rooted dirt
+become mud and take no water; concrete powder becomes concrete of its color and takes one
+level of water for a stack. The core hook is `ItemEntityObserver`, asked at the end of an
+item's tick.
+
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
 stages, half as fast as a vanilla crop, in bloom drops 1–2 seeds and 1–2 leaves). The crop

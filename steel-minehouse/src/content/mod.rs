@@ -10,6 +10,7 @@ mod anvil_repair;
 mod any_shape_portals;
 mod blocks;
 mod cauldron;
+mod cauldron_conversion;
 mod cloud;
 mod commands;
 mod couplings;
@@ -45,7 +46,8 @@ use steel_core::{
     },
     command::{CommandRegistrationError, CommandRegistry},
     entity::entities::objects::{
-        display_ui::set_item_frame_observer, items::set_experience_orb_observer,
+        display_ui::set_item_frame_observer,
+        items::{set_experience_orb_observer, set_item_entity_observer},
         vehicles::set_minecart_observer,
     },
     inventory::craft_observer::set_craft_observer,
@@ -422,6 +424,9 @@ pub fn start() {
     }
     if !set_portal_shape_observer(&any_shape_portals::ANY_SHAPE_PORTALS) {
         log::warn!("MineHouse portals: portal shapes are already observed, only rectangles light");
+    }
+    if !set_item_entity_observer(&cauldron_conversion::CAULDRON_CONVERSION) {
+        log::warn!("MineHouse cauldron: items are already observed, nothing is washed");
     }
     if !set_experience_orb_observer(&xp_orbs::XP_ORBS) {
         log::warn!("MineHouse orbs: experience orbs are already observed, they do not merge");
