@@ -309,10 +309,9 @@ impl WriteTo for RecipeDisplayEntry {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         write_len(self.id, writer)?;
         self.display.write(writer)?;
-        self.group.is_some().write(writer)?;
-        if let Some(group) = self.group {
-            write_len(group, writer)?;
-        }
+        // Vanilla `ByteBufCodecs.OPTIONAL_VAR_INT`: zero for none, else the
+        // group plus one.
+        write_len(self.group.map_or(0, |group| group + 1), writer)?;
         write_id(self.category.id(), writer)?;
         self.crafting_requirements.is_some().write(writer)?;
         if let Some(requirements) = &self.crafting_requirements {
@@ -511,6 +510,53 @@ impl SmithingRecipe {
                     crafting_station: table,
                 }]
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod entry_tests {
+    use steel_utils::serial::WriteTo as _;
+
+    use super::{RecipeDisplay, RecipeDisplayEntry, SlotDisplay};
+    use crate::RegistryEntry as _;
+    use crate::init_vanilla_registry;
+    use crate::recipe::properties::vanilla_recipe_book_categories;
+
+    fn encode(group: Option<usize>) -> (Vec<u8>, Vec<u8>) {
+        init_vanilla_registry();
+        let display = RecipeDisplay::Shapeless {
+            ingredients: Vec::new(),
+            result: SlotDisplay::Empty,
+            crafting_station: SlotDisplay::Empty,
+        };
+        let mut display_bytes = Vec::new();
+        display.write(&mut display_bytes).expect("display encodes");
+        let entry = RecipeDisplayEntry {
+            id: 7,
+            display,
+            group,
+            category: &vanilla_recipe_book_categories::CRAFTING_MISC,
+            crafting_requirements: None,
+        };
+        let mut entry_bytes = Vec::new();
+        entry.write(&mut entry_bytes).expect("entry encodes");
+        (display_bytes, entry_bytes)
+    }
+
+    /// Vanilla writes the group as `OPTIONAL_VAR_INT`: zero for none, else the
+    /// group plus one, with no presence flag.
+    #[test]
+    fn groups_are_optional_var_ints() {
+        init_vanilla_registry();
+        let category = u8::try_from(vanilla_recipe_book_categories::CRAFTING_MISC.id())
+            .expect("category ids fit a byte");
+        for (group, encoded) in [(None, 0), (Some(4), 5)] {
+            let (display, entry) = encode(group);
+            let mut expected = vec![7];
+            expected.extend(display);
+            expected.extend([encoded, category, 0]);
+            assert_eq!(entry, expected);
         }
     }
 }
