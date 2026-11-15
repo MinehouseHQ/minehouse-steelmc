@@ -7,7 +7,10 @@ use steel_utils::locks::SyncMutex;
 use tokio::runtime::Builder;
 
 use super::super::Server;
-use super::{chat_packets, fresh_test_world, test_player_with_packets, test_server};
+use super::{
+    chat_packets, fresh_test_world, insert_ready_full_chunk, test_player_with_packets, test_server,
+};
+use crate::behavior::init_behaviors;
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource as _,
     ExecutionStop,
@@ -24,8 +27,11 @@ use crate::scoreboard::{
 use crate::world::World;
 use steel_protocol::packets::game::TeamVisibility;
 use steel_registry::packets::play::C_SYSTEM_CHAT;
+use steel_registry::vanilla_blocks;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::text::DisplayResolutor;
+use steel_utils::types::UpdateFlags;
+use steel_utils::{BlockPos, ChunkPos};
 use text_components::TextComponent;
 
 /// Runs `command` from the console and returns its result, or `None` when
@@ -56,7 +62,13 @@ fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str) -> Option<
     };
     let mut execution = CommandExecutionContext::for_source(&source);
     execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-    assert!(matches!(execution.run(), ExecutionStop::Completed));
+    // Suspended commands finish on a later poll; these tests never wait on
+    // chunk loading, so one poll is enough.
+    let mut stop = execution.run();
+    if matches!(stop, ExecutionStop::Suspended) {
+        stop = execution.poll_suspension();
+    }
+    assert!(matches!(stop, ExecutionStop::Completed));
     let result = *outcome.lock();
     result.unwrap_or_else(|| panic!("{command} should report a result"))
 }
@@ -621,5 +633,52 @@ fn team_names_death_messages_and_team_chat() {
         assert_eq!(send(1, "tm hi"), Some(2));
         assert_eq!(send(2, "teammsg alone"), None);
         assert_eq!(run(server, "teammsg console"), None);
+    });
+}
+
+#[test]
+fn spreadplayers_lands_targets_on_safe_ground_apart() {
+    init_behaviors();
+    with_server_world("spreadplayers", |server, world| {
+        for chunk in [(-1, -1), (0, -1), (-1, 0), (0, 0)] {
+            insert_ready_full_chunk(world, ChunkPos::new(chunk.0, chunk.1));
+        }
+        let stone = vanilla_blocks::STONE.default_state();
+        for x in -4..=4 {
+            for z in -4..=4 {
+                assert!(world.set_block(BlockPos::new(x, 64, z), stone, UpdateFlags::UPDATE_ALL,));
+            }
+        }
+        let mut players = Vec::new();
+        for (id, name) in [(1, "Alex"), (2, "Steve"), (3, "Noor")] {
+            let (player, _) = test_player_with_packets(server, Arc::clone(world), name, id);
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+            players.push(player);
+        }
+
+        assert_eq!(run(server, "spreadplayers 0 0 1 4 false @a"), Some(3));
+        for player in &players {
+            let position = player.position();
+            assert_eq!(position.y, 65.0, "{position} should stand on the stone");
+            assert!(position.x.abs() <= 4.5 && position.z.abs() <= 4.5);
+            assert_eq!(position.x.fract().abs(), 0.5);
+        }
+
+        // Respecting teams spreads one position per team.
+        assert_eq!(run(server, "team add reds"), Some(1));
+        assert_eq!(run(server, "team join reds Alex"), Some(1));
+        assert_eq!(run(server, "team join reds Steve"), Some(1));
+        assert_eq!(run(server, "spreadplayers 0 0 1 4 true @a"), Some(2));
+        assert_eq!(players[0].position(), players[1].position());
+
+        // The height limit can't sit under the world.
+        assert_eq!(
+            run(server, "spreadplayers 0 0 1 4 under -1000 false @a"),
+            None
+        );
+        // Nothing in reach is safe: no stone above y 60.
+        assert_eq!(run(server, "spreadplayers 0 0 1 4 under 60 false @a"), None);
     });
 }
