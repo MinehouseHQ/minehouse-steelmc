@@ -25,6 +25,9 @@ pub enum DialogVariant {
     DialogList { dialogs: &'static str },
     /// A dialog that displays server links.
     ServerLinks,
+    /// A dialog an extension describes itself: `nbt` is the whole dialog as vanilla's
+    /// `Dialog.DIRECT_CODEC` reads it, and the other fields of the entry are not sent.
+    Custom { nbt: fn() -> NbtTag },
 }
 
 /// Represents an exit action with a label and width.
@@ -37,14 +40,13 @@ pub struct ExitAction {
 impl ToNbtTag for &Dialog {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
+        let kind = match &self.variant {
+            DialogVariant::DialogList { .. } => "minecraft:dialog_list",
+            DialogVariant::ServerLinks => "minecraft:server_links",
+            DialogVariant::Custom { nbt } => return nbt(),
+        };
         let mut compound = NbtCompound::new();
-        compound.insert(
-            "type",
-            match &self.variant {
-                DialogVariant::DialogList { .. } => "minecraft:dialog_list",
-                DialogVariant::ServerLinks => "minecraft:server_links",
-            },
-        );
+        compound.insert("type", kind);
         compound.insert("title", self.title.to_codec_nbt());
         compound.insert("external_title", self.external_title.to_codec_nbt());
         compound.insert("button_width", self.button_width);

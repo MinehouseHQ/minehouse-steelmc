@@ -325,8 +325,8 @@ blocks.
 account the money leaves (a click goes through the player's accounts), the ATM's amount picker up
 to the balance, and the recipient: a number typed in an anvil window that the site resolves
 before the transfer is offered. The player's own account and a frozen one are refused there. The
-owner of the receiving account is told if they are online. On the Fabric server the window was a
-line of the server menu, which Steel does not have yet.
+owner of the receiving account is told if they are online. The line «Переводы» of the server
+menu opens the same window.
 
 **Spawn zones** (`bank/zones/`): a shared circle in the middle of the spawn island and lots
 around it that go to auction and are rented for 7 days. A zone only says whose land it is, nothing
@@ -445,8 +445,16 @@ together every time it is opened, so a book made long ago lists the guides of to
 page, the contents five guides a page (a line runs `/guide <id>`), and a last page about
 recipes with a link to the wiki.
 
-Not here yet: the server menu, the guides of the zones, of the magnifier, of the metro and of
-the herbs.
+«Меню сервера» (`src/guides/menu.rs`) is a vanilla dialog: `/menu` opens it, and every client
+has a «Меню сервера» button in its pause screen with no mod of ours, because the dialog
+`minehouse-guides:server_menu` is in the tag `minecraft:pause_screen_additions`. Its lines are
+the book of guides (gives one, once), the transfers and the spawn zones. The copy of the pause
+screen goes out with the registries when a player joins and has every line; `/menu` shows the
+ones that work now, and a click on a line that does not says so. For this the dialog registry
+of `steel-registry` has the variant `DialogVariant::Custom`, a dialog an extension describes
+itself.
+
+Not here yet: the guides of the zones, of the magnifier, of the metro and of the herbs.
 
 ## Our items
 
