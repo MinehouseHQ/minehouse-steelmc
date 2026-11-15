@@ -3,7 +3,7 @@
 use crate::entity::ai::path::PathTypeCache;
 use std::{
     io, mem,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, LazyLock, Weak,
         atomic::{AtomicBool, AtomicI8, Ordering},
@@ -286,6 +286,8 @@ pub struct World {
     pub(crate) game_time: Arc<GameTime>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
+    /// The level folder, `None` when level data is ephemeral.
+    pub(crate) level_path: Option<PathBuf>,
     /// The world seed, fixed for the world's lifetime.
     seed: i64,
     /// Vanilla `BiomeManager.obfuscateSeed` of `seed`, used for biome zoom lookups.
@@ -493,6 +495,7 @@ impl World {
                 game_time: level_data.game_time_handle(),
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
+                level_path: path.map(Path::to_path_buf),
                 seed,
                 biome_zoom_seed: obfuscate_biome_seed(seed),
                 world_border: SharedWorldBorder::new(world_border),

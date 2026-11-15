@@ -19,6 +19,7 @@ mod fill;
 mod fillbiome;
 mod fly;
 mod forceload;
+mod function;
 pub(crate) mod gamemode;
 mod gamerule;
 mod give;
@@ -113,6 +114,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(fillbiome::registration())?;
     builder.register(fly::registration())?;
     builder.register(forceload::registration())?;
+    builder.register(function::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
@@ -226,6 +228,7 @@ mod tests {
                 "fillbiome",
                 "fly",
                 "forceload",
+                "function",
                 "gamemode",
                 "gamerule",
                 "give",

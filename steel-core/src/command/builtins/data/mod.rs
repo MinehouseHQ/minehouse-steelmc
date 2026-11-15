@@ -3,7 +3,7 @@
 //! `modify ... compute` is not ported yet: it needs vanilla's loot-context
 //! sources and inline number providers, which Steel does not have.
 
-mod accessor;
+pub(super) mod accessor;
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::{
@@ -213,7 +213,10 @@ fn get_all_data(
 }
 
 /// Vanilla `getSingleTag`.
-fn single_tag(accessor: &DataAccessor<'_>, path: &NbtPath) -> Result<NbtTag, CommandSyntaxError> {
+pub(super) fn single_tag(
+    accessor: &DataAccessor<'_>,
+    path: &NbtPath,
+) -> Result<NbtTag, CommandSyntaxError> {
     let mut tags = path
         .get_existing(&NbtTag::Compound(accessor.data()))
         .map_err(|error| path_error(&error))?;

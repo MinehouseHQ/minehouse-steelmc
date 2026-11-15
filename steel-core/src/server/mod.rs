@@ -2,6 +2,7 @@
 mod autosave;
 mod broadcasting;
 pub mod chat_interceptor;
+mod functions;
 /// Tick-polled server jobs.
 pub mod jobs;
 pub mod login_gate;
@@ -31,6 +32,7 @@ use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop, SteelArgumentType,
 };
+use crate::command::function::ServerFunctions;
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
@@ -277,6 +279,7 @@ pub async fn test_server_with_worlds_and_config(
         command_storage,
         custom_boss_events,
         random_sequences,
+        functions: ServerFunctions::default(),
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
@@ -537,6 +540,8 @@ pub struct Server {
     pub custom_boss_events: DomainCustomBossEvents,
     /// `/random` sequences isolated by Steel domain.
     pub random_sequences: DomainRandomSequences,
+    /// Data pack functions isolated by Steel domain.
+    pub(crate) functions: ServerFunctions,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -897,6 +902,7 @@ impl Server {
             command_storage,
             custom_boss_events,
             random_sequences,
+            functions: ServerFunctions::default(),
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),

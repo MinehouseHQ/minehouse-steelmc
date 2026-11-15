@@ -27,7 +27,7 @@ type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
 /// Which of vanilla's `ALL_PROVIDERS` a node reads or writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AccessorKind {
+pub(in crate::command::builtins) enum AccessorKind {
     Entity,
     Block,
     Storage,
@@ -35,7 +35,8 @@ pub(super) enum AccessorKind {
 
 impl AccessorKind {
     /// Vanilla's provider order.
-    pub(super) const ALL: [Self; 3] = [Self::Entity, Self::Block, Self::Storage];
+    pub(in crate::command::builtins) const ALL: [Self; 3] =
+        [Self::Entity, Self::Block, Self::Storage];
 
     const fn literal(self) -> &'static str {
         match self {
@@ -46,7 +47,7 @@ impl AccessorKind {
     }
 
     /// Vanilla `ArgProvider.wrap`: `<builder> <kind> <argument> ...`.
-    pub(super) fn wrap(
+    pub(in crate::command::builtins) fn wrap(
         self,
         builder: Builder,
         argument_name: &'static str,
@@ -62,7 +63,7 @@ impl AccessorKind {
 }
 
 /// A resolved vanilla `DataAccessor`.
-pub(super) enum DataAccessor<'a> {
+pub(in crate::command::builtins) enum DataAccessor<'a> {
     Entity(SharedEntity),
     Block {
         block_entity: SharedBlockEntity,
@@ -77,7 +78,7 @@ pub(super) enum DataAccessor<'a> {
 
 impl<'a> DataAccessor<'a> {
     /// The provider's `access`: resolves the argument named `argument_name`.
-    pub(super) fn access(
+    pub(in crate::command::builtins) fn access(
         context: &'a SteelCommandContext<CommandSource>,
         kind: AccessorKind,
         argument_name: &str,
@@ -104,7 +105,7 @@ impl<'a> DataAccessor<'a> {
     }
 
     /// Vanilla `getData`.
-    pub(super) fn data(&self) -> NbtCompound {
+    pub(in crate::command::builtins) fn data(&self) -> NbtCompound {
         match self {
             Self::Entity(entity) => entity.nbt_for_data_compare(),
             Self::Block { block_entity, .. } => block_entity.save_with_full_metadata(),
@@ -116,7 +117,10 @@ impl<'a> DataAccessor<'a> {
     ///
     /// An entity loads through `apply_spawn_data`, Steel's `Entity.load` for a
     /// live entity, which keeps the UUID as vanilla restores it.
-    pub(super) fn set_data(&self, data: NbtCompound) -> Result<(), CommandSyntaxError> {
+    pub(in crate::command::builtins) fn set_data(
+        &self,
+        data: NbtCompound,
+    ) -> Result<(), CommandSyntaxError> {
         match self {
             Self::Entity(entity) => {
                 if entity.as_player().is_some() {
@@ -154,7 +158,7 @@ impl<'a> DataAccessor<'a> {
     }
 
     /// Vanilla `getModifiedSuccess`.
-    pub(super) fn modified_success(&self) -> TextComponent {
+    pub(in crate::command::builtins) fn modified_success(&self) -> TextComponent {
         match self {
             Self::Entity(entity) => translations::COMMANDS_DATA_ENTITY_MODIFIED
                 .message([entity.display_name()])
@@ -169,7 +173,7 @@ impl<'a> DataAccessor<'a> {
     }
 
     /// Vanilla `getPrintSuccess(Tag)`.
-    pub(super) fn print_success(&self, data: &NbtTag) -> TextComponent {
+    pub(in crate::command::builtins) fn print_success(&self, data: &NbtTag) -> TextComponent {
         let pretty = command_nbt_component(data, false);
         match self {
             Self::Entity(entity) => translations::COMMANDS_DATA_ENTITY_QUERY
@@ -188,7 +192,7 @@ impl<'a> DataAccessor<'a> {
     }
 
     /// Vanilla `getPrintSuccess(NbtPath, double, int)`.
-    pub(super) fn print_path_success(
+    pub(in crate::command::builtins) fn print_path_success(
         &self,
         path: &NbtPath,
         scale: f64,

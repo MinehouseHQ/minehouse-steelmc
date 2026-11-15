@@ -4878,6 +4878,7 @@ mod damage_history;
 mod data_command;
 mod execute_items_command;
 mod fillbiome_command;
+mod function_command;
 mod game_time;
 mod help_command;
 mod loot_command;

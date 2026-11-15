@@ -27,7 +27,7 @@ use steel_registry::{
     },
     world_clock::WorldClockRef,
 };
-use steel_utils::translations;
+use steel_utils::{Identifier, translations};
 use text_components::{Modifier, TextComponent, format::Color};
 
 use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
@@ -64,6 +64,11 @@ impl CommandResultCallback {
         }
     }
 
+    /// Whether this is vanilla's `CommandResultCallback.EMPTY`.
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.callback.is_none()
+    }
+
     pub(crate) fn on_result(&self, success: bool, result: i32) {
         if let Some(callback) = &self.callback {
             callback(success, result);
@@ -94,6 +99,16 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn command_storage_keys(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// The source domain's data pack function ids.
+    fn function_ids(&self) -> Vec<Identifier> {
+        Vec::new()
+    }
+
+    /// The source domain's data pack function tag ids.
+    fn function_tag_ids(&self) -> Vec<Identifier> {
         Vec::new()
     }
 
@@ -274,14 +289,9 @@ impl CommandSource {
         let entity = player
             .as_ref()
             .map(|player| Arc::clone(player) as SharedEntity);
-        let position = entity.as_ref().map_or_else(
-            || {
-                let level_data = world.level_data.read();
-                let spawn = &level_data.data().spawn;
-                DVec3::new(f64::from(spawn.x), f64::from(spawn.y), f64::from(spawn.z))
-            },
-            |entity| entity.position(),
-        );
+        let position = entity
+            .as_ref()
+            .map_or_else(|| world_spawn(&world), |entity| entity.position());
         let rotation = entity
             .as_ref()
             .map_or((0.0, 0.0), |entity| entity.rotation());
@@ -318,6 +328,16 @@ impl CommandSource {
             silent: false,
             signing_context: None,
         }
+    }
+
+    /// Vanilla `MinecraftServer.createCommandSourceStack` for a Steel domain:
+    /// the server console at `world`'s spawn.
+    pub(crate) fn server_in(server: Arc<Server>, world: Arc<World>) -> Self {
+        let mut source = Self::new(CommandSender::Console, server);
+        source.position = world_spawn(&world);
+        source.authorization = CommandAuthorizationContext::unrestricted(world.key.clone());
+        source.world = world;
+        source
     }
 
     /// Vanilla `CommandSourceStack.withSigningContext`.
@@ -472,20 +492,12 @@ impl CommandSource {
         self.position
     }
 
-    #[expect(
-        dead_code,
-        reason = "silent command-source derivation is retained for future vanilla command paths"
-    )]
     pub(crate) fn with_suppressed_output(&self) -> Self {
         let mut source = self.clone();
         source.silent = true;
         source
     }
 
-    #[expect(
-        dead_code,
-        reason = "custom executors need to inspect silent command-source state"
-    )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
     }
@@ -642,6 +654,22 @@ impl CommandArgumentSource for CommandSource {
 
     fn permission_context_world_names(&self) -> Vec<String> {
         self.server.worlds.keys().map(ToString::to_string).collect()
+    }
+
+    fn function_ids(&self) -> Vec<Identifier> {
+        self.server
+            .functions
+            .library(self.world.domain())
+            .map_or_else(Vec::new, |library| {
+                library.function_ids().cloned().collect()
+            })
+    }
+
+    fn function_tag_ids(&self) -> Vec<Identifier> {
+        self.server
+            .functions
+            .library(self.world.domain())
+            .map_or_else(Vec::new, |library| library.tag_ids().cloned().collect())
     }
 
     fn command_storage_keys(&self) -> Vec<String> {
@@ -924,6 +952,13 @@ fn admin_broadcast_source_name(
         || TextComponent::plain(sender.to_string()),
         |entity| TextComponent::plain(entity.plain_text_name()),
     )
+}
+
+/// The block position a world's spawn point names.
+fn world_spawn(world: &World) -> DVec3 {
+    let level_data = world.level_data.read();
+    let spawn = &level_data.data().spawn;
+    DVec3::new(f64::from(spawn.x), f64::from(spawn.y), f64::from(spawn.z))
 }
 
 fn normalize_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {

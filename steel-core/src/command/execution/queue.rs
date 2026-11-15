@@ -75,6 +75,11 @@ impl Frame {
     pub(crate) fn return_failure(&self) {
         self.return_value_consumer.on_result(false, 0);
     }
+
+    /// Vanilla `Frame.returnValueConsumer`.
+    pub(crate) fn return_value_consumer(&self) -> CommandResultCallback {
+        self.return_value_consumer.clone()
+    }
 }
 
 pub(crate) trait EntryAction<S>: Send + 'static
@@ -252,6 +257,26 @@ where
                 modifiers: ChainModifiers::default(),
             }),
         });
+    }
+
+    /// Vanilla `ExecutionContext.queueInitialFunctionCall`.
+    pub(crate) fn queue_initial_function_call(
+        &mut self,
+        entries: Arc<[SteelContextChain<S>]>,
+        source: S,
+        function_return: CommandResultCallback,
+    ) {
+        let frame = self.create_top_frame(function_return);
+        let result_callback = source.callback();
+        self.queue_next(
+            frame,
+            CallFunctionAction {
+                entries,
+                source: Arc::new(source),
+                result_callback,
+                return_parent_frame: false,
+            },
+        );
     }
 
     pub(crate) fn run(&mut self) -> ExecutionStop {
@@ -491,6 +516,23 @@ where
 
     pub(crate) fn discard_frame(&mut self) {
         self.context.discard(&self.frame);
+    }
+
+    /// Vanilla `CallFunction.bind(source)`: runs a function's lines in a new
+    /// frame, or in this one's discard scope when `return_parent_frame`.
+    pub(crate) fn queue_function_call(
+        &mut self,
+        entries: Arc<[SteelContextChain<S>]>,
+        source: Arc<S>,
+        result_callback: CommandResultCallback,
+        return_parent_frame: bool,
+    ) {
+        self.queue_next(CallFunctionAction {
+            entries,
+            source,
+            result_callback,
+            return_parent_frame,
+        });
     }
 
     pub(crate) fn queue_fallthrough(&mut self) {
@@ -861,6 +903,94 @@ fn complete_command_result<S>(
                 source.handle_error(&error, false);
             }
         }
+    }
+}
+
+/// Vanilla `CallFunction`.
+struct CallFunctionAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    entries: Arc<[SteelContextChain<S>]>,
+    source: Arc<S>,
+    result_callback: CommandResultCallback,
+    return_parent_frame: bool,
+}
+
+impl<S> EntryAction<S> for CallFunctionAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        context.increment_cost();
+        let depth = frame.depth + 1;
+        let discard = if self.return_parent_frame {
+            frame.discard
+        } else {
+            FrameDiscard::AtOrAbove(depth)
+        };
+        let frame = Frame {
+            depth,
+            return_value_consumer: self.result_callback,
+            discard,
+        };
+        // Vanilla `ContinuationTask.schedule`: up to two lines queue directly,
+        // more through a continuation that queues one line at a time.
+        match self.entries.len() {
+            0 => {}
+            1 | 2 => {
+                for chain in self.entries.iter() {
+                    context.queue_next(frame.clone(), function_line(chain, &self.source));
+                }
+            }
+            _ => context.queue_next(
+                frame,
+                FunctionContinuation {
+                    entries: self.entries,
+                    source: self.source,
+                    index: 0,
+                },
+            ),
+        }
+    }
+}
+
+/// Vanilla `ContinuationTask` over a function's lines.
+struct FunctionContinuation<S>
+where
+    S: ExecutionCommandSource,
+{
+    entries: Arc<[SteelContextChain<S>]>,
+    source: Arc<S>,
+    index: usize,
+}
+
+impl<S> EntryAction<S> for FunctionContinuation<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(mut self: Box<Self>, context: &mut CommandExecutionContext<S>, frame: Frame) {
+        let Some(chain) = self.entries.get(self.index) else {
+            return;
+        };
+        context.queue_next(frame.clone(), function_line(chain, &self.source));
+        self.index += 1;
+        if self.index < self.entries.len() {
+            context.queue_boxed(frame, self);
+        }
+    }
+}
+
+/// Vanilla `BuildContexts.Unbound.bind(source)` for one function line.
+fn function_line<S>(chain: &SteelContextChain<S>, source: &Arc<S>) -> BuildContextsAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    BuildContextsAction {
+        chain: chain.clone(),
+        original_source: Arc::clone(source),
+        sources: vec![Arc::clone(source)],
+        modifiers: ChainModifiers::default(),
     }
 }
 
