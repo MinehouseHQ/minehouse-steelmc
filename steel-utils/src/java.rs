@@ -50,7 +50,9 @@ pub fn float_to_string(value: f32) -> String {
     )
 }
 
-pub(crate) fn double_to_string(value: f64) -> String {
+/// Formats an `f64` like Java's `Double.toString`.
+#[must_use]
+pub fn double_to_string(value: f64) -> String {
     floating_to_string(
         value.is_sign_negative(),
         value.is_nan(),

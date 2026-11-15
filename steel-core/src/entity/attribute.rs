@@ -178,6 +178,18 @@ impl AttributeInstance {
         true
     }
 
+    /// Vanilla `AttributeInstance.getModifiers`: every modifier, permanent
+    /// or transient.
+    pub fn modifiers(&self) -> impl Iterator<Item = &AttributeModifier> {
+        self.modifiers.iter()
+    }
+
+    /// Vanilla `AttributeInstance.getModifier`.
+    #[must_use]
+    pub fn modifier(&self, id: &Identifier) -> Option<&AttributeModifier> {
+        self.modifiers.iter().find(|modifier| modifier.id == *id)
+    }
+
     /// Returns an iterator over permanent modifiers (for serialization)
     pub fn permanent_modifiers(&self) -> impl Iterator<Item = &AttributeModifier> {
         self.modifiers
@@ -407,6 +419,25 @@ impl AttributeMap {
         if instance.set_base_value(value) {
             self.mark_dirty(id, attribute);
         }
+    }
+
+    /// Vanilla `AttributeMap.resetBaseValue`: puts the base value back to
+    /// `entity_type`'s default. Returns `false` when the type has no such
+    /// attribute.
+    pub fn reset_base_value(
+        &mut self,
+        attribute: AttributeRef,
+        entity_type: EntityTypeRef,
+    ) -> bool {
+        let Some(&(_, base_value)) = entity_type
+            .default_attributes
+            .iter()
+            .find(|&&(name, _)| Identifier::vanilla_static(name) == attribute.key)
+        else {
+            return false;
+        };
+        self.set_base_value(attribute, base_value);
+        true
     }
 
     /// Assigns base values from attributes present in both maps.
