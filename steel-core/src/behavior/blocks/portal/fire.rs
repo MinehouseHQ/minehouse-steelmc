@@ -26,7 +26,9 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::player::Player;
-use crate::portal::portal_shape::{PortalShape, nether_portal_config};
+use crate::portal::portal_shape::{
+    PortalShape, nether_portal_config, place_portal_cells, portal_shape_observer,
+};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::fire_flammability::{burn_odds, ignite_odds};
@@ -240,6 +242,8 @@ impl FireBlock {
         let config = nether_portal_config();
         PortalShape::find_empty_portal_shape_with_axis(world, pos, preferred_axis, &config)
             .is_some()
+            || portal_shape_observer()
+                .is_some_and(|observer| observer.find_opening(world, pos, preferred_axis).is_some())
     }
 
     fn queue_entity_contact_effects(
@@ -440,6 +444,14 @@ impl BlockBehavior for FireBlock {
                 PortalShape::find_empty_portal_shape(world, pos, &nether_portal_config())
         {
             shape.place_portal_blocks(world);
+            return;
+        }
+
+        if Self::in_portal_world(world)
+            && let Some(observer) = portal_shape_observer()
+            && let Some((axis, cells)) = observer.find_opening(world, pos, Axis::X)
+        {
+            place_portal_cells(world, axis, &cells);
             return;
         }
 

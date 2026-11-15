@@ -29,6 +29,7 @@ pub mod physics;
 pub mod player;
 pub mod poi;
 pub(crate) mod portal;
+pub use portal::portal_shape::{PortalShapeObserver, set_portal_shape_observer};
 pub mod random_sequences;
 pub mod scoreboard;
 pub mod server;
