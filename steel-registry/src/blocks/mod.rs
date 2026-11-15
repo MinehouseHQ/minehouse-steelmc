@@ -511,6 +511,9 @@ pub struct BlockRegistry {
     pub next_state_id: u16,
     /// States that clients are shown as another state, see [`Self::show_to_clients_as`].
     shown_to_clients: Vec<(BlockStateId, BlockStateId)>,
+    /// States whose break clients are shown as the break of another state, see
+    /// [`Self::show_break_to_clients_as`].
+    broken_for_clients: Vec<(BlockStateId, BlockStateId)>,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the block registry.
@@ -566,6 +569,7 @@ impl BlockRegistry {
             block_to_base_state: Vec::new(),
             next_state_id: 0,
             shown_to_clients: Vec::new(),
+            broken_for_clients: Vec::new(),
         }
     }
 
@@ -578,6 +582,33 @@ impl BlockRegistry {
             "Cannot change what clients are shown after the registry has been frozen"
         );
         self.shown_to_clients.push((state, shown));
+    }
+
+    /// Makes clients hear and see the break of `state` as the break of `shown`, which need
+    /// not be the state they see in its place (see [`Self::show_to_clients_as`]): a block
+    /// drawn over a note block can break like wool. Only before the registry is frozen.
+    pub fn show_break_to_clients_as(&mut self, state: BlockStateId, shown: BlockStateId) {
+        assert!(
+            self.allows_registering,
+            "Cannot change what clients are shown after the registry has been frozen"
+        );
+        self.broken_for_clients.push((state, shown));
+    }
+
+    /// The break table for [`steel_utils::types::set_client_block_states`], given the
+    /// `shown` one of [`Self::client_states`]: a state breaks as the state it is shown as,
+    /// unless [`Self::show_break_to_clients_as`] named another the client has.
+    #[must_use]
+    pub fn client_break_states(&self, shown: &[u16], client_states: u16) -> Box<[u16]> {
+        let mut broken: Box<[u16]> = shown.into();
+        for (state, broken_as) in &self.broken_for_clients {
+            if broken_as.0 < client_states
+                && let Some(slot) = broken.get_mut(usize::from(state.0))
+            {
+                *slot = broken_as.0;
+            }
+        }
+        broken
     }
 
     /// The table for [`steel_utils::types::set_client_block_states`]: the state shown for

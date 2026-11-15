@@ -152,7 +152,10 @@ pub fn init_vanilla_registry() -> bool {
             log::error!("Registry extension: {problem}; clients will see air");
         }
         if let Some(shown) = shown {
-            set_client_block_states(shown, vanilla_block_states);
+            let broken = registry
+                .blocks
+                .client_break_states(&shown, vanilla_block_states);
+            set_client_block_states(shown, broken, vanilla_block_states);
         }
         registry.freeze();
         published = REGISTRY.init(registry).is_ok();

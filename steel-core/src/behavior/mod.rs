@@ -93,17 +93,21 @@ pub use items::{
     HangingSignItem, ScaffoldingBlockItem, ShieldItem, SolidBucketItem, StandingAndWallBlockItem,
 };
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
+use std::mem;
 use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::consume_effect::vanilla_consume_effect_types;
 use steel_registry::fluid::FluidRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
+use steel_utils::locks::SyncMutex;
 
-use crate::entity::ai::path::PathComputationType;
+/// What a path is being worked out for; part of [`BlockBehavior::is_pathfindable`].
+pub use crate::entity::ai::path::PathComputationType;
 use crate::entity::consume_effect::{
     ApplyEffectsBehavior, ClearAllEffectsBehavior, ConsumeEffectBehavior, PlaySoundBehavior,
     RemoveEffectsBehavior, TeleportRandomlyBehavior,
@@ -217,6 +221,42 @@ pub static BLOCK_BEHAVIORS: BlockBehaviorLock = BlockBehaviorLock(OnceLock::new(
 /// Access behaviors directly via deref: `ITEM_BEHAVIORS.get_behavior(item)`
 pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 
+/// What extensions add to the block behaviors once the vanilla ones are in.
+static BLOCK_BEHAVIOR_EXTENSIONS: SyncMutex<Vec<fn(&mut BlockBehaviorRegistry)>> =
+    SyncMutex::new(Vec::new());
+
+/// Has `extension` set the behaviors of its own blocks (those it added with
+/// `steel_registry::extend_registry`) on top of the vanilla ones. Returns `false` if the
+/// behaviors were already built: then it is too late and `extension` never runs.
+pub fn extend_block_behaviors(extension: fn(&mut BlockBehaviorRegistry)) -> bool {
+    if BLOCK_BEHAVIORS.0.get().is_some() {
+        return false;
+    }
+    BLOCK_BEHAVIOR_EXTENSIONS.lock().push(extension);
+    true
+}
+
+/// Picks the behavior of a stack that is not the behavior of its item.
+pub type ItemBehaviorOverride = fn(&ItemStack) -> Option<&'static dyn ItemBehavior>;
+
+static ITEM_BEHAVIOR_OVERRIDE: OnceLock<ItemBehaviorOverride> = OnceLock::new();
+
+/// Lets an extension give stacks a behavior of their own when a player uses them: an item
+/// of the extension is a vanilla item told apart by its components, so the behavior of the
+/// vanilla item is the wrong one. Returns `false` if an override is already set.
+pub fn set_item_behavior_override(pick: ItemBehaviorOverride) -> bool {
+    ITEM_BEHAVIOR_OVERRIDE.set(pick).is_ok()
+}
+
+/// The behavior a player's use of `stack` runs: the override's, or that of its item.
+#[must_use]
+pub fn use_behavior_of(stack: &ItemStack) -> &'static dyn ItemBehavior {
+    ITEM_BEHAVIOR_OVERRIDE
+        .get()
+        .and_then(|pick| pick(stack))
+        .unwrap_or_else(|| ITEM_BEHAVIORS.get_behavior(stack.item))
+}
+
 /// Initializes the global behavior registries.
 ///
 /// This should be called after the main registry is frozen. Repeated calls are a no-op.
@@ -224,6 +264,10 @@ pub fn init_behaviors() {
     BLOCK_BEHAVIORS.0.get_or_init(|| {
         let mut block_behaviors = BlockBehaviorRegistry::new();
         register_block_behaviors(&mut block_behaviors);
+        let extensions = mem::take(&mut *BLOCK_BEHAVIOR_EXTENSIONS.lock());
+        for extension in extensions {
+            extension(&mut block_behaviors);
+        }
         block_behaviors
     });
 

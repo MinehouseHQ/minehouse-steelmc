@@ -87,7 +87,8 @@ impl<'a, V: ToGlobalId> PaletteIndexTable<'a, V> {
                 .slots
                 .get_mut(value.to_global_id() as usize)
                 .ok_or_else(|| invalid_data("palette value has an out-of-range global id"))?;
-            debug_assert_eq!(*slot, EMPTY_SLOT, "palette entries must be distinct");
+            // Two entries share a global id when clients are shown both as one state (see
+            // `BlockStateId::to_client`). Either index then stands for the same id.
             *slot = index;
         }
         Ok(table)
@@ -167,7 +168,53 @@ fn invalid_data(message: &'static str) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_PACKED_BYTES, pack_global_ids};
+    use super::super::ToGlobalId;
+    use super::{MAX_PACKED_BYTES, pack_global_ids, pack_palette_indices};
+
+    /// A value that reaches the client as another: `on_wire` is its global id.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Shown {
+        on_server: u16,
+        on_wire: u16,
+    }
+
+    #[expect(non_snake_case, reason = "reads as a tuple struct in the test")]
+    const fn Shown(on_server: u16, on_wire: u16) -> Shown {
+        Shown { on_server, on_wire }
+    }
+
+    impl ToGlobalId for Shown {
+        fn to_global_id(&self) -> u32 {
+            u32::from(self.on_wire)
+        }
+    }
+
+    /// Two states of a section can be one state to the client (a melting cloud and a whole
+    /// one, two real note blocks). Their palette entries then share a global id, and each
+    /// value is packed as an index whose entry has that id.
+    #[test]
+    fn palette_entries_that_share_a_global_id_pack() {
+        let palette = [(Shown(1, 7), 1), (Shown(2, 9), 1), (Shown(3, 7), 1)];
+        let values = [Shown(1, 7), Shown(2, 9), Shown(3, 7)];
+        assert_ne!(values[0], values[2]);
+        assert_eq!(values[0].on_server, 1);
+        let mut buffer = [0; MAX_PACKED_BYTES];
+        let packed = pack_palette_indices(&values, &palette, 4, &mut buffer)
+            .expect("the palette holds every value");
+        let long = u64::from_be_bytes(packed[..8].try_into().expect("one long"));
+        let ids: Vec<u32> = (0..3)
+            .map(|entry| {
+                palette[((long >> (entry * 4)) & 0xF) as usize]
+                    .0
+                    .to_global_id()
+            })
+            .collect();
+        assert_eq!(ids, [7, 9, 7]);
+
+        // The table is clean again: a value of another palette is not found in this one.
+        let other = [(Shown(4, 7), 1), (Shown(5, 8), 1)];
+        assert!(pack_palette_indices(&[Shown(2, 9)], &other, 4, &mut buffer).is_err());
+    }
 
     /// Packs values at every width from 1 to 16 bits, including 9 to 15, which no section
     /// uses with vanilla's registries, and reads them back the way vanilla's

@@ -48,14 +48,14 @@ fn sound_packet_for_player(
 /// The data of a level event as a client reads it: where it is a block state, the state
 /// the client is shown for it.
 fn client_event_data(event_type: i32, data: i32) -> i32 {
-    let carries_block_state = matches!(
-        event_type,
-        level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK
-            | level_events::PARTICLES_DESTROY_BLOCK
-            | level_events::PARTICLES_AND_SOUND_BRUSH_BLOCK_COMPLETE
-    );
-    match u16::try_from(data) {
-        Ok(state) if carries_block_state => i32::from(BlockStateId(state).to_client().0),
+    let Ok(state) = u16::try_from(data) else {
+        return data;
+    };
+    let state = BlockStateId(state);
+    match event_type {
+        level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK => i32::from(state.to_client_break().0),
+        level_events::PARTICLES_DESTROY_BLOCK
+        | level_events::PARTICLES_AND_SOUND_BRUSH_BLOCK_COMPLETE => i32::from(state.to_client().0),
         _ => data,
     }
 }
