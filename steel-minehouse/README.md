@@ -404,8 +404,12 @@ clicks; nothing is added to the world. `steel-core` has `PlayerInputObserver`
 (`player/input_observer.rs`) for this: `interact` and `attack` for entity ids the server
 does not know, and `carried_item` for the wheel.
 
-Not ported yet: a train with a player knocking empty carts
-off the line, and the lines on the web map.
+A cart with a player in it, or any cart of a train that carries one, knocks empty plain
+minecarts off the line as it passes (`trains::smash_empty`, the Fabric `Trains.smashEmpty`):
+the cart left on the rails breaks into its item instead of stopping the ride. Carts of the
+same train, carts with a passenger and chest, hopper and other carts are left alone.
+
+Not ported yet: the lines on the web map.
 
 The magic herb: the wild plant (`wild_magic_herb`, no item, drops 2–3 seeds), the seeds
 («Семена магического растения») and the crop they sow on farmland (`magic_herb`, four
