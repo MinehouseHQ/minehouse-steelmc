@@ -7,9 +7,10 @@ use std::{env, fs, process};
 
 use steel_utils::Identifier;
 
-use super::scoreboard_command::{run, with_server_world};
+use super::scoreboard_command::{run, run_reported, with_server_world};
 use crate::command::PendingCommandExecutionQueue;
 use crate::command::execution::CommandSource;
+use crate::command::sender::CommandSender;
 use crate::datapack::find_packs;
 use crate::server::Server;
 use crate::world::World;
@@ -318,5 +319,90 @@ fn schedule_replace_and_clear_drop_earlier_events() {
             tick_time(server, &mut pending);
         }
         assert_eq!(run(server, "scoreboard players get n c"), Some(1));
+    });
+}
+
+#[test]
+fn execute_if_function_tests_each_source_by_its_functions_result() {
+    with_server_world("function_execute_if", |server, world| {
+        let root = datapacks(
+            "execute_if",
+            &[
+                ("demo/function/zero.mcfunction", "return 0"),
+                ("demo/function/seven.mcfunction", "return 7"),
+                // A function that never returns counts as zero.
+                (
+                    "demo/function/silent.mcfunction",
+                    "scoreboard players add calls c 1",
+                ),
+                (
+                    "demo/tags/function/zero_then_seven.json",
+                    r#"{"values": ["demo:zero", "demo:seven"]}"#,
+                ),
+                ("demo/function/echo.mcfunction", "$return $(value)"),
+            ],
+        );
+        load(server, world, &root);
+        assert_eq!(run(server, "scoreboard objectives add c dummy"), Some(1));
+        let passes = |condition: &str| {
+            run_reported(
+                server,
+                CommandSender::Console,
+                &format!("execute {condition} run return 1"),
+            )
+            .is_some()
+        };
+
+        assert!(passes("if function demo:seven"));
+        assert!(!passes("if function demo:zero"));
+        assert!(passes("unless function demo:zero"));
+        assert!(!passes("unless function demo:seven"));
+        assert!(!passes("if function demo:silent"));
+        assert!(passes("unless function demo:silent"));
+        assert_eq!(run(server, "scoreboard players get calls c"), Some(2));
+        // The first function to return decides for the whole tag.
+        assert!(!passes("if function #demo:zero_then_seven"));
+        // No functions at all runs nothing.
+        assert!(!passes("if function #demo:none"));
+        assert!(!passes("unless function #demo:none"));
+        // Like vanilla, a macro that cannot instantiate reports the error but
+        // still tests each source, with no functions left to return a value.
+        assert!(!passes("if function demo:echo"));
+        assert!(passes("unless function demo:echo"));
+        assert_eq!(
+            run(server, "execute if function demo:seven run return 5"),
+            Some(5)
+        );
+    });
+}
+
+#[test]
+fn reload_compiles_the_domain_packs_again_and_reruns_load() {
+    with_server_world("function_reload", |server, world| {
+        let root = datapacks(
+            "reload",
+            &[
+                (
+                    "demo/function/setup.mcfunction",
+                    "scoreboard players add loads c 1",
+                ),
+                (
+                    "minecraft/tags/function/load.json",
+                    r#"{"values": ["demo:setup"]}"#,
+                ),
+            ],
+        );
+        assert_eq!(run(server, "scoreboard objectives add c dummy"), Some(1));
+        load(server, world, &root);
+        let mut pending = PendingCommandExecutionQueue::new();
+        server.tick_functions(&mut pending, true);
+        assert_eq!(run(server, "scoreboard players get loads c"), Some(1));
+
+        // The test world has no folder, so its packs are gone after a reload.
+        assert!(world.level_path.is_none());
+        assert_eq!(run(server, "reload"), Some(0));
+        assert!(!has_function(server, world, "demo:setup"));
+        server.tick_functions(&mut pending, true);
+        assert_eq!(run(server, "scoreboard players get loads c"), Some(1));
     });
 }

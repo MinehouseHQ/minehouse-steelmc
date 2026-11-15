@@ -174,7 +174,7 @@ impl FunctionExecutor {
 }
 
 /// Vanilla `FunctionArgument.getFunctionCollection`.
-fn function_collection(
+pub(super) fn function_collection(
     context: &Context,
     name: &str,
 ) -> Result<(Identifier, Vec<Arc<CommandFunction>>), CommandSyntaxError> {
