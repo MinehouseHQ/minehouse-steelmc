@@ -18,7 +18,8 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     scoreboard_arguments::{
         ScoreOperation, parse_criteria, parse_display_slot, parse_operation, parse_style,
-        suggest_criteria, suggest_display_slots, suggest_operations,
+        parse_team_color, suggest_criteria, suggest_display_slots, suggest_operations,
+        suggest_team_colors,
     },
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
@@ -37,7 +38,7 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use crate::inventory::slot_range::{SlotRange, all_slot_range_names, slot_range};
-use crate::scoreboard::{DisplaySlot, ObjectiveCriteria};
+use crate::scoreboard::{DisplaySlot, ObjectiveCriteria, TeamColor};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
@@ -323,6 +324,16 @@ impl SteelArgumentType {
     /// Vanilla `StyleArgument.style`.
     pub(crate) fn style() -> Self {
         Self::new(StyleParser)
+    }
+
+    /// Vanilla `TeamArgument.team`.
+    pub(crate) fn team() -> Self {
+        Self::new(TeamParser)
+    }
+
+    /// Vanilla `TeamColorArgument.teamColor`.
+    pub(crate) fn team_color() -> Self {
+        Self::new(TeamColorParser)
     }
 
     pub(crate) fn int_range() -> Self {
@@ -614,6 +625,8 @@ argument_value_wrapper!(
     "steel:command/value/operation"
 );
 argument_value_wrapper!(StyleValue(TextComponent), "steel:command/value/style");
+argument_value_wrapper!(TeamValue(Box<str>), "steel:command/value/team");
+argument_value_wrapper!(TeamColorValue(TeamColor), "steel:command/value/team_color");
 argument_value_wrapper!(DomainValue(Box<str>), "steel:command/value/domain");
 argument_value_wrapper!(
     EntityTypeValue(EntityTypeRef),
@@ -1077,6 +1090,26 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::Style, None)
+);
+unit_argument_parser!(
+    TeamParser,
+    "steel:command/parser/team",
+    TeamValue,
+    parse | reader,
+    _source | { Ok(TeamValue(reader.read_unquoted_string().into())) },
+    suggest | context,
+    builder | { suggest_list(builder, context.source().selector_team_names()) },
+    protocol(ProtocolArgumentType::Team, None)
+);
+unit_argument_parser!(
+    TeamColorParser,
+    "steel:command/parser/team_color",
+    TeamColorValue,
+    parse | reader,
+    _source | { parse_team_color(reader).map(TeamColorValue) },
+    suggest | _context,
+    builder | { suggest_team_colors(builder) },
+    protocol(ProtocolArgumentType::Color, None)
 );
 unit_argument_parser!(
     IntRangeParser,

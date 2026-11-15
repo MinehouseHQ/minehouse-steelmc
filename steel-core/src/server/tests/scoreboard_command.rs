@@ -16,15 +16,23 @@ use crate::command::sender::CommandSender;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity as _, LivingEntity as _};
 use crate::permission::PermissionSubjectIndex;
+use crate::player::ResetReason;
 use crate::scoreboard::{
     DisplaySlot, ScoreHolder, Scoreboard, ScoreboardObjective, TeamColor, TeamProperty,
 };
 use crate::world::World;
+use steel_protocol::packets::game::TeamVisibility;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 
 /// Runs `command` from the console and returns its result, or `None` when
 /// the command failed.
 fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
+    run_as(server, CommandSender::Console, command)
+}
+
+/// Runs `command` from `sender` and returns its result, or `None` when the
+/// command failed.
+fn run_as(server: &Arc<Server>, sender: CommandSender, command: &str) -> Option<i32> {
     let outcome = Arc::new(SyncMutex::new(None));
     let callback = {
         let outcome = Arc::clone(&outcome);
@@ -32,8 +40,7 @@ fn run(server: &Arc<Server>, command: &str) -> Option<i32> {
             *outcome.lock() = Some(success.then_some(result));
         })
     };
-    let source =
-        CommandSource::new(CommandSender::Console, Arc::clone(server)).with_callback(callback);
+    let source = CommandSource::new(sender, Arc::clone(server)).with_callback(callback);
     let chain = {
         let dispatcher = server.command_dispatcher.read();
         let parse = dispatcher.parse(command, source.clone());
@@ -377,5 +384,104 @@ fn kills_count_for_the_killer_and_by_team_color() {
         // Killing yourself scores nothing.
         killer.award_kill_score(killer.as_ref(), &source);
         assert_eq!(score(board, "Killer", "kills"), Some(1));
+    });
+}
+
+#[test]
+fn teams_are_created_joined_modified_and_emptied() {
+    with_server("team_command", |server, domain| {
+        assert_eq!(run(server, "team list"), Some(0));
+        assert_eq!(run(server, "team add reds \"Red Team\""), Some(1));
+        assert_eq!(run(server, "team add reds"), None);
+        assert_eq!(run(server, "team add blues"), Some(2));
+        let board = scoreboard(server, domain);
+        let team = |name: &str| board.team(name).expect("the team exists");
+
+        // Joining counts only holders that changed team.
+        // Vanilla parses a single holder token, a name or a selector.
+        assert_eq!(run(server, "team join reds Alex"), Some(1));
+        assert_eq!(run(server, "team join reds Steve"), Some(1));
+        assert_eq!(run(server, "team join blues Alex"), Some(1));
+        assert_eq!(
+            board.holder_team_name(&ScoreHolder::new("Alex")),
+            Some("blues".to_owned())
+        );
+        assert_eq!(run(server, "team list reds"), Some(1));
+        // Joining without members needs an entity source.
+        assert_eq!(run(server, "team join reds"), None);
+
+        assert_eq!(run(server, "team modify reds color red"), Some(0));
+        assert_eq!(team("reds").color(), Some(TeamColor::Red));
+        assert_eq!(run(server, "team modify reds color red"), None);
+        assert_eq!(run(server, "team modify reds color reset"), Some(0));
+        assert_eq!(run(server, "team modify reds color reset"), None);
+        assert_eq!(run(server, "team modify reds friendlyFire false"), Some(0));
+        assert!(!team("reds").allows_friendly_fire());
+        assert_eq!(run(server, "team modify reds friendlyFire false"), None);
+        assert_eq!(
+            run(server, "team modify reds nametagVisibility hideForOwnTeam"),
+            Some(0)
+        );
+        assert_eq!(
+            team("reds").name_tag_visibility(),
+            TeamVisibility::HideForOwnTeam
+        );
+        assert_eq!(
+            run(server, "team modify reds collisionRule pushOwnTeam"),
+            Some(0)
+        );
+        assert_eq!(run(server, "team modify reds prefix \"[R] \""), Some(1));
+        assert_eq!(run(server, "team modify missing color red"), None);
+
+        // Leaving counts the holders that were on a team.
+        assert_eq!(run(server, "team leave Alex"), Some(1));
+        // Vanilla reports zero without failing when nobody left.
+        assert_eq!(run(server, "team leave Nobody"), Some(0));
+        assert_eq!(run(server, "team empty reds"), Some(1));
+        assert_eq!(run(server, "team empty reds"), None);
+        assert_eq!(run(server, "team remove reds"), Some(1));
+        assert!(board.team("reds").is_none());
+    });
+}
+
+#[test]
+fn trigger_needs_an_enabled_trigger_objective() {
+    with_server_world("trigger_command", |server, world| {
+        assert_eq!(
+            run(server, "scoreboard objectives add vote trigger"),
+            Some(1)
+        );
+        assert_eq!(
+            run(server, "scoreboard objectives add plain dummy"),
+            Some(2)
+        );
+        let (player, _) = test_player_with_packets(server, Arc::clone(world), "Voter", 1);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        let player_run =
+            |command: &str| run_as(server, CommandSender::Player(Arc::clone(&player)), command);
+        let board = scoreboard(server, world.domain());
+
+        // Not enabled yet, and not a trigger objective.
+        assert_eq!(player_run("trigger vote"), None);
+        assert_eq!(player_run("trigger plain"), None);
+        // The console is not a player.
+        assert_eq!(run(server, "trigger vote"), None);
+
+        assert_eq!(run(server, "scoreboard players enable Voter vote"), Some(1));
+        assert_eq!(player_run("trigger vote add 5"), Some(5));
+        // Each trigger locks the score again.
+        assert_eq!(player_run("trigger vote"), None);
+        assert_eq!(run(server, "scoreboard players enable Voter vote"), Some(1));
+        assert_eq!(player_run("trigger vote"), Some(6));
+        assert_eq!(run(server, "scoreboard players enable Voter vote"), Some(1));
+        assert_eq!(player_run("trigger vote set -3"), Some(-3));
+        assert_eq!(score(board, "Voter", "vote"), Some(-3));
+        assert!(
+            board
+                .score_entry(&ScoreHolder::new("Voter"), &objective(board, "vote"))
+                .is_some_and(|score| score.is_locked())
+        );
     });
 }

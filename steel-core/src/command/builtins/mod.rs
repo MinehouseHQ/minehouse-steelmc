@@ -46,12 +46,14 @@ mod stopsound;
 mod summon;
 mod swing;
 mod tag;
+mod team;
 mod teleport;
 mod tellraw;
 mod tick;
 mod time;
 mod title;
 mod transfer;
+mod trigger;
 mod version;
 mod weather;
 mod worldborder;
@@ -134,6 +136,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(summon::registration())?;
     builder.register(swing::registration())?;
     builder.register(tag::registration())?;
+    builder.register(team::registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
@@ -144,6 +147,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
     builder.register(transfer::registration())?;
+    builder.register(trigger::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
@@ -239,6 +243,7 @@ mod tests {
                 "summon",
                 "swing",
                 "tag",
+                "team",
                 "teleport",
                 "tp",
                 "tellraw",
@@ -249,7 +254,8 @@ mod tests {
                 "weather",
                 "worldborder",
                 "invsee",
-                "transfer"
+                "transfer",
+                "trigger"
             ]
         );
 
