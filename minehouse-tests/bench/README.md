@@ -26,5 +26,5 @@ a client that sends two position packets without a `client_tick_end` in between.
 `run.sh TAG REGIONIZED BOT_SPEED MINUTES BOTS STEEL_BIN SERVER_DIR` starts the server in a
 pty, runs the bots (flying along +X at `BOT_SPEED` blocks per tick, 0 = idle) and prints
 `phases.py` averages of the "Game tick slow" (world phases, islands) and "Server tick slow"
-(packet drain and other game-loop steps) warnings. `REGIONIZED=1` sets
-`STEEL_REGIONIZED_TICKING=1`.
+(packet drain and other game-loop steps) warnings. `REGIONIZED` is passed as
+`STEEL_REGIONIZED_TICKING` (on by default in the server, `0` for the sequential tick).

@@ -39,16 +39,17 @@ pub fn convert_poi_chunk(
             .and_then(|list| list.compounds())
             .unwrap_or_default()
         {
-            let (Some([x, y, z]), Some(free_tickets)) = (
-                record
-                    .int_array("pos")
-                    .and_then(|pos| <[i32; 3]>::try_from(pos).ok()),
-                record.int("free_tickets"),
-            ) else {
+            let Some([x, y, z]) = record
+                .int_array("pos")
+                .and_then(|pos| <[i32; 3]>::try_from(pos).ok())
+            else {
                 ImportReport::count(&mut report.dropped_records, "malformed POI record");
                 ImportReport::count(&mut report.malformed_poi_shapes, shape(record));
                 continue;
             };
+            // Vanilla leaves `free_tickets` out when it is 0: a taken bed or workstation, and
+            // every nether portal, which has no tickets at all.
+            let free_tickets = record.int("free_tickets").unwrap_or(0);
             let in_chunk = x.div_euclid(16) == pos.0.x
                 && z.div_euclid(16) == pos.0.y
                 && (min_y..min_y + height).contains(&y);

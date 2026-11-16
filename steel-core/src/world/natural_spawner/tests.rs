@@ -494,3 +494,21 @@ fn spawn_state_timing() {
         sequential.as_secs_f64() / parallel.as_secs_f64()
     );
 }
+
+#[test]
+fn cached_biome_spawn_lists_match_biome_data() {
+    init_vanilla_registry();
+
+    let mut non_empty = 0;
+    for (id, biome) in steel_registry::REGISTRY.biomes.iter() {
+        let id = u16::try_from(id).expect("biome ids fit in u16");
+        for category in MobCategory::VALUES {
+            let cached = SpawnList::of_biome_id(id, category);
+            assert_eq!(cached, SpawnList::of_biome(biome, category));
+            if !cached.is_empty() {
+                non_empty += 1;
+            }
+        }
+    }
+    assert!(non_empty > 0);
+}

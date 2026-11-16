@@ -234,16 +234,16 @@ impl World {
 
 /// Whether worlds tick their islands in parallel.
 ///
-/// Experimental and off by default: set `STEEL_REGIONIZED_TICKING=1`. When off,
-/// the world tick is exactly the sequential Vanilla order.
+/// On by default; `STEEL_REGIONIZED_TICKING=0` turns it off. When off, the world
+/// tick is exactly the sequential Vanilla order.
 #[must_use]
 pub(crate) fn regionized_ticking_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        let enabled = env::var("STEEL_REGIONIZED_TICKING")
-            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
-        if enabled {
-            log::info!("Regionized ticking is enabled (STEEL_REGIONIZED_TICKING)");
+        let enabled = !env::var("STEEL_REGIONIZED_TICKING")
+            .is_ok_and(|value| matches!(value.as_str(), "0" | "false" | "no"));
+        if !enabled {
+            log::info!("Regionized ticking is disabled (STEEL_REGIONIZED_TICKING=0)");
         }
         enabled
     })
