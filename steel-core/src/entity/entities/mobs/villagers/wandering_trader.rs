@@ -292,6 +292,10 @@ impl WanderingTraderEntity {
             Self::update_trades(&mut offers, origin);
             offers
         });
+        // The trader keeps its trade limit whatever the trade rules say.
+        for offer in offers.iter_mut() {
+            offer.set_keeps_limit(true);
+        }
         f(offers)
     }
 

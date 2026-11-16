@@ -13,7 +13,7 @@ use steel_registry::vanilla_entities;
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use super::trading::{ItemCost, MerchantOffer, MerchantOffers};
+use super::trading::{ItemCost, MerchantOffer, MerchantOffers, trade_rules};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{Entity as _, LivingEntity, Mob, SharedEntity, next_entity_id};
 use crate::inventory::menu::kinds::merchant_menu;
@@ -116,18 +116,26 @@ fn item_cost_entry(cost: &ItemCost) -> MerchantItemCost {
 }
 
 /// Vanilla `MerchantOffer.writeToStream`.
+///
+/// The client works the price out itself and greys an offer out at the limit it was sent,
+/// so what the [trade rules](trade_rules) switch off is left out of what it gets.
 fn offer_entry(offer: &MerchantOffer) -> MerchantOfferEntry {
+    let rules = trade_rules();
     MerchantOfferEntry {
         cost_a: item_cost_entry(offer.item_cost_a()),
         result: offer.result().clone(),
         cost_b: offer.item_cost_b().map(item_cost_entry),
         out_of_stock: offer.is_out_of_stock(),
         uses: offer.uses(),
-        max_uses: offer.max_uses(),
+        max_uses: if rules.unlimited(offer.keeps_limit()) {
+            i32::MAX
+        } else {
+            offer.max_uses()
+        },
         xp: offer.xp(),
-        special_price_diff: offer.special_price_diff(),
+        special_price_diff: rules.special_price_diff(offer.special_price_diff()),
         price_multiplier: offer.price_multiplier(),
-        demand: offer.demand(),
+        demand: rules.demand(offer.demand()),
     }
 }
 
