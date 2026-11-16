@@ -55,6 +55,7 @@ mod tipped_arrow;
 mod trident;
 mod wind_charge;
 
+mod end_crystal_item;
 mod fishing_rod;
 mod flint_and_steel;
 mod lead;
@@ -77,6 +78,7 @@ pub use crossbow::CrossbowItem;
 pub use default::DefaultItemBehavior;
 pub use dye::DyeItem;
 pub use egg::EggItem;
+pub use end_crystal_item::EndCrystalItem;
 pub use ender_eye::EnderEyeItem;
 pub use ender_pearl::EnderPearlItem;
 pub use experience_bottle::ExperienceBottleItem;
