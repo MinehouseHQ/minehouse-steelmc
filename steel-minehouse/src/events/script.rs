@@ -114,7 +114,7 @@ pub struct ActorDef {
     pub view_range: f32,
     pub bright: bool,
     pub scale: Vec3,
-    /// The colour of the outline seen through walls, RGB.
+    /// The color of the outline seen through walls, RGB.
     pub glow: Option<i32>,
     /// Vanilla `Display.BillboardConstraints`, by id.
     pub billboard: Option<i8>,

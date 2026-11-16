@@ -185,7 +185,7 @@ impl Runner {
         self.actors.get(index).and_then(Option::as_ref)
     }
 
-    /// The actor, spawned at the stage centre if no cue has spawned it yet.
+    /// The actor, spawned at the stage center if no cue has spawned it yet.
     fn actor_or_spawn(&mut self, index: usize) -> Option<&mut Actor> {
         if self.actor(index).is_none() {
             let def = self.script.actors.get(index)?;

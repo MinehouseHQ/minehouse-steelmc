@@ -143,7 +143,7 @@ impl CameraPath {
         let after = self.points[(index + 2).min(count - 1)];
         let pos = catmull_rom(before.pos, from.pos, to.pos, after.pos, local);
 
-        // Yaw goes the short way round between neighbouring points.
+        // Yaw goes the short way round between neighboring points.
         let blend = smooth(local) as f32;
         let yaw = from.yaw + wrap(to.yaw - from.yaw) * blend;
         let pitch = from.pitch + (to.pitch - from.pitch) * blend;
