@@ -24,6 +24,7 @@ mod leaf_decay;
 pub mod map_markers;
 mod map_view;
 mod metro;
+pub mod metro_guides;
 mod minecart_names;
 mod nametags;
 mod papirosa;

@@ -442,7 +442,9 @@ module adds its guides to the list in `guides::all` (the bank: `bank-atm`, `bank
 shown while the bank is on; the zones: `spawn-zones`, `spawn-zones-auction`, shown while the
 zones are open; the magnifier: `magnifier` in `src/blocklog/guide.rs`, shown while the block log
 is on, its chat pages drawn by the same code as the real answer; the herbs: `magic-herb` with
-the seeds and `magic-broth` with a leaf, in `src/content/herb_guides.rs`).
+the seeds and `magic-broth` with a leaf, in `src/content/herb_guides.rs`; the metro:
+`metro-station` with a station, `metro-junction` with a junction, `metro-train` and
+`metro-map`, in `src/content/metro_guides.rs`). That is every guide of the Fabric server.
 
 The book «Гайды MineHouse» (`src/guides/book.rs`) is a vanilla written book marked in its
 custom data: a book and a sheet of paper make one on a workbench (the recipe
@@ -460,7 +462,6 @@ ones that work now, and a click on a line that does not says so. For this the di
 of `steel-registry` has the variant `DialogVariant::Custom`, a dialog an extension describes
 itself.
 
-Not here yet: the guides of the metro.
 
 ## Our items
 

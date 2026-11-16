@@ -47,7 +47,7 @@ const SELECT_TICKS: i64 = 30 * 20;
 /// How far apart two carts can be coupled, blocks.
 const LINK_REACH: f64 = 4.0;
 /// The most carts in one train.
-const MAX_CARTS: usize = 12;
+pub(super) const MAX_CARTS: usize = 12;
 /// Slower than this a cart counts as standing, blocks a tick.
 const MOVING: f64 = 0.01;
 /// Points of the trail closer than this to the last one are not kept, blocks.
