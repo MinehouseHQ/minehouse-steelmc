@@ -7,6 +7,9 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use rayon::iter::{
+    IndexedParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator as _,
+};
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
     AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetEntityLink,
@@ -25,6 +28,8 @@ use crate::entity::{
     ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
 };
 use crate::player::Player;
+use crate::world::region::regionized_ticking_enabled;
+use crate::world::tick_pool::{TICK_POOL_MIN_SPLIT, install_on_tick_pool};
 
 const BLOCKS_PER_CHUNK: f64 = 16.0;
 
@@ -79,6 +84,25 @@ struct TrackedEntity {
     registered_chunk: ChunkPos,
     /// Players currently tracking this entity (interior mutable for concurrent access).
     seen_by: SyncRwLock<FxHashSet<i32>>,
+}
+
+/// What one tracked entity sends this tick, gathered by
+/// [`EntityTracker::collect_entity_changes`].
+#[derive(Default)]
+struct EntityChanges {
+    /// The entity is gone; its tracking entry is dropped.
+    dead: bool,
+    passenger_packets: Vec<(i32, CSetPassengers)>,
+    /// Passengers changed, so the set of players tracking it is refreshed.
+    refresh_players: bool,
+    framed_map_sync: Option<SharedEntity>,
+    movement: Vec<EntityMovementSyncPacket>,
+    self_movement: Option<EntityMovementSyncPacket>,
+    entity_data: Option<Vec<DataValue>>,
+    attributes: Option<Vec<AttributeSnapshot>>,
+    mob_effects: Vec<(i32, MobEffectSyncPacket)>,
+    equipment: Option<Vec<EquipmentSlotItem>>,
+    entity_link: Option<CSetEntityLink>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -311,10 +335,6 @@ impl EntityTracker {
     /// Mirrors vanilla `ChunkMap.tick` driving `ServerEntity.sendChanges`. Returns the item frames
     /// whose framed map is due to sync this pass (every tenth pass of each frame), which the
     /// world handles because map data lives outside the tracker.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "entity tracker fanout mirrors vanilla sendChanges ordering"
-    )]
     pub fn send_changes<
         Movement,
         SelfMovement,
@@ -327,7 +347,7 @@ impl EntityTracker {
     >(
         &self,
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
-        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+        get_player: impl Fn(i32) -> Option<Arc<Player>> + Sync,
         mut senders: EntityChangeSenders<
             Movement,
             SelfMovement,
@@ -361,143 +381,66 @@ impl EntityTracker {
         let mut entity_links_to_broadcast = Vec::new();
         let mut framed_map_syncs = Vec::new();
 
-        self.entities.iter_sync(|entity_id, tracked| {
-            let entity_id = *entity_id;
-            let Some(entity) = tracked.entity.upgrade() else {
-                dead_entities.push(entity_id);
-                return true;
-            };
-
-            if entity.is_removed() {
-                return true;
-            }
-
-            entity.update_data_before_sync();
-
-            let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
-            {
-                let mut last_passenger_ids = tracked.last_passenger_ids.lock();
-                if *last_passenger_ids != passenger_ids {
-                    let changed_player_passenger_ids = direct_player_passenger_delta(
-                        &last_passenger_ids,
-                        &passenger_ids,
-                        &get_player,
-                    );
-                    let seen_by = tracked.seen_by.read();
-                    for player_id in seen_by.iter() {
-                        if changed_player_passenger_ids.contains(player_id) {
-                            continue;
-                        }
-                        passenger_packets_to_send.push((
-                            *player_id,
-                            CSetPassengers::new(
-                                entity_id,
-                                self.direct_passenger_ids_seen_by_player(
-                                    entity.as_ref(),
-                                    *player_id,
-                                ),
-                            ),
-                        ));
-                    }
-                    *last_passenger_ids = passenger_ids;
-                    entities_to_refresh.push(entity_id);
-                }
-            }
-
-            let mut server_entity = tracked.server_entity.lock();
-            if entity.as_item_frame().is_some() && server_entity.tick_count() % 10 == 0 {
-                framed_map_syncs.push(Arc::clone(&entity));
-            }
-            let dirty_entity_data = entity.pack_dirty_entity_data();
-            let has_dirty_entity_data = dirty_entity_data.is_some();
-            let result = server_entity.record_send_changes(ServerEntityMovementSyncUpdate {
-                entity_type: entity.entity_type(),
-                vertical_collision: entity.vertical_collision(),
-                horizontal_collision: entity.horizontal_collision(),
-                requires_precise_position: entity.base().requires_precise_position(),
-                entity_id,
-                is_passenger: entity.is_passenger(),
-                position: entity.position(),
-                velocity: entity.velocity(),
-                body_rotation: entity.rotation(),
-                head_yaw: entity.head_yaw(),
-                on_ground: entity.on_ground(),
-                needs_velocity_sync: entity.needs_velocity_sync(),
-                has_dirty_entity_data,
-                force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
-            });
-            drop(server_entity);
-            if result.should_clear_velocity_sync() {
-                entity.clear_velocity_sync();
-            }
-            result.for_each_packet(|packet| packets_to_broadcast.push((entity_id, packet)));
-            if entity.hurt_marked() {
-                let velocity = entity.velocity();
-                packets_to_broadcast.push((
-                    entity_id,
-                    EntityMovementSyncPacket::from(CSetEntityMotion::new(entity_id, velocity)),
-                ));
-                if entity.entity_type() == &vanilla_entities::PLAYER {
-                    self_movement_packets.push((
-                        entity_id,
-                        EntityMovementSyncPacket::from(CSetEntityMotion::new(entity_id, velocity)),
-                    ));
-                }
-                entity.clear_hurt_mark();
-            }
-            if let Some(dirty_entity_data) = dirty_entity_data {
-                entity_data_to_broadcast.push((entity_id, dirty_entity_data));
-            }
-            if let Some(living) = entity.as_living_entity() {
-                let dirty_attributes = living.drain_dirty_syncable_attributes();
-                if !dirty_attributes.is_empty() {
-                    attributes_to_broadcast.push((entity_id, dirty_attributes));
-                }
-                let dirty_mob_effects = living.drain_dirty_mob_effects();
-                if !dirty_mob_effects.is_empty() {
-                    let mut recipient_ids = FxHashSet::default();
-                    if entity.entity_type() == &vanilla_entities::PLAYER
-                        && get_player(entity_id).is_some()
-                    {
-                        recipient_ids.insert(entity_id);
-                    }
-                    for passenger in entity.passengers() {
-                        let passenger_id = passenger.id();
-                        if passenger.entity_type() == &vanilla_entities::PLAYER
-                            && get_player(passenger_id).is_some()
-                        {
-                            recipient_ids.insert(passenger_id);
-                        }
-                    }
-                    for recipient_id in recipient_ids {
-                        for change in &dirty_mob_effects {
-                            mob_effect_packets_to_send.push((
-                                recipient_id,
-                                change.packet(entity_id, recipient_id == entity_id),
-                            ));
-                        }
-                    }
-                }
-                let dirty_equipment = living.drain_dirty_equipment();
-                if !dirty_equipment.is_empty() {
-                    equipment_to_broadcast.push((entity_id, dirty_equipment));
-                }
-            }
-
-            let leash_holder_id = leash_holder_id(entity.as_ref());
-            {
-                let mut last_leash_holder_id = tracked.last_leash_holder_id.lock();
-                if *last_leash_holder_id != leash_holder_id {
-                    entity_links_to_broadcast.push((
-                        entity_id,
-                        CSetEntityLink::new(entity_id, leash_holder_id.unwrap_or_default()),
-                    ));
-                    *last_leash_holder_id = leash_holder_id;
-                }
-            }
-
+        let mut entity_ids = Vec::with_capacity(self.entities.len());
+        self.entities.iter_sync(|entity_id, _| {
+            entity_ids.push(*entity_id);
             true
         });
+        let collect = |entity_id: &i32| {
+            self.entities
+                .read_sync(entity_id, |_, tracked| {
+                    self.collect_entity_changes(*entity_id, tracked, &get_player)
+                })
+                .unwrap_or_default()
+        };
+        // Each entity's changes only touch that entity and its own tracking state, so with
+        // regionized ticking they are gathered on the tick pool. The packets still go out
+        // below in entity order, as the sequential pass sends them.
+        let all_changes: Vec<EntityChanges> = if regionized_ticking_enabled() {
+            install_on_tick_pool(|| {
+                entity_ids
+                    .par_iter()
+                    .with_min_len(TICK_POOL_MIN_SPLIT)
+                    .map(collect)
+                    .collect()
+            })
+        } else {
+            entity_ids.iter().map(collect).collect()
+        };
+
+        for (entity_id, changes) in entity_ids.into_iter().zip(all_changes) {
+            if changes.dead {
+                dead_entities.push(entity_id);
+                continue;
+            }
+            passenger_packets_to_send.extend(changes.passenger_packets);
+            if changes.refresh_players {
+                entities_to_refresh.push(entity_id);
+            }
+            framed_map_syncs.extend(changes.framed_map_sync);
+            packets_to_broadcast.extend(
+                changes
+                    .movement
+                    .into_iter()
+                    .map(|packet| (entity_id, packet)),
+            );
+            if let Some(packet) = changes.self_movement {
+                self_movement_packets.push((entity_id, packet));
+            }
+            if let Some(dirty_entity_data) = changes.entity_data {
+                entity_data_to_broadcast.push((entity_id, dirty_entity_data));
+            }
+            if let Some(dirty_attributes) = changes.attributes {
+                attributes_to_broadcast.push((entity_id, dirty_attributes));
+            }
+            mob_effect_packets_to_send.extend(changes.mob_effects);
+            if let Some(dirty_equipment) = changes.equipment {
+                equipment_to_broadcast.push((entity_id, dirty_equipment));
+            }
+            if let Some(packet) = changes.entity_link {
+                entity_links_to_broadcast.push((entity_id, packet));
+            }
+        }
 
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
@@ -540,6 +483,149 @@ impl EntityTracker {
         }
 
         framed_map_syncs
+    }
+
+    /// One tracked entity's part of [`Self::send_changes`]: updates its sync state and
+    /// returns the packets it needs, without sending anything.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "entity tracker fanout mirrors vanilla sendChanges ordering"
+    )]
+    fn collect_entity_changes(
+        &self,
+        entity_id: i32,
+        tracked: &TrackedEntity,
+        get_player: &impl Fn(i32) -> Option<Arc<Player>>,
+    ) -> EntityChanges {
+        let mut changes = EntityChanges::default();
+        let Some(entity) = tracked.entity.upgrade() else {
+            changes.dead = true;
+            return changes;
+        };
+
+        if entity.is_removed() {
+            return changes;
+        }
+
+        entity.update_data_before_sync();
+
+        let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
+        {
+            let mut last_passenger_ids = tracked.last_passenger_ids.lock();
+            if *last_passenger_ids != passenger_ids {
+                let changed_player_passenger_ids =
+                    direct_player_passenger_delta(&last_passenger_ids, &passenger_ids, &get_player);
+                let seen_by = tracked.seen_by.read();
+                for player_id in seen_by.iter() {
+                    if changed_player_passenger_ids.contains(player_id) {
+                        continue;
+                    }
+                    changes.passenger_packets.push((
+                        *player_id,
+                        CSetPassengers::new(
+                            entity_id,
+                            self.direct_passenger_ids_seen_by_player(entity.as_ref(), *player_id),
+                        ),
+                    ));
+                }
+                *last_passenger_ids = passenger_ids;
+                changes.refresh_players = true;
+            }
+        }
+
+        let mut server_entity = tracked.server_entity.lock();
+        if entity.as_item_frame().is_some() && server_entity.tick_count() % 10 == 0 {
+            changes.framed_map_sync = Some(Arc::clone(&entity));
+        }
+        let dirty_entity_data = entity.pack_dirty_entity_data();
+        let has_dirty_entity_data = dirty_entity_data.is_some();
+        let result = server_entity.record_send_changes(ServerEntityMovementSyncUpdate {
+            entity_type: entity.entity_type(),
+            vertical_collision: entity.vertical_collision(),
+            horizontal_collision: entity.horizontal_collision(),
+            requires_precise_position: entity.base().requires_precise_position(),
+            entity_id,
+            is_passenger: entity.is_passenger(),
+            position: entity.position(),
+            velocity: entity.velocity(),
+            body_rotation: entity.rotation(),
+            head_yaw: entity.head_yaw(),
+            on_ground: entity.on_ground(),
+            needs_velocity_sync: entity.needs_velocity_sync(),
+            has_dirty_entity_data,
+            force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
+        });
+        drop(server_entity);
+        if result.should_clear_velocity_sync() {
+            entity.clear_velocity_sync();
+        }
+        result.for_each_packet(|packet| changes.movement.push(packet));
+        if entity.hurt_marked() {
+            let velocity = entity.velocity();
+            changes
+                .movement
+                .push(EntityMovementSyncPacket::from(CSetEntityMotion::new(
+                    entity_id, velocity,
+                )));
+            if entity.entity_type() == &vanilla_entities::PLAYER {
+                changes.self_movement = Some(EntityMovementSyncPacket::from(
+                    CSetEntityMotion::new(entity_id, velocity),
+                ));
+            }
+            entity.clear_hurt_mark();
+        }
+        if let Some(dirty_entity_data) = dirty_entity_data {
+            changes.entity_data = Some(dirty_entity_data);
+        }
+        if let Some(living) = entity.as_living_entity() {
+            let dirty_attributes = living.drain_dirty_syncable_attributes();
+            if !dirty_attributes.is_empty() {
+                changes.attributes = Some(dirty_attributes);
+            }
+            let dirty_mob_effects = living.drain_dirty_mob_effects();
+            if !dirty_mob_effects.is_empty() {
+                let mut recipient_ids = FxHashSet::default();
+                if entity.entity_type() == &vanilla_entities::PLAYER
+                    && get_player(entity_id).is_some()
+                {
+                    recipient_ids.insert(entity_id);
+                }
+                for passenger in entity.passengers() {
+                    let passenger_id = passenger.id();
+                    if passenger.entity_type() == &vanilla_entities::PLAYER
+                        && get_player(passenger_id).is_some()
+                    {
+                        recipient_ids.insert(passenger_id);
+                    }
+                }
+                for recipient_id in recipient_ids {
+                    for change in &dirty_mob_effects {
+                        changes.mob_effects.push((
+                            recipient_id,
+                            change.packet(entity_id, recipient_id == entity_id),
+                        ));
+                    }
+                }
+            }
+            let dirty_equipment = living.drain_dirty_equipment();
+            if !dirty_equipment.is_empty() {
+                changes.equipment = Some(dirty_equipment);
+            }
+        }
+
+        let leash_holder_id = leash_holder_id(entity.as_ref());
+        {
+            let mut last_leash_holder_id = tracked.last_leash_holder_id.lock();
+            if *last_leash_holder_id != leash_holder_id {
+                changes.entity_link = Some(CSetEntityLink::new(
+                    entity_id,
+                    leash_holder_id.unwrap_or_default(),
+                ));
+                *last_leash_holder_id = leash_holder_id;
+            }
+        }
+
+        changes
     }
 
     /// Removes a player from every entity pairing and despawns those entities from their client.
