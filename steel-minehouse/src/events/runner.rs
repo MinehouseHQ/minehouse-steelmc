@@ -14,20 +14,21 @@ use steel_core::{
     world::{LevelReader, World},
 };
 use steel_protocol::packets::game::{
-    BlockChange, CAddEntity, CBlockUpdate, CClearTitles, CGameEvent, CLevelParticles,
+    BlockChange, CAddEntity, CBlockEvent, CBlockUpdate, CClearTitles, CGameEvent, CLevelParticles,
     CRemoveEntities, CSectionBlocksUpdate, CSetActionBarText, CSetCamera, CSetSubtitleText,
-    CSetTime, CSetTitleText, CSetTitlesAnimation, CSound, GameEventType, RandomizationType,
-    SoundSource,
+    CSetTime, CSetTitleText, CSetTitlesAnimation, CSound, CSwingAnimation, GameEventType,
+    RandomizationType, SoundSource,
 };
 use steel_registry::{
     REGISTRY, RegistryEntry as _, RegistryExt as _,
+    data_components::vanilla_components::SwingAnimation,
     particle_type::{ParticleData, ParticleTypeRef},
     sound_event::SoundEventHolder,
-    vanilla_entities,
+    vanilla_blocks, vanilla_entities,
 };
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Identifier, PackedSectionBlockPos, SectionPos,
-    types::{GameType, UpdateFlags},
+    types::{GameType, InteractionHand, UpdateFlags},
 };
 use text_components::{
     Modifier as _, TextComponent,
@@ -42,6 +43,8 @@ use super::{
     effects::{Fx, Rift, RocketEnd, Shower, Volley},
     journal::{Journal, ViewerState},
     permanent,
+    prop::Prop,
+    scatter::Scatter,
     script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript, Stage},
 };
 use crate::{blocklog::BlockLog, moderation::format::render};
@@ -80,6 +83,7 @@ enum Held {
     Meteors(Box<Shower>),
     Rift(Box<Rift>),
     Rockets(Box<Volley>),
+    Scatter(Box<Scatter>),
 }
 
 impl Held {
@@ -89,6 +93,7 @@ impl Held {
             Self::Meteors(shower) => shower.clear(fx),
             Self::Rift(rift) => rift.clear(fx),
             Self::Rockets(volley) => volley.clear(fx),
+            Self::Scatter(scatter) => scatter.clear(fx),
             _ => {}
         }
     }
@@ -99,6 +104,7 @@ impl Held {
             Self::Meteors(shower) => shower.forget(id),
             Self::Rift(rift) => rift.forget(id),
             Self::Rockets(volley) => volley.forget(id),
+            Self::Scatter(scatter) => scatter.forget(id),
             _ => {}
         }
     }
@@ -136,6 +142,8 @@ pub struct Runner {
     places: FxHashMap<String, Stage>,
     /// The rifts that are open, by name: where rockets fly.
     rifts: FxHashMap<String, DVec3>,
+    /// What `scatter` cues left lying: it stays until the show ends.
+    litter: Vec<Prop>,
     world: Arc<World>,
     origin: DVec3,
     mode: Mode,
@@ -178,6 +186,7 @@ impl Runner {
             bolts: Vec::new(),
             places: FxHashMap::default(),
             rifts: FxHashMap::default(),
+            litter: Vec::new(),
             world,
             origin,
             mode,
@@ -461,6 +470,9 @@ impl Runner {
         for running in &mut self.active {
             running.held.forget(id);
         }
+        for prop in &mut self.litter {
+            prop.forget(id);
+        }
     }
 
     /// Out of the show early (`/show optout`): back where and how they were.
@@ -646,6 +658,26 @@ impl Runner {
             | Action::Bar { .. }
             | Action::Chat { .. }
             | Action::Explosion { .. } => self.emit(&cue.action, cx),
+            Action::Blocks { .. } | Action::ClearBlocks { .. } => {
+                self.start_blocks(&cue.action, cx);
+            }
+            Action::Lightning { pos } => self.strike(*pos, cx.online),
+            Action::Meteors(_) | Action::Rockets(_) | Action::Rift(_) | Action::Scatter(_) => {
+                return self.start_effect(cue, cx);
+            }
+            Action::Follow { .. }
+            | Action::Pose { .. }
+            | Action::Swing { .. }
+            | Action::Ignite { .. }
+            | Action::Chest { .. } => self.start_puppet(&cue.action, cx),
+            Action::Path { .. } | Action::Shake { .. } | Action::Shockwave(_) => {}
+        }
+        Held::Nothing
+    }
+
+    /// Puts or takes away the blocks of a cue.
+    fn start_blocks(&mut self, action: &Action, cx: &mut Cx<'_>) {
+        match action {
             Action::Blocks { mode, source, pos } => {
                 let blocks = self.blocks_of(source, *pos);
                 match mode {
@@ -666,22 +698,136 @@ impl Runner {
                     cx.journal.flush();
                 }
             }
-            Action::Lightning { pos } => self.strike(*pos, cx.online),
-            Action::Meteors(_) | Action::Rockets(_) | Action::Rift(_) => {
-                return self.start_effect(cue, cx);
-            }
-            Action::Path { .. } | Action::Shake { .. } | Action::Shockwave(_) => {}
+            _ => {}
         }
-        Held::Nothing
     }
 
-    /// Called every tick of a cue with a duration; `progress` goes from 0 to 1, before any
-    /// easing.
+    /// The cues for characters, see `Puppets` of the Fabric mod.
+    fn start_puppet(&mut self, action: &Action, cx: &Cx<'_>) {
+        match action {
+            Action::Follow {
+                actor,
+                target,
+                offset,
+                look: toward,
+            } => self.follow(*actor, *target, *offset, *toward),
+            Action::Pose { actor, pose } => {
+                if let Some(actor) = self.actor_or_spawn(*actor) {
+                    actor.set_body_pose(*pose);
+                }
+            }
+            Action::Swing { actor, off_hand } => {
+                let body = self
+                    .actor_or_spawn(*actor)
+                    .and_then(|actor| actor.body_id());
+                if let Some(entity_id) = body.filter(|_| !self.muted) {
+                    let hand = if *off_hand {
+                        InteractionHand::OffHand
+                    } else {
+                        InteractionHand::MainHand
+                    };
+                    for player in self.viewers_here(cx.online) {
+                        player.send_packet(CSwingAnimation::new(
+                            entity_id,
+                            hand,
+                            SwingAnimation::DEFAULT,
+                        ));
+                    }
+                }
+            }
+            Action::Ignite { actor } => {
+                let Some(actor) = self.actor_or_spawn(*actor) else {
+                    return;
+                };
+                let at = actor.pos();
+                if actor.ignite() {
+                    self.play(
+                        "entity.creeper.primed",
+                        SoundSource::Hostile,
+                        at,
+                        1.0,
+                        0.5,
+                        cx,
+                    );
+                }
+            }
+            Action::Chest { pos, open, sound } => {
+                if self.muted {
+                    return;
+                }
+                let at = block_pos(self.abs(*pos));
+                let block = vanilla_blocks::CHEST.id() as i32;
+                for player in self.viewers_here(cx.online) {
+                    player.send_packet(CBlockEvent::new(at, 1, u8::from(*open), block));
+                }
+                if *sound {
+                    let name = if *open {
+                        "block.chest.open"
+                    } else {
+                        "block.chest.close"
+                    };
+                    let middle = DVec3::new(
+                        f64::from(at.x()) + 0.5,
+                        f64::from(at.y()) + 0.5,
+                        f64::from(at.z()) + 0.5,
+                    );
+                    self.play(name, SoundSource::Blocks, middle, 0.5, 0.95, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Puts the camera `offset` from the target, looking at `toward` from it.
+    fn follow(&mut self, camera: usize, target: usize, offset: DVec3, toward: DVec3) {
+        let Some(at) = self.actor(target).map(Actor::pos) else {
+            return;
+        };
+        let pos = at + offset;
+        let (yaw, pitch) = look(pos, at + toward);
+        if let Some(actor) = self.actor_or_spawn(camera) {
+            actor.move_to(pos, yaw, pitch);
+        }
+    }
+
+    /// A vanilla sound at a place, for the viewers in the show's world.
+    fn play(
+        &self,
+        name: &'static str,
+        source: SoundSource,
+        at: DVec3,
+        volume: f32,
+        pitch: f32,
+        cx: &Cx<'_>,
+    ) {
+        if self.muted {
+            return;
+        }
+        let Some(event) = REGISTRY
+            .sound_events
+            .by_key(&Identifier::vanilla_static(name))
+        else {
+            return;
+        };
+        let seed = rand::random();
+        for player in self.viewers_here(cx.online) {
+            player.send_packet(CSound::new_holder(
+                SoundEventHolder::Registry(event),
+                source,
+                at,
+                volume,
+                pitch,
+                seed,
+            ));
+        }
+    }
+
     /// What a big effect keeps while it runs.
     fn start_effect(&mut self, cue: &Cue, cx: &Cx<'_>) -> Held {
         match &cue.action {
             Action::Meteors(_) => Held::Meteors(Box::default()),
             Action::Rockets(_) => Held::Rockets(Box::default()),
+            Action::Scatter(def) => Held::Scatter(Box::new(Scatter::throw(def, self.origin))),
             Action::Rift(def) => {
                 let center = self.abs(def.pos);
                 let rift = Rift::open(def, cue.at, center, &self.fx(cx));
@@ -692,7 +838,8 @@ impl Runner {
         }
     }
 
-    /// One tick of a cue that is a big effect.
+    /// One tick of a cue that is a big effect; `progress` goes from 0 to 1, before any
+    /// easing.
     fn update_effect(&mut self, cue: &Cue, held: &mut Held, progress: f64, cx: &Cx<'_>) {
         let elapsed = self.tick.saturating_sub(cue.at);
         match (&cue.action, held) {
@@ -719,6 +866,18 @@ impl Runner {
             (Action::Shockwave(def), _) => {
                 def.update(self.abs(def.pos), progress, &self.fx(cx));
             }
+            (Action::Scatter(def), Held::Scatter(scatter)) => {
+                scatter.update(def, elapsed, &self.fx(cx));
+            }
+            (
+                Action::Follow {
+                    actor,
+                    target,
+                    offset,
+                    look: toward,
+                },
+                _,
+            ) => self.follow(*actor, *target, *offset, *toward),
             _ => {}
         }
     }
@@ -815,6 +974,11 @@ impl Runner {
         if let Action::Rift(def) = &cue.action {
             self.rifts.remove(&def.name);
         }
+        if let (Action::Scatter(def), Held::Scatter(scatter)) = (&cue.action, &mut *held) {
+            // What fell stays where it lies.
+            scatter.land(def);
+            self.litter.append(&mut scatter.leave());
+        }
         held.clear(&self.fx(cx));
         match (&cue.action, &*held) {
             (Action::Move { .. }, _) => self.update_cue(cue, held, 1.0, cx),
@@ -864,22 +1028,15 @@ impl Runner {
         {
             self.burst(particle, at, Vec3::ZERO, 0.0, 1, cx);
         }
-        let boom = REGISTRY
-            .sound_events
-            .by_key(&Identifier::vanilla_static("entity.generic.explode"))
-            .filter(|_| sound);
-        if let Some(boom) = boom {
-            let seed = rand::random();
-            for player in self.viewers_here(cx.online) {
-                player.send_packet(CSound::new_holder(
-                    SoundEventHolder::Registry(boom),
-                    SoundSource::Master,
-                    at,
-                    4.0,
-                    0.8,
-                    seed,
-                ));
-            }
+        if sound {
+            self.play(
+                "entity.generic.explode",
+                SoundSource::Master,
+                at,
+                4.0,
+                0.8,
+                cx,
+            );
         }
     }
 
@@ -1005,6 +1162,9 @@ impl Runner {
         let here = self.viewers_here(online);
         for actor in self.actors.iter_mut().flatten() {
             actor.sync(&here, online);
+        }
+        for prop in &mut self.litter {
+            prop.sync(&here);
         }
 
         if let Some((entity, ..)) = camera {
@@ -1210,6 +1370,9 @@ impl Runner {
         }
         self.rifts.clear();
         let online = cx.online;
+        for mut prop in self.litter.drain(..) {
+            prop.remove(online);
+        }
         for slot in &mut self.actors {
             if let Some(mut actor) = slot.take() {
                 actor.remove(online);

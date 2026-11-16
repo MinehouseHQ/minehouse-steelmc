@@ -1,5 +1,5 @@
 use glam::{DVec3, Vec3};
-use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
+use steel_registry::{REGISTRY, entity_data::EntityPose, init_vanilla_registry, vanilla_blocks};
 
 use super::{
     blocks::block_state,
@@ -138,8 +138,27 @@ fn mistakes_name_the_place() {
             "пока не перенесён",
         ),
         (
-            r#"{"tracks": {"fx": [{"at": "0:02", "do": "follow"}]}}"#,
-            "tracks.fx[0] (\"follow\" на 0:02): это действие пока не перенесено",
+            r#"{"tracks": {"fx": [{"at": "0:02", "do": "sparks"}]}}"#,
+            "tracks.fx[0] (\"sparks\" на 0:02): это действие пока не перенесено",
+        ),
+        (
+            r#"{"actors": {"a": {"type": "mob", "entity": "minecraft:arrow"}}}"#,
+            "entity: нужен моб, а не \"minecraft:arrow\"",
+        ),
+        (
+            r#"{"actors": {"a": {"type": "player", "player": "Steve"}},
+                "cues": [{"do": "ignite", "actor": "a"}]}"#,
+            "актёр \"a\" не mob",
+        ),
+        (
+            r#"{"actors": {"a": {"type": "player", "player": "Steve"}},
+                "cues": [{"do": "pose", "actor": "a", "pose": "flying"}]}"#,
+            "pose: standing, sleeping",
+        ),
+        (
+            r#"{"actors": {"a": {"type": "player", "player": "Steve"}},
+                "cues": [{"do": "follow", "target": "a"}]}"#,
+            "нет актёра \"cam\"",
         ),
         (
             r#"{"cues": [{"at": 0, "do": "dance"}]}"#,
@@ -232,4 +251,78 @@ fn block_states_take_properties() {
     );
     assert!(block_state("minecraft:oak_log[axis=q]").is_err());
     assert!(block_state("minecraft:oak_log[axis").is_err());
+}
+
+#[test]
+fn characters_are_read() {
+    let show = show(
+        r#"{
+        "actors": {
+            "cam": {"type": "camera"},
+            "hero": {"type": "player", "player": "Steve", "names": true, "hand": "minecraft:torch"},
+            "boom": {"type": "mob", "entity": "minecraft:creeper"}
+        },
+        "cues": [
+            {"at": 0, "do": "spawn", "actor": "hero", "pos": [0, 1, 0], "yaw": 90},
+            {"at": 0, "do": "follow", "target": "hero", "look": [0, 1, 0]},
+            {"at": 5, "do": "pose", "actor": "hero", "pose": "crouching"},
+            {"at": 6, "do": "swing", "actor": "hero", "hand": "off"},
+            {"at": 7, "do": "ignite", "actor": "boom"},
+            {"at": 8, "do": "chest", "pos": [2, 0, 0], "open": false},
+            {"at": 9, "do": "scatter", "item": "minecraft:gold_nugget", "pos": [0, 2, 0], "vanish": "5s"}
+        ]
+    }"#,
+    )
+    .expect("the show loads");
+    // Actors are kept by name: boom, cam, hero.
+    assert!(matches!(
+        &show.actors[2].kind,
+        ActorKind::Player { name, names: true, hand: Some(hand) }
+            if name == "Steve" && hand.key.path == "torch"
+    ));
+    assert!(matches!(
+        show.actors[0].kind,
+        ActorKind::Mob { entity, hand: None } if entity.key.path == "creeper"
+    ));
+    let seen: Vec<(u32, &str)> = show
+        .cues
+        .iter()
+        .map(|cue| {
+            let name = match &cue.action {
+                Action::Follow {
+                    actor: 1,
+                    target: 2,
+                    offset,
+                    ..
+                } if *offset == DVec3::new(4.0, 1.5, 0.0) => "follow",
+                Action::Pose {
+                    pose: EntityPose::Sneaking,
+                    ..
+                } => "pose",
+                Action::Swing { off_hand: true, .. } => "swing",
+                Action::Ignite { actor: 0 } => "ignite",
+                Action::Chest {
+                    open: false,
+                    sound: true,
+                    ..
+                } => "chest",
+                Action::Scatter(def) if def.count == 12 => "scatter",
+                Action::Spawn { .. } => "spawn",
+                _ => "other",
+            };
+            (cue.duration, name)
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (0, "spawn"),
+            (60, "follow"),
+            (0, "pose"),
+            (0, "swing"),
+            (0, "ignite"),
+            (0, "chest"),
+            (100, "scatter"),
+        ]
+    );
 }

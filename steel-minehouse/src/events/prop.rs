@@ -1,5 +1,5 @@
-//! A block display that is part of an effect (a meteor, a segment of a rift, a piece of a
-//! rocket) and not an actor of the script. Like an actor it exists only in the packets
+//! A block or item display that is part of an effect (a meteor, a segment of a rift, a piece
+//! of a rocket, a scattered item) and not an actor of the script. Like an actor it exists only in the packets
 //! sent to the viewers.
 
 use std::sync::Arc;
@@ -12,9 +12,11 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::{
     RegistryEntry as _,
-    entity_data::{Quaternionf, Vector3f},
+    entity_data::{DataValue, Quaternionf, Vector3f},
+    entity_type::EntityTypeRef,
+    item_stack::ItemStack,
     vanilla_entities,
-    vanilla_entity_data::BlockDisplayEntityData,
+    vanilla_entity_data::{BlockDisplayEntityData, DisplayEntityData, ItemDisplayEntityData},
 };
 use steel_utils::BlockStateId;
 use uuid::Uuid;
@@ -24,10 +26,45 @@ const FULL_BRIGHT: i32 = 15 << 4 | 15 << 20;
 /// Vanilla `Entity.FLAG_GLOWING` of the shared flags.
 const FLAG_GLOWING: i8 = 1 << 6;
 
-/// A fully lit block display.
+enum Data {
+    Block(Box<BlockDisplayEntityData>),
+    Item(Box<ItemDisplayEntityData>),
+}
+
+impl Data {
+    const fn display(&mut self) -> &mut DisplayEntityData {
+        match self {
+            Self::Block(data) => &mut data.display,
+            Self::Item(data) => &mut data.display,
+        }
+    }
+
+    const fn kind(&self) -> EntityTypeRef {
+        match self {
+            Self::Block(_) => &vanilla_entities::BLOCK_DISPLAY,
+            Self::Item(_) => &vanilla_entities::ITEM_DISPLAY,
+        }
+    }
+
+    fn pack_all(&self) -> Vec<DataValue> {
+        match self {
+            Self::Block(data) => data.pack_all(),
+            Self::Item(data) => data.pack_all(),
+        }
+    }
+
+    fn pack_dirty(&mut self) -> Option<Vec<DataValue>> {
+        match self {
+            Self::Block(data) => data.pack_dirty(),
+            Self::Item(data) => data.pack_dirty(),
+        }
+    }
+}
+
+/// A display entity of an effect.
 pub struct Prop {
     id: i32,
-    data: Box<BlockDisplayEntityData>,
+    data: Data,
     pos: DVec3,
     /// Where the viewers were last told it is.
     sent: DVec3,
@@ -36,13 +73,26 @@ pub struct Prop {
 }
 
 impl Prop {
-    /// Makes the display at `pos`; viewers get it with the next [`Prop::sync`].
+    /// Makes a fully lit block display at `pos`; viewers get it with the next
+    /// [`Prop::sync`].
     #[must_use]
     pub fn new(state: BlockStateId, pos: DVec3, view_range: f32) -> Self {
         let mut data = Box::new(BlockDisplayEntityData::new());
         data.block_state.set(state);
         data.display.brightness_override.set(FULL_BRIGHT);
-        data.display.view_range.set(view_range);
+        Self::with(Data::Block(data), pos, view_range)
+    }
+
+    /// Makes an item display at `pos`, lit like the place it is in.
+    #[must_use]
+    pub fn item(stack: ItemStack, pos: DVec3, view_range: f32) -> Self {
+        let mut data = Box::new(ItemDisplayEntityData::new());
+        data.item_stack.set(stack);
+        Self::with(Data::Item(data), pos, view_range)
+    }
+
+    fn with(mut data: Data, pos: DVec3, view_range: f32) -> Self {
+        data.display().view_range.set(view_range);
         Self {
             id: next_entity_id(),
             data,
@@ -52,21 +102,29 @@ impl Prop {
         }
     }
 
+    /// Where the display is.
+    #[must_use]
+    pub const fn pos(&self) -> DVec3 {
+        self.pos
+    }
+
     /// An outline of this RGB color, seen through walls.
     pub fn glow(&mut self, color: i32) {
-        self.data.display.base.shared_flags.set(FLAG_GLOWING);
-        self.data.display.glow_color_override.set(color);
+        let display = self.data.display();
+        display.base.shared_flags.set(FLAG_GLOWING);
+        display.glow_color_override.set(color);
     }
 
     /// The box around the entity the client culls it by: a long shape needs a big one.
     pub fn cull_box(&mut self, width: f32, height: f32) {
-        self.data.display.width.set(width);
-        self.data.display.height.set(height);
+        let display = self.data.display();
+        display.width.set(width);
+        display.height.set(height);
     }
 
     /// The shape of the display; the client blends to it over `ticks`.
     pub fn shape(&mut self, translation: Vec3, rotation: Quat, scale: Vec3, ticks: u32) {
-        let display = &mut self.data.display;
+        let display = self.data.display();
         display.translation.set(Vector3f {
             x: translation.x,
             y: translation.y,
@@ -94,7 +152,7 @@ impl Prop {
     /// Moves the display; the client glides it there over `ticks`.
     pub fn glide(&mut self, pos: DVec3, ticks: u32) {
         self.data
-            .display
+            .display()
             .pos_rot_interpolation_duration
             .set(i32::try_from(ticks).unwrap_or(i32::MAX));
         self.pos = pos;
@@ -111,7 +169,7 @@ impl Prop {
                 player.send_packet(CAddEntity {
                     id: self.id,
                     uuid: Uuid::new_v4(),
-                    entity_type: vanilla_entities::BLOCK_DISPLAY.id() as i32,
+                    entity_type: self.data.kind().id() as i32,
                     position: self.pos,
                     velocity: DVec3::ZERO,
                     x_rot: 0,

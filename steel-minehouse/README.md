@@ -215,13 +215,21 @@ What works now:
 
 - actors `camera`, `block`, `item` (with `model`), `text`, `model`, with `scale`, `glow`,
   `billboard`, `bright`, `viewRange`
+- actors `player` (a mannequin in the skin of `"player": "<name>"`, with `names` to write
+  the name over its head) and `mob` (`"entity": "minecraft:creeper"`), both with `hand`,
+  the item they hold. They walk their legs when a `move` cue moves them
 - a `model` actor is a captured block set (`"blocks": "<name>"`) drawn block by block; it
   moves, turns and grows as one piece around its `pivot`, the middle of the set unless
   the script names one
 - cues `cinematic`, `cut`, `path` (`points`, `orbit`, or a recorded `path`), `shake`, `spawn`, `move`,
   `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
   `chat`, `blocks`, `clear_blocks`, `lightning`, `explosion`, `meteors`, `rift`,
-  `rockets`, `shockwave`
+  `rockets`, `shockwave`, `follow`, `pose`, `swing`, `ignite`, `chest`, `scatter`
+- `follow` keeps the camera at `offset` from a `target` actor, looking at it; `pose`
+  (`standing`, `sleeping`, `crouching`, `swimming`, `sitting`) and `swing` are for a
+  `player` or `mob`; `ignite` makes a creeper swell without ever exploding; `chest` opens
+  or shuts the lid of a chest at `pos`; `scatter` throws `count` items from `pos`, which
+  fall, bounce and lie on `floor` until the show ends or until `vanish`
 - `meteors` fall at the show's spots and around every viewer, wherever they are, and
   leave small craters; `rift` tears a glowing crack in the air; `rockets` fly between the
   rifts that are open; `shockwave` is a ring of particles running out along the ground.
@@ -238,12 +246,13 @@ What works now:
   (`events/journal.json` in the data directory), so they are put back at the end, on
   `/show stop`, or when they next join after the server died mid-show
 
-A script that uses anything else (`train`, `rig`, `player` and `mob` actors, `follow`,
-`sparks`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
+A script that uses anything else (`train` and `rig` actors, `sparks`, `animate`, `hide`,
+`logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
 ported yet either.
 
-Different from Fabric: actors are display entities that exist only in the packets sent to
-the viewers. Nothing enters the world, so nobody else sees a show and nothing is left
+Different from Fabric: actors are entities that exist only in the packets sent to
+the viewers. A mannequin takes its skin from the player when they are online; otherwise
+the viewers' games look the name up themselves. Nothing enters the world, so nobody else sees a show and nothing is left
 behind after a crash. Where shows are staged is kept in `events/stages.json` of the data
 directory, not next to the scripts, and their spots in `events/spots.json` beside it. Recorded camera paths are where Fabric kept them, in
 `config/minehouse/events/assets/<show>/paths/<name>.json`, so they can be copied over as
