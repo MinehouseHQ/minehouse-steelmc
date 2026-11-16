@@ -18,6 +18,7 @@ mod commands;
 mod couplings;
 mod end_lock;
 mod first_join;
+pub mod herb_guides;
 mod herbs;
 mod leaf_decay;
 pub mod map_markers;
@@ -309,7 +310,7 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&cauldron::Broth)
     } else if id == PAPIROSA.id {
         Some(&papirosa::Papirosa)
-    } else if id == CARD.id || id == MAGNIFIER.id {
+    } else if id == CARD.id || id == MAGNIFIER.id || id == LEAF.id {
         Some(&guides::Opener)
     } else if id == ATM.id {
         Some(&ATM_ITEM)

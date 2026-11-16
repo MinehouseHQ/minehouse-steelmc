@@ -122,17 +122,17 @@ fn recolor(stage: &mut Stage, id: &str, carpet: BlockRef) {
     stage.pulse(id);
 }
 
-fn centre_x(rect: Rect) -> f32 {
+fn center_x(rect: Rect) -> f32 {
     f32::from(rect[0]) + (f32::from(rect[2]) - 1.0) / 2.0
 }
 
-fn centre_z(rect: Rect) -> f32 {
+fn center_z(rect: Rect) -> f32 {
     f32::from(rect[1]) + (f32::from(rect[3]) - 1.0) / 2.0
 }
 
 /// A label over the middle of a zone.
 fn tag(stage: &mut Stage, id: &str, text: TextComponent, rect: Rect, y: f32) {
-    stage.label(id, text, centre_x(rect), y, centre_z(rect));
+    stage.label(id, text, center_x(rect), y, center_z(rect));
 }
 
 // ---- the zones -------------------------------------------------------------------------------
@@ -278,7 +278,7 @@ fn walking_in(stage: &mut Stage) {
         stage.item("head", head, 3.0, 1.4, 3.0, 0.6);
     });
     stage.later(25, move |stage| {
-        stage.move_to("head", centre_x(front), 1.4, centre_z(front), 0.0, 25);
+        stage.move_to("head", center_x(front), 1.4, center_z(front), 0.0, 25);
     });
     stage.later(55, move |stage| {
         let text = colored(&format!("Зона {FRONT_LOT} · Steve"), RED);

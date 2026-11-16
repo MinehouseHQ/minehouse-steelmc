@@ -38,7 +38,7 @@ use uuid::Uuid;
 use self::{session::Session, stage::Stage};
 use crate::{
     bank, blocklog,
-    content::{CustomItem, id_of},
+    content::{self, CustomItem, id_of},
 };
 
 /// One step of a guide: a caption and a script that builds or animates the scene. The
@@ -119,6 +119,7 @@ static GUIDES: LazyLock<Vec<Guide>> = LazyLock::new(|| {
     let mut guides = bank::guides::all();
     guides.extend(bank::zones::guides::all());
     guides.push(blocklog::guide::guide());
+    guides.extend(content::herb_guides::all());
     guides.retain(|guide| !guide.steps.is_empty());
     guides
 });

@@ -29,6 +29,8 @@ fn every_guide_has_an_id_for_the_command_and_steps() {
     assert!(seen.contains(&"bank-atm"));
     assert!(seen.contains(&"spawn-zones"));
     assert!(seen.contains(&"magnifier"));
+    assert!(seen.contains(&"magic-herb"));
+    assert!(seen.contains(&"magic-broth"));
     assert!(seen.contains(&"spawn-zones-auction"));
     assert!(seen.contains(&"bank-terminal"));
 }
