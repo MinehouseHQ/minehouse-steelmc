@@ -261,6 +261,7 @@ fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
             pos,
             readiness: holder.ticking_readiness_snapshot(),
             holder,
+            hiding: None,
         }],
         has_skylight: true,
         epoch_snapshot: 0,

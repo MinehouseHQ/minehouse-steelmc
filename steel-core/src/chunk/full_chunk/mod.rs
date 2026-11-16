@@ -29,7 +29,7 @@ use crate::block_entity::{
     ClearedBlockEntities, DetachedBlockEntity, LifecycleDispatchers, SharedBlockEntity,
 };
 use crate::chunk::{
-    Chunk,
+    Chunk, anti_xray,
     block_entity_listener::{FullChunkGameEventListeners, ListenerSelectionCommit},
     chunk_holder::ChunkHolder,
     data::empty_postprocessing,
@@ -1838,12 +1838,42 @@ impl FullChunkRef<'_> {
     /// Extracts the chunk data for sending to the client.
     #[must_use]
     pub fn extract_chunk_data(&self) -> ChunkPacketData {
+        self.extract_chunk_data_hiding(ChunkPos::new(0, 0), None)
+    }
+
+    /// Extracts the chunk data for sending to the client, with the ores `hiding` hides sent as
+    /// rock (see [`anti_xray`]). `pos` is where this chunk is.
+    #[must_use]
+    pub fn extract_chunk_data_hiding(
+        &self,
+        pos: ChunkPos,
+        hiding: Option<&anti_xray::ChunkHiding>,
+    ) -> ChunkPacketData {
         let data = Vec::new();
 
         let mut cursor = Cursor::new(data);
-        self.chunk.sections.sections.iter().for_each(|section| {
-            section.read().write(&mut cursor);
+        let source = hiding.map(|hiding| HidingSource {
+            chunk: *self,
+            pos,
+            hiding,
         });
+        self.chunk
+            .sections
+            .sections
+            .iter()
+            .enumerate()
+            .for_each(|(index, section)| {
+                let guard = section.read();
+                let shown = source.as_ref().and_then(|source| {
+                    let origin =
+                        BlockPos::new(pos.0.x * 16, self.min_y() + index as i32 * 16, pos.0.y * 16);
+                    anti_xray::hide_section(&source.hiding.hidden, guard.states(), origin, source)
+                });
+                match shown {
+                    Some(states) => guard.write_showing(&states, &mut cursor),
+                    None => guard.write(&mut cursor),
+                }
+            });
 
         let heightmaps = {
             let heightmaps = self.chunk.heightmaps.read();
@@ -1901,6 +1931,30 @@ impl FullChunkRef<'_> {
     pub fn extract_light_data(&self, has_skylight: bool) -> LightUpdatePacketData {
         let light = self.chunk.light.read();
         build_chunk_light_update_packet(&light, has_skylight)
+    }
+}
+
+/// Reads the blocks around a chunk being hidden: its own other sections and its neighbours.
+struct HidingSource<'a> {
+    chunk: FullChunkRef<'a>,
+    pos: ChunkPos,
+    hiding: &'a anti_xray::ChunkHiding,
+}
+
+impl anti_xray::BlockSource for HidingSource<'_> {
+    fn state(&self, at: BlockPos) -> Option<BlockStateId> {
+        let chunk_x = at.x() >> 4;
+        let chunk_z = at.z() >> 4;
+        let neighbour = match (chunk_x - self.pos.0.x, chunk_z - self.pos.0.y) {
+            (0, 0) => return Some(self.chunk.get_block_state(at)),
+            (-1, 0) => 0,
+            (1, 0) => 1,
+            (0, -1) => 2,
+            (0, 1) => 3,
+            _ => return None,
+        };
+        let holder = self.hiding.neighbours.holders[neighbour].as_ref()?;
+        Some(holder.try_full_chunk()?.get_block_state(at))
     }
 }
 
