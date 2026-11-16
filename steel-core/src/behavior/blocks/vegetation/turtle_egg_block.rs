@@ -25,6 +25,7 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
+use crate::entity::entities::mobs::passive::turtle::spawn_hatchling;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -264,17 +265,14 @@ impl BlockBehavior for TurtleEggBlock {
             );
 
             let eggs = state.get_value(EGGS);
-            for _ in 0..eggs {
+            for index in 0..eggs {
                 world.level_event(
                     level_events::PARTICLES_DESTROY_BLOCK,
                     pos,
                     level_events::encode_block_state_data(u32::from(state.0)),
                     None,
                 );
-                // TODO(turtle-entity): spawn one baby Turtle per egg here once the
-                // Turtle entity lands. Vanilla creates it with age -24000, calls
-                // setHomePos(pos), snaps it just above the nest, and adds it to the
-                // world. Wired up in the follow-up entity PR.
+                spawn_hatchling(world, pos, i32::from(index));
             }
         }
     }

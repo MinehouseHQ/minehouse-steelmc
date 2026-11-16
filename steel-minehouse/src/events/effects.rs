@@ -64,7 +64,7 @@ pub struct Fx<'a> {
 
 impl<'a> Fx<'a> {
     /// The viewers in `world` within `reach` of `at`.
-    fn near(&self, world: &Arc<World>, at: DVec3, reach: f64) -> Vec<&'a Arc<Player>> {
+    pub fn near(&self, world: &Arc<World>, at: DVec3, reach: f64) -> Vec<&'a Arc<Player>> {
         self.viewers
             .iter()
             .filter(|player| {

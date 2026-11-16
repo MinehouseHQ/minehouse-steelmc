@@ -5,27 +5,37 @@
 //! Every part of an actor stands at the actor's place and is shaped by its transformation:
 //! moving the actor moves every part by the same amount, turning or scaling it rewrites
 //! every part around a common pivot, so a model of a hundred blocks turns as one piece.
+//!
+//! A `player` or `mob` actor is a living entity instead (a mannequin in a player's skin, or
+//! any mob): it turns itself, its game walks its legs when it is moved, and it can lie down,
+//! swing its arm and hold an item.
 
-use std::sync::Arc;
+use std::{mem, ptr, sync::Arc};
 
 use glam::{DVec3, Quat, Vec3};
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_core::{entity::next_entity_id, player::Player};
 use steel_protocol::packets::game::{
-    CAddEntity, CEntityPositionSync, CRemoveEntities, CSetEntityData, PositionPath,
+    CAddEntity, CEntityPositionSync, CRemoveEntities, CRotateHead, CSetEntityData, CSetEquipment,
+    EquipmentSlotItem, PositionPath,
 };
 use steel_registry::{
     RegistryEntry as _,
     blocks::block_state_ext::BlockStateExt as _,
     data_components::vanilla_components::ITEM_MODEL,
-    entity_data::{DataValue, Quaternionf, Vector3f},
+    entity_data::{DataValue, EntityPose, Quaternionf, Vector3f},
     entity_type::EntityTypeRef,
+    equipment::EquipmentSlot,
     item_stack::ItemStack,
+    items::ItemRef,
+    resolvable_profile::{PlayerSkinPatch, ResolvableProfile},
     vanilla_entities,
     vanilla_entity_data::{
-        BlockDisplayEntityData, DisplayEntityData, ItemDisplayEntityData, TextDisplayEntityData,
+        BaseEntityData, BlockDisplayEntityData, CreeperEntityData, DisplayEntityData,
+        ItemDisplayEntityData, MannequinEntityData, TextDisplayEntityData,
     },
 };
+use text_components::TextComponent;
 use uuid::Uuid;
 
 use super::{
@@ -47,6 +57,93 @@ enum Shown {
     Text(Box<TextDisplayEntityData>),
     Block(Box<BlockDisplayEntityData>),
     Item(Box<ItemDisplayEntityData>),
+    Body(Box<Body>),
+}
+
+/// What a living stand-in is to the viewers' game.
+enum BodyData {
+    Mannequin(Box<MannequinEntityData>),
+    /// Any mob: only what every entity has is told, the rest is the game's own.
+    Mob(Box<BaseEntityData>),
+}
+
+/// The living entity of a `player` or `mob` actor.
+struct Body {
+    kind: EntityTypeRef,
+    data: BodyData,
+    /// What it holds in its main hand.
+    hand: Option<ItemStack>,
+    /// A mannequin whose skin the viewers' games look up by this name, until the player
+    /// themselves is online and the server has their skin to hand out.
+    unresolved: Option<String>,
+    /// A creeper that swells (`ignite`): told to whoever gets the entity later too.
+    swelling: Option<DataValue>,
+    swelling_unsent: bool,
+}
+
+impl Body {
+    const fn base(&mut self) -> &mut BaseEntityData {
+        match &mut self.data {
+            BodyData::Mannequin(data) => &mut data.avatar.living_entity.base,
+            BodyData::Mob(data) => data,
+        }
+    }
+
+    fn mannequin(name: &str, show_name: bool) -> Self {
+        let mut data = Box::new(MannequinEntityData::new());
+        // A name that is not a player's can't be looked up: the default skin then.
+        if let Ok(profile) =
+            ResolvableProfile::dynamic_name(name.to_owned(), PlayerSkinPatch::default())
+        {
+            data.profile.set(profile);
+        }
+        data.immovable.set(true);
+        // Vanilla writes "NPC" under the name unless the description is empty.
+        data.description.set(None);
+        if show_name {
+            let base = &mut data.avatar.living_entity.base;
+            base.custom_name
+                .set(Some(Box::new(TextComponent::plain(name.to_owned()))));
+            base.custom_name_visible.set(true);
+        }
+        Self {
+            kind: &vanilla_entities::MANNEQUIN,
+            data: BodyData::Mannequin(data),
+            hand: None,
+            unresolved: Some(name.to_owned()),
+            swelling: None,
+            swelling_unsent: false,
+        }
+    }
+
+    fn mob(kind: EntityTypeRef) -> Self {
+        Self {
+            kind,
+            data: BodyData::Mob(Box::new(BaseEntityData::new())),
+            hand: None,
+            unresolved: None,
+            swelling: None,
+            swelling_unsent: false,
+        }
+    }
+
+    /// Hands the mannequin the skin of the player it plays once they are online.
+    fn resolve(&mut self, online: &[Arc<Player>]) {
+        let Some(name) = &self.unresolved else {
+            return;
+        };
+        let Some(player) = online
+            .iter()
+            .find(|player| player.gameprofile.name().eq_ignore_ascii_case(name))
+        else {
+            return;
+        };
+        if let BodyData::Mannequin(data) = &mut self.data {
+            data.profile
+                .set(ResolvableProfile::from(player.gameprofile.clone()));
+        }
+        self.unresolved = None;
+    }
 }
 
 /// Where an actor is and where it looks.
@@ -70,6 +167,8 @@ pub struct Actor {
     /// One for most actors, one per block for a `model`.
     parts: Vec<Part>,
     camera: bool,
+    /// A `player` or `mob`: the entity itself turns, there is no shape to rewrite.
+    living: bool,
     pose: Pose,
     /// Where the viewers see it this tick instead of `pose` (a shaking camera).
     nudged: Option<Pose>,
@@ -100,18 +199,19 @@ impl Actor {
         let parts = shapes
             .into_iter()
             .map(|(mut shown, offset)| {
-                let display = display_of(&mut shown);
-                display.pos_rot_interpolation_duration.set(GLIDE_TICKS);
-                display.view_range.set(def.view_range);
-                if def.bright {
-                    display.brightness_override.set(FULL_BRIGHT);
-                }
-                if let Some(glow) = def.glow {
-                    display.base.shared_flags.set(FLAG_GLOWING);
-                    display.glow_color_override.set(glow);
-                }
-                if let Some(billboard) = def.billboard {
-                    display.billboard_render_constraints.set(billboard);
+                if let Some(display) = display_of(&mut shown) {
+                    display.pos_rot_interpolation_duration.set(GLIDE_TICKS);
+                    display.view_range.set(def.view_range);
+                    if def.bright {
+                        display.brightness_override.set(FULL_BRIGHT);
+                    }
+                    if let Some(glow) = def.glow {
+                        display.base.shared_flags.set(FLAG_GLOWING);
+                        display.glow_color_override.set(glow);
+                    }
+                    if let Some(billboard) = def.billboard {
+                        display.billboard_render_constraints.set(billboard);
+                    }
                 }
                 Part {
                     id: next_entity_id(),
@@ -128,6 +228,7 @@ impl Actor {
         let mut actor = Self {
             parts,
             camera: def.is_camera(),
+            living: matches!(def.kind, ActorKind::Player { .. } | ActorKind::Mob { .. }),
             pose,
             nudged: None,
             sent: pose,
@@ -176,13 +277,57 @@ impl Actor {
         self.scale
     }
 
+    /// The entity of a `player` or `mob` actor.
+    #[must_use]
+    pub fn body_id(&self) -> Option<i32> {
+        self.parts
+            .iter()
+            .find(|part| matches!(part.shown, Shown::Body(_)))
+            .map(|part| part.id)
+    }
+
+    fn body(&mut self) -> Option<&mut Body> {
+        self.parts
+            .iter_mut()
+            .find_map(|part| match &mut part.shown {
+                Shown::Body(body) => Some(&mut **body),
+                _ => None,
+            })
+    }
+
+    /// A `player` or `mob` lies down, crouches or stands up again; other actors have no
+    /// pose.
+    pub fn set_body_pose(&mut self, pose: EntityPose) {
+        if let Some(body) = self.body() {
+            body.base().pose.set(pose);
+        }
+    }
+
+    /// A creeper swells and flashes; its game never counts down, so nothing explodes.
+    /// Whether the actor is a creeper.
+    pub fn ignite(&mut self) -> bool {
+        let Some(body) = self.body() else {
+            return false;
+        };
+        if !ptr::eq(body.kind, &raw const vanilla_entities::CREEPER) {
+            return false;
+        }
+        let mut creeper = CreeperEntityData::new();
+        creeper.swell_dir.set(1);
+        body.swelling = creeper
+            .pack_dirty()
+            .and_then(|values| values.into_iter().next());
+        body.swelling_unsent = body.swelling.is_some();
+        true
+    }
+
     /// Moves the actor; for the camera, also where it looks.
     #[expect(
         clippy::float_cmp,
         reason = "the same yaw written again must not send the shape again"
     )]
     pub fn move_to(&mut self, pos: DVec3, yaw: f32, pitch: f32) {
-        let turned = !self.camera && yaw != self.pose.yaw;
+        let turned = !self.camera && !self.living && yaw != self.pose.yaw;
         self.pose = Pose { pos, yaw, pitch };
         if turned {
             self.apply_transform(GLIDE_TICKS);
@@ -202,7 +347,7 @@ impl Actor {
     }
 
     fn apply_transform(&mut self, ticks: i32) {
-        if self.camera {
+        if self.camera || self.living {
             return;
         }
         // The entities themselves never turn: the yaw is part of the shape, so a model
@@ -211,7 +356,9 @@ impl Actor {
         let scale = self.scale;
         for part in &mut self.parts {
             let translation = full * (part.offset * scale);
-            let display = display_of(&mut part.shown);
+            let Some(display) = display_of(&mut part.shown) else {
+                continue;
+            };
             display.translation.set(Vector3f {
                 x: translation.x,
                 y: translation.y,
@@ -235,9 +382,10 @@ impl Actor {
         }
     }
 
-    /// What the entity itself is turned to: only a camera turns, see `apply_transform`.
+    /// What the entity itself is turned to: only a camera and a living actor turn, see
+    /// `apply_transform`.
     const fn facing(&self, pose: Pose) -> (f32, f32) {
-        if self.camera {
+        if self.camera || self.living {
             (pose.yaw, pose.pitch)
         } else {
             (0.0, 0.0)
@@ -249,6 +397,11 @@ impl Actor {
     pub fn sync(&mut self, here: &[&Arc<Player>], online: &[Arc<Player>]) {
         let target = self.nudged.unwrap_or(self.pose);
         let (yaw, pitch) = self.facing(target);
+        for part in &mut self.parts {
+            if let Shown::Body(body) = &mut part.shown {
+                body.resolve(online);
+            }
+        }
         let changed: Vec<Option<Vec<DataValue>>> =
             self.parts.iter_mut().map(Part::pack_dirty).collect();
         let moved = target != self.sent;
@@ -282,6 +435,21 @@ impl Actor {
                         data: 0,
                     });
                     player.send_packet(CSetEntityData::new(part.id, part.pack_all()));
+                    if let Shown::Body(body) = &part.shown {
+                        if let Some(stack) = &body.hand {
+                            player.send_packet(CSetEquipment::new(
+                                part.id,
+                                vec![EquipmentSlotItem {
+                                    slot: EquipmentSlot::MainHand,
+                                    item_stack: stack.clone(),
+                                }],
+                            ));
+                        }
+                        player.send_packet(CRotateHead {
+                            entity_id: part.id,
+                            head_y_rot: angle_byte(yaw),
+                        });
+                    }
                 }
                 continue;
             }
@@ -295,8 +463,14 @@ impl Actor {
                         path: PositionPath::Linear(target.pos),
                         y_rot: yaw,
                         x_rot: pitch,
-                        on_ground: false,
+                        on_ground: self.living,
                     });
+                    if self.living {
+                        player.send_packet(CRotateHead {
+                            entity_id: part.id,
+                            head_y_rot: angle_byte(yaw),
+                        });
+                    }
                 }
             }
         }
@@ -326,10 +500,11 @@ impl Actor {
 
 impl Part {
     const fn kind(&self) -> EntityTypeRef {
-        match self.shown {
+        match &self.shown {
             Shown::Text(_) => &vanilla_entities::TEXT_DISPLAY,
             Shown::Block(_) => &vanilla_entities::BLOCK_DISPLAY,
             Shown::Item(_) => &vanilla_entities::ITEM_DISPLAY,
+            Shown::Body(body) => body.kind,
         }
     }
 
@@ -338,6 +513,14 @@ impl Part {
             Shown::Text(data) => data.pack_all(),
             Shown::Block(data) => data.pack_all(),
             Shown::Item(data) => data.pack_all(),
+            Shown::Body(body) => {
+                let mut values = match &body.data {
+                    BodyData::Mannequin(data) => data.pack_all(),
+                    BodyData::Mob(data) => data.pack_all(),
+                };
+                values.extend(body.swelling.clone());
+                values
+            }
         }
     }
 
@@ -346,6 +529,17 @@ impl Part {
             Shown::Text(data) => data.pack_dirty(),
             Shown::Block(data) => data.pack_dirty(),
             Shown::Item(data) => data.pack_dirty(),
+            Shown::Body(body) => {
+                let mut values = match &mut body.data {
+                    BodyData::Mannequin(data) => data.pack_dirty(),
+                    BodyData::Mob(data) => data.pack_dirty(),
+                }
+                .unwrap_or_default();
+                if mem::take(&mut body.swelling_unsent) {
+                    values.extend(body.swelling.clone());
+                }
+                (!values.is_empty()).then_some(values)
+            }
         }
     }
 }
@@ -362,6 +556,10 @@ fn single_part(kind: &ActorKind) -> (Shown, Vec3) {
             data.block_state.set(*state);
             (Shown::Block(data), Vec3::splat(-0.5))
         }
+        ActorKind::Player { name, names, hand } => {
+            (body_part(Body::mannequin(name, *names), *hand), Vec3::ZERO)
+        }
+        ActorKind::Mob { entity, hand } => (body_part(Body::mob(entity), *hand), Vec3::ZERO),
         ActorKind::Item { item, model } => {
             let mut stack = ItemStack::new(item);
             if let Some(model) = model {
@@ -388,6 +586,15 @@ fn single_part(kind: &ActorKind) -> (Shown, Vec3) {
     }
 }
 
+/// A living stand-in as the show keeps it: weightless, silent, holding its item.
+fn body_part(mut body: Body, hand: Option<ItemRef>) -> Shown {
+    body.hand = hand.map(ItemStack::new);
+    let base = body.base();
+    base.no_gravity.set(true);
+    base.silent.set(true);
+    Shown::Body(Box::new(body))
+}
+
 /// A block display per block of the set, placed around the pivot: the one the script
 /// names, or the middle of the set's bounding box.
 fn model_parts(set: &BlockSet, pivot: Option<Vec3>) -> Vec<(Shown, Vec3)> {
@@ -410,11 +617,12 @@ fn model_parts(set: &BlockSet, pivot: Option<Vec3>) -> Vec<(Shown, Vec3)> {
         .collect()
 }
 
-const fn display_of(shown: &mut Shown) -> &mut DisplayEntityData {
+const fn display_of(shown: &mut Shown) -> Option<&mut DisplayEntityData> {
     match shown {
-        Shown::Text(data) => &mut data.display,
-        Shown::Block(data) => &mut data.display,
-        Shown::Item(data) => &mut data.display,
+        Shown::Text(data) => Some(&mut data.display),
+        Shown::Block(data) => Some(&mut data.display),
+        Shown::Item(data) => Some(&mut data.display),
+        Shown::Body(_) => None,
     }
 }
 

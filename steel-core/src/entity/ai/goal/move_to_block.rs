@@ -115,6 +115,19 @@ impl MoveToBlockGoal {
         self.block_pos
     }
 
+    /// Vanilla `tryTicks`: ticks spent walking to the target, counting down
+    /// once it is reached.
+    #[must_use]
+    pub(crate) const fn try_ticks(&self) -> i32 {
+        self.try_ticks
+    }
+
+    /// Vanilla `isValidTarget(level, pos)`.
+    #[must_use]
+    pub(crate) fn is_valid_target(&self, level: &World, pos: BlockPos) -> bool {
+        (self.target_predicate)(level, pos)
+    }
+
     #[must_use]
     pub(crate) const fn is_reached_target(&self) -> bool {
         self.reached_target

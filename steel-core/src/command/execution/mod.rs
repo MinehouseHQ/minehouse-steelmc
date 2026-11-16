@@ -30,7 +30,7 @@ pub(crate) use biome::BiomeOrTag;
 pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
 pub(crate) use coordinates::Coordinates;
 pub(crate) use dialog::CommandDialog;
-pub use item::{ExtensionItems, set_extension_items};
+pub use item::{ExtensionItems, extension_item_stack, set_extension_items};
 pub(crate) use item_predicate::{ItemPredicate, registered_item_predicate_matches};
 pub(crate) use permission::PermissionGroupName;
 pub(crate) use profile::GameProfileArgument;
