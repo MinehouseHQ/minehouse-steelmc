@@ -472,7 +472,7 @@ fn item_stack_argument_suggests_items_and_supported_component_operations() {
     }));
 }
 
-/// An item of a registry extension: a stick named and modelled as the extension says.
+/// An item of a registry extension: a stick with the item model the extension gives it.
 fn extension_widget(id: &str) -> Option<ItemStack> {
     (id == "steel-test:widget").then(|| {
         let mut stack = ItemStack::new(&vanilla_items::STICK);
