@@ -68,6 +68,25 @@ pub(crate) struct RegionQueues {
 /// Work an island hands to the sequential phase after the islands.
 pub(crate) type DeferredWork = Box<dyn FnOnce() + Send>;
 
+/// Player positions as this thread's island sees them, from
+/// [`World::player_positions_in_tick`].
+pub(crate) struct PlayerPositionsInTick {
+    region: Option<Arc<RegionQueues>>,
+}
+
+impl PlayerPositionsInTick {
+    /// The pre-phase snapshot for a player of another island, the live position otherwise.
+    #[must_use]
+    pub(crate) fn position(&self, player: &Player) -> DVec3 {
+        if let Some(region) = &self.region
+            && let Some(position) = region.foreign_players.get(&player.id())
+        {
+            return *position;
+        }
+        player.position()
+    }
+}
+
 impl RegionQueues {
     /// Queues for an island that may write only inside `owned_cells`.
     #[must_use]
@@ -167,16 +186,14 @@ impl World {
         }
     }
 
-    /// A player's position as this thread's island sees it: the pre-phase
-    /// snapshot for players of other islands, the live position otherwise.
+    /// Player positions as this thread's island sees them: the pre-phase snapshot for
+    /// players of other islands, the live position otherwise. Looks up this thread's
+    /// island once, so loops over players do not repeat it per player.
     #[must_use]
-    pub(crate) fn player_position_in_tick(&self, player: &Player) -> DVec3 {
-        if let Some(region) = self.active_region()
-            && let Some(position) = region.foreign_players.get(&player.id())
-        {
-            return *position;
+    pub(crate) fn player_positions_in_tick(&self) -> PlayerPositionsInTick {
+        PlayerPositionsInTick {
+            region: self.active_region(),
         }
-        player.position()
     }
 
     /// Runs `work` now, or after the island phase when any of `chunks` lies outside the
