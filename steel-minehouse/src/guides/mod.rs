@@ -119,6 +119,7 @@ static GUIDES: LazyLock<Vec<Guide>> = LazyLock::new(|| {
     let mut guides = bank::guides::all();
     guides.extend(bank::zones::guides::all());
     guides.push(blocklog::guide::guide());
+    guides.extend(content::metro_guides::all());
     guides.extend(content::herb_guides::all());
     guides.retain(|guide| !guide.steps.is_empty());
     guides
