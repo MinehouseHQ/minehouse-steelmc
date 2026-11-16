@@ -1,6 +1,7 @@
 //! Projectile entity implementations.
 
 mod arrow;
+mod dragon_fireball;
 mod ender_pearl;
 mod evoker_fangs;
 mod experience_bottle;
@@ -18,6 +19,7 @@ mod wind_charge;
 mod wither_skull;
 
 pub use arrow::{ArrowEntity, SpectralArrowEntity};
+pub use dragon_fireball::DragonFireballEntity;
 pub use ender_pearl::EnderPearlEntity;
 pub use evoker_fangs::EvokerFangsEntity;
 pub use experience_bottle::ExperienceBottleEntity;

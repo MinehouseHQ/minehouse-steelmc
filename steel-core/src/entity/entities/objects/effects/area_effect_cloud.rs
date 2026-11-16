@@ -57,6 +57,8 @@ struct AreaEffectCloudState {
     radius_on_use: f32,
     radius_per_tick: f32,
     owner: Option<EntityReference>,
+    /// Vanilla `customParticle`: replaces the potion-colored particle.
+    custom_particle: Option<ParticleData>,
 }
 
 impl AreaEffectCloudState {
@@ -72,6 +74,7 @@ impl AreaEffectCloudState {
             radius_on_use: 0.0,
             radius_per_tick: 0.0,
             owner: None,
+            custom_particle: None,
         }
     }
 }
@@ -148,12 +151,31 @@ impl AreaEffectCloudEntity {
         self.update_particle(color);
     }
 
+    /// Vanilla `addEffect`: adds a custom effect to the potion contents.
+    pub fn add_effect(&self, effect: RegistryMobEffectInstance) {
+        let contents = self.state.lock().potion_contents.with_effect_added(effect);
+        self.set_potion_contents(contents);
+    }
+
+    /// Vanilla `setCustomParticle`: shows this particle instead of the
+    /// potion-colored one.
+    pub fn set_custom_particle(&self, particle: ParticleData) {
+        self.state.lock().custom_particle = Some(particle);
+        let color = self.state.lock().potion_contents.get_color();
+        self.update_particle(color);
+    }
+
     /// Sets the duration scale applied to the potion's effects.
     pub fn set_potion_duration_scale(&self, scale: f32) {
         self.state.lock().potion_duration_scale = scale;
     }
 
     fn update_particle(&self, potion_color: i32) {
+        let custom_particle = self.state.lock().custom_particle.clone();
+        if let Some(particle) = custom_particle {
+            self.entity_data.lock().particle.set(particle);
+            return;
+        }
         let color = RgbColor::new(potion_color).with_alpha(u8::MAX);
         self.entity_data.lock().particle.set(ParticleData::new(
             &vanilla_particle_types::ENTITY_EFFECT,
