@@ -880,10 +880,10 @@ impl Player {
         }
     }
 
-    /// Handles a custom payload packet: hands it to the plugin channel handler, if any.
+    /// Handles a custom payload packet: hands it to the plugin channel handlers.
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         let server = self.server();
-        if let Some(handler) = server.plugin_channel_handler() {
+        for handler in server.plugin_channel_handlers() {
             handler.plugin_message(&server, self, &packet.identifier, &packet.payload.0);
         }
     }

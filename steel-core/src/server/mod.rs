@@ -270,7 +270,7 @@ pub async fn test_server_with_worlds_and_config(
         login_gate: OnceLock::new(),
         chat_interceptor: OnceLock::new(),
         tab_list_provider: OnceLock::new(),
-        plugin_channel_handler: OnceLock::new(),
+        plugin_channel_handlers: SyncRwLock::new(Vec::new()),
         world_log: OnceLock::new(),
         status_motd: SyncMutex::new(None),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
@@ -541,8 +541,8 @@ pub struct Server {
     chat_interceptor: OnceLock<Arc<dyn chat_interceptor::ChatInterceptor>>,
     /// Draws the tab list, see [`tab_list`].
     tab_list_provider: OnceLock<Arc<dyn tab_list::TabListProvider>>,
-    /// Talks to client mods over plugin channels, see [`plugin_channels`].
-    plugin_channel_handler: OnceLock<Arc<dyn plugin_channels::PluginChannelHandler>>,
+    /// Talk to client mods over plugin channels, see [`plugin_channels`].
+    plugin_channel_handlers: SyncRwLock<Vec<Arc<dyn plugin_channels::PluginChannelHandler>>>,
     /// Hears what players change in the world, see [`world_log`].
     world_log: OnceLock<Arc<dyn world_log::WorldLog>>,
     /// Shown in the server list instead of the configured MOTD, see [`Server::set_status_motd`].
@@ -922,7 +922,7 @@ impl Server {
             login_gate: OnceLock::new(),
             chat_interceptor: OnceLock::new(),
             tab_list_provider: OnceLock::new(),
-            plugin_channel_handler: OnceLock::new(),
+            plugin_channel_handlers: SyncRwLock::new(Vec::new()),
             world_log: OnceLock::new(),
             status_motd: SyncMutex::new(None),
             registry_cache,

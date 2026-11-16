@@ -16,6 +16,7 @@ mod cauldron_conversion;
 mod cloud;
 mod commands;
 mod couplings;
+mod creative_tabs;
 mod end_lock;
 mod first_join;
 pub mod herb_guides;
@@ -50,7 +51,7 @@ use steel_core::{
         ItemBehavior, blocks::vegetation::set_leaf_decay_observer, extend_block_behaviors,
         items::set_name_tag_observer, set_item_behavior_override,
     },
-    command::{CommandRegistrationError, CommandRegistry},
+    command::{CommandRegistrationError, CommandRegistry, ExtensionItems, set_extension_items},
     entity::entities::objects::{
         display_ui::set_item_frame_observer,
         items::{set_experience_orb_observer, set_item_entity_observer},
@@ -432,6 +433,17 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     } else if !set_item_behavior_override(use_behavior) {
         log::warn!("MineHouse blocks: another extension decides what our items do when used");
     }
+    if !set_extension_items(ExtensionItems {
+        ids: || ITEMS.iter().map(|item| item.id).collect(),
+        stack: |id| {
+            ITEMS
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| item.stack(1))
+        },
+    }) {
+        log::warn!("MineHouse items: another extension names items for /give");
+    }
     if !set_extension_item_id(recipe_id) {
         log::warn!("MineHouse items: another extension tells items apart for recipes");
     }
@@ -463,6 +475,7 @@ pub fn start_jobs(server: &Server) {
     admin_mode::start(server);
     see::start(server);
     guides::start(server);
+    creative_tabs::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
