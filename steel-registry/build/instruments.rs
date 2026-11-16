@@ -18,6 +18,8 @@ pub struct InstrumentJson {
     sound_event: Identifier,
     use_duration: f32,
     range: f32,
+    #[serde(default)]
+    durability_damage: i32,
     description: TextComponentJson,
 }
 
@@ -64,8 +66,13 @@ pub(crate) fn build() -> TokenStream {
         let use_duration = instrument.use_duration;
         let range = instrument.range;
         assert!(
-            use_duration > 0.0 && use_duration <= f32::MAX,
-            "instrument {instrument_name} use_duration must be positive"
+            (0.0..=f32::MAX).contains(&use_duration),
+            "instrument {instrument_name} use_duration must be non-negative"
+        );
+        let durability_damage = instrument.durability_damage;
+        assert!(
+            durability_damage >= 0,
+            "instrument {instrument_name} durability_damage must be non-negative"
         );
         assert!(
             range > 0.0 && range <= f32::MAX,
@@ -80,6 +87,7 @@ pub(crate) fn build() -> TokenStream {
                     SoundEventHolder::registry(#sound_event),
                     #use_duration,
                     #range,
+                    #durability_damage,
                     #description,
                 ),
             );

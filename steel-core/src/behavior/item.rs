@@ -33,7 +33,11 @@ use crate::behavior::{
 use crate::block_entity::entities::{SignBlockEntity, SignText};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity, LivingEntity, LivingEntityRef, MobEffectInstance, SharedEntity};
+use crate::inventory::click::MouseButton;
+use crate::inventory::lock::ContainerLockGuard;
+use crate::inventory::slots::Slot;
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -292,6 +296,36 @@ pub trait ItemBehavior: Send + Sync {
             .get_weapon()
             .map(|weapon| weapon.item_damage_per_attack)
     }
+
+    /// Vanilla `Item.overrideStackedOnOther`: `carried` (this item) clicked
+    /// onto `slot`. Returns whether the click was consumed.
+    fn override_stacked_on_other(
+        &self,
+        _carried: &mut ItemStack,
+        _slot: &dyn Slot,
+        _guard: &mut ContainerLockGuard,
+        _button: MouseButton,
+        _player: &Player,
+    ) -> bool {
+        false
+    }
+
+    /// Vanilla `Item.overrideOtherStackedOnMe`: `carried` clicked onto `clicked`
+    /// (this item, in `slot`). Returns whether the click was consumed.
+    fn override_other_stacked_on_me(
+        &self,
+        _clicked: &mut ItemStack,
+        _carried: &mut ItemStack,
+        _slot: &dyn Slot,
+        _guard: &mut ContainerLockGuard,
+        _button: MouseButton,
+        _player: &Player,
+    ) -> bool {
+        false
+    }
+
+    /// Vanilla `Item.onDestroyed`: the item entity holding this item was destroyed.
+    fn on_destroyed(&self, _entity: &ItemEntity, _world: &Arc<World>) {}
 
     /// Whether this item may be stored inside container items such as shulker
     /// boxes and bundles, which vanilla uses to stop them nesting.

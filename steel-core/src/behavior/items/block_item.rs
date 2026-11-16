@@ -8,14 +8,21 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::items::bundle::on_container_destroyed;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
+use crate::entity::entities::ItemEntity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use crate::{
     behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext},
     player::Player,
 };
+use std::sync::Arc;
+use steel_registry::ItemStackTemplate;
+use steel_registry::data_components::components::ItemContainerContents;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 
 pub(super) enum SurvivalCheck {
     Required,
@@ -215,6 +222,26 @@ impl ItemBehavior for BlockItem {
         BLOCK_BEHAVIORS
             .get_behavior(self.block)
             .fits_inside_container_items()
+    }
+
+    /// Vanilla `BlockItem.onDestroyed`: a destroyed shulker box spills its items.
+    fn on_destroyed(&self, entity: &ItemEntity, world: &Arc<World>) {
+        let mut item = entity.get_item();
+        let Some(container) = item.get(CONTAINER).cloned() else {
+            return;
+        };
+        item.set(CONTAINER, ItemContainerContents::empty());
+        entity.set_item(item);
+        on_container_destroyed(
+            entity,
+            world,
+            container
+                .items()
+                .iter()
+                .flatten()
+                .map(ItemStackTemplate::create)
+                .filter(|stack| !stack.is_empty()),
+        );
     }
 }
 

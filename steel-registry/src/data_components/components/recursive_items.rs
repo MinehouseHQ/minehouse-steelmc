@@ -162,25 +162,70 @@ impl ValidatePersistentComponent for ChargedProjectiles {
 }
 
 /// The ordered item templates stored in a bundle.
-#[derive(Debug, Default, Clone, PartialEq)]
+///
+/// Like vanilla, the selected item index is server-side state only: it is not
+/// encoded, saved, hashed or compared.
+#[derive(Debug, Clone)]
 pub struct BundleContents {
     items: Vec<ItemStackTemplate>,
+    selected_item: i32,
+}
+
+impl Default for BundleContents {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl PartialEq for BundleContents {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
 }
 
 impl BundleContents {
+    /// Vanilla `BundleContents.NO_SELECTED_ITEM_INDEX`.
+    pub const NO_SELECTED_ITEM_INDEX: i32 = -1;
+
     #[must_use]
     pub const fn empty() -> Self {
-        Self { items: Vec::new() }
+        Self::new(Vec::new())
     }
 
     #[must_use]
     pub const fn new(items: Vec<ItemStackTemplate>) -> Self {
-        Self { items }
+        Self::with_selected_item(items, Self::NO_SELECTED_ITEM_INDEX)
+    }
+
+    /// Vanilla's private `BundleContents(items, selectedItem)` constructor.
+    #[must_use]
+    pub const fn with_selected_item(items: Vec<ItemStackTemplate>, selected_item: i32) -> Self {
+        Self {
+            items,
+            selected_item,
+        }
     }
 
     #[must_use]
     pub fn items(&self) -> &[ItemStackTemplate] {
         &self.items
+    }
+
+    /// Vanilla `BundleContents.isEmpty`.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Vanilla `BundleContents.getSelectedItemIndex`.
+    #[must_use]
+    pub const fn selected_item_index(&self) -> i32 {
+        self.selected_item
+    }
+
+    /// Vanilla `BundleContents.weight`: an error for an excessive total weight.
+    pub fn weight(&self) -> Result<CheckedFraction> {
+        self.compute_weight()
     }
 
     /// Validates the checked rational weight used by Vanilla's strict item-stack validation.
@@ -192,15 +237,29 @@ impl BundleContents {
         let mut weight = CheckedFraction::ZERO;
         for item in &self.items {
             let item_weight = bundle_item_weight(item)?.multiply(item.count())?;
-            weight = weight.add(item_weight)?;
+            weight = weight.plus(item_weight)?;
         }
         Ok(weight)
     }
 }
 
+/// Vanilla `BundleContents.getWeight` for a live stack.
+pub fn bundle_stack_weight(stack: &ItemStack) -> Result<CheckedFraction> {
+    if let Some(bundle) = stack.get(BUNDLE_CONTENTS) {
+        return bundle.compute_weight()?.plus(CheckedFraction::new(1, 16)?);
+    }
+    if stack
+        .get(BEES)
+        .is_some_and(|bees: &Bees| !bees.bees().is_empty())
+    {
+        return Ok(CheckedFraction::ONE);
+    }
+    CheckedFraction::new(1, stack.max_stack_size())
+}
+
 fn bundle_item_weight(item: &ItemStackTemplate) -> Result<CheckedFraction> {
     if let Some(bundle) = item.get(BUNDLE_CONTENTS) {
-        return bundle.compute_weight()?.add(CheckedFraction::new(1, 16)?);
+        return bundle.compute_weight()?.plus(CheckedFraction::new(1, 16)?);
     }
     if item
         .get(BEES)
@@ -212,21 +271,71 @@ fn bundle_item_weight(item: &ItemStackTemplate) -> Result<CheckedFraction> {
 }
 
 /// Positive subset of Commons Lang `Fraction` used by `BundleContents`.
-#[derive(Clone, Copy)]
-struct CheckedFraction {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckedFraction {
     numerator: i32,
     denominator: i32,
 }
 
+impl PartialOrd for CheckedFraction {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CheckedFraction {
+    /// Commons Lang `Fraction.compareTo`: cross-multiplied in 64 bits.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let left = i64::from(self.numerator) * i64::from(other.denominator);
+        let right = i64::from(other.numerator) * i64::from(self.denominator);
+        left.cmp(&right)
+    }
+}
+
 impl CheckedFraction {
-    const ZERO: Self = Self {
+    /// `Fraction.ZERO`.
+    pub const ZERO: Self = Self {
         numerator: 0,
         denominator: 1,
     };
-    const ONE: Self = Self {
+    /// `Fraction.ONE`.
+    pub const ONE: Self = Self {
         numerator: 1,
         denominator: 1,
     };
+
+    /// `Fraction.floatValue`.
+    #[must_use]
+    #[expect(clippy::cast_precision_loss, reason = "vanilla divides as floats")]
+    pub fn float_value(self) -> f32 {
+        self.numerator as f32 / self.denominator as f32
+    }
+
+    /// `ONE.subtract(self).divideBy(item).intValue()` clamped at zero: how
+    /// many items of weight `item` still fit (vanilla `getMaxAmountToAdd`).
+    #[must_use]
+    pub fn remaining_capacity_for(self, item: Self) -> i32 {
+        if item.numerator == 0 {
+            return 0;
+        }
+        let remaining_numerator = i64::from(self.denominator) - i64::from(self.numerator);
+        let numerator = remaining_numerator * i64::from(item.denominator);
+        let denominator = i64::from(self.denominator) * i64::from(item.numerator);
+        i32::try_from((numerator / denominator).max(0)).unwrap_or(i32::MAX)
+    }
+
+    /// `this.subtract(other)` for a non-negative result.
+    pub fn subtract(self, other: Self) -> Result<Self> {
+        let numerator = i64::from(self.numerator) * i64::from(other.denominator)
+            - i64::from(other.numerator) * i64::from(self.denominator);
+        let denominator = i64::from(self.denominator) * i64::from(other.denominator);
+        let divisor = gcd_i64(numerator, denominator).max(1);
+        let numerator = i32::try_from(numerator / divisor)
+            .map_err(|_| Error::other("Excessive total bundle weight"))?;
+        let denominator = i32::try_from(denominator / divisor)
+            .map_err(|_| Error::other("Excessive total bundle weight"))?;
+        Self::new(numerator, denominator)
+    }
 
     fn new(numerator: i32, denominator: i32) -> Result<Self> {
         if numerator < 0 || denominator <= 0 {
@@ -240,7 +349,7 @@ impl CheckedFraction {
     }
 
     /// Mirrors the positive-number branches of Commons Lang `Fraction.addSub`.
-    fn add(self, other: Self) -> Result<Self> {
+    pub fn plus(self, other: Self) -> Result<Self> {
         if self.numerator == 0 {
             return Ok(other);
         }
@@ -277,7 +386,7 @@ impl CheckedFraction {
     }
 
     /// Mirrors multiplying by Commons Lang `Fraction.getFraction(value, 1)`.
-    fn multiply(self, value: i32) -> Result<Self> {
+    pub fn multiply(self, value: i32) -> Result<Self> {
         if value < 0 {
             return Err(Error::other("Invalid bundle item count"));
         }

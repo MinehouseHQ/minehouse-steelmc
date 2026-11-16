@@ -2,11 +2,11 @@ use std::ptr;
 
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
-    CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
-    GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RandomizationType, RegistryExt, SectionPos, SoundEventRef,
-    SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block,
-    level_events, vanilla_blocks, vanilla_game_events,
+    CLevelParticles, CSound, CSoundEntity, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket,
+    Entity, GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext,
+    NetworkConnection, ParticleData, Player, REGISTRY, RandomizationType, RegistryExt, SectionPos,
+    SoundEventRef, SoundSource, UpdateFlags, World, WorldEntityManager, entity_loot_ref,
+    fluid_state_to_block, level_events, vanilla_blocks, vanilla_game_events,
 };
 use crate::block_entity::BlockEntity;
 use crate::entity::loot_equipment;
@@ -579,6 +579,46 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Vanilla `playSeededSound(except, sourceEntity, ...)`: a sound that follows
+    /// `entity_id`, heard by players within the sound's range of `pos`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps the vanilla playSound parameters explicit"
+    )]
+    pub fn play_sound_from_entity(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        entity_id: i32,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+        let packet = CSoundEntity {
+            sound: sound.clone(),
+            source,
+            entity_id,
+            volume,
+            pitch,
+            seed: rand::random::<i64>(),
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode entity sound packet");
+            return;
+        };
+        self.players.iter_players(|_, player| {
+            if exclude != Some(player.id())
+                && sound_is_within_range(sound, volume, player.position().distance_squared(pos))
+            {
+                player.connection.send_encoded(encoded.clone());
+            }
+            true
+        });
     }
 
     /// Plays a sound for explicit player targets using vanilla's range fallback.

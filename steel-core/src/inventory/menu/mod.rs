@@ -7,6 +7,7 @@ mod kind;
 pub mod kinds;
 mod layout;
 
+use crate::behavior::items::toggle_selected_item;
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
@@ -339,7 +340,6 @@ impl Menu {
     /// Handles a click action in this menu. Packet clicks are validated via
     /// [`Click::parse`]; invalid programmatically constructed clicks are ignored.
     ///
-    /// TODO: Add `tryItemClickBehaviorOverride` for bundle item support.
     pub fn clicked(&mut self, click: Click, player: &Player) {
         if !click.is_valid_for(self.behavior().slot_count()) {
             log::debug!(
@@ -418,6 +418,15 @@ impl Menu {
             self.slots_changed(&mut guard, player);
         }
         self.notify_armor_equipment_changes(player, armor_before);
+    }
+
+    /// Vanilla `AbstractContainerMenu.setSelectedBundleItemIndex`.
+    pub(crate) fn set_selected_bundle_item_index(&mut self, slot_index: usize, selected_item: i32) {
+        let mut guard = self.behavior().lock_all_containers();
+        let Some(slot) = self.behavior().slots().get(slot_index) else {
+            return;
+        };
+        toggle_selected_item(slot.get_item_mut(&mut guard), selected_item);
     }
 
     /// Sets a slot on behalf of a direct player action, such as a creative mode

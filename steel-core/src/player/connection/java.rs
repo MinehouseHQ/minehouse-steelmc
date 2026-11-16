@@ -19,8 +19,8 @@ use steel_protocol::packets::game::{
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
     SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
     SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
-    SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot,
-    SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -102,6 +102,7 @@ enum ScheduledPlayPacketKind {
     ContainerClick(SContainerClick),
     ContainerClose(SContainerClose),
     ContainerSlotStateChanged(SContainerSlotStateChanged),
+    SelectBundleItem(SSelectBundleItem),
     SetCreativeModeSlot(SSetCreativeModeSlot),
     PlayerInput(SPlayerInput),
     PlayerCommand(SPlayerCommand),
@@ -244,9 +245,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
             | ScheduledPlayPacketKind::SetBeacon(_)
             | ScheduledPlayPacketKind::SelectTrade(_)
-            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
-                ScheduledPacketExecution::Exclusive
-            }
+            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_)
+            | ScheduledPlayPacketKind::SelectBundleItem(_) => ScheduledPacketExecution::Exclusive,
         }
     }
 
@@ -317,6 +317,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ContainerSlotStateChanged(packet) => {
                 player.handle_container_slot_state_changed(packet);
+            }
+            ScheduledPlayPacketKind::SelectBundleItem(packet) => {
+                player.handle_select_bundle_item(packet);
             }
             ScheduledPlayPacketKind::SetCreativeModeSlot(packet) => {
                 player.handle_set_creative_mode_slot(packet);
@@ -801,6 +804,9 @@ impl JavaConnection {
             )),
             play::S_CONTAINER_CLOSE => scheduled(ScheduledPlayPacketKind::ContainerClose(
                 SContainerClose::read_packet(data)?,
+            )),
+            play::S_BUNDLE_ITEM_SELECTED => scheduled(ScheduledPlayPacketKind::SelectBundleItem(
+                SSelectBundleItem::read_packet(data)?,
             )),
             play::S_CONTAINER_SLOT_STATE_CHANGED => {
                 scheduled(ScheduledPlayPacketKind::ContainerSlotStateChanged(
