@@ -1,6 +1,7 @@
-//! What a show changed about its viewers (the Fabric `Journal`), kept on disk so nothing is
-//! lost if the server dies mid-show: where each viewer stood and in what game mode. A viewer
-//! stays here until they are put back, even if they only come online days later.
+//! What a show changed (the Fabric `Journal`), kept on disk so nothing is lost if the
+//! server dies mid-show: where each viewer stood and in what game mode, and what the blocks
+//! it replaced for a while were. A viewer stays here until they are put back, even if they
+//! only come online days later; a block stays until its chunk is loaded.
 
 use std::{collections::BTreeMap, fs, io, path::PathBuf};
 
@@ -22,6 +23,16 @@ pub struct ViewerState {
     pub return_back: bool,
 }
 
+/// A block a show replaced for a while, as it was before.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedBlock {
+    pub world: String,
+    /// The block position.
+    pub p: [i32; 3],
+    /// The state, as `minecraft:stone` or `minecraft:oak_stairs[facing=north]`.
+    pub s: String,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Saved {
@@ -29,6 +40,8 @@ struct Saved {
     active_show: Option<String>,
     #[serde(default)]
     viewers: BTreeMap<Uuid, ViewerState>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    temporary: Vec<SavedBlock>,
 }
 
 /// The journal of the running show and of everyone not put back yet.
@@ -93,6 +106,37 @@ impl Journal {
         state
     }
 
+    /// Remembers what a block was the first time a show touches it.
+    pub fn save_block(&mut self, world: &str, pos: [i32; 3], state: impl FnOnce() -> String) {
+        let known = self
+            .saved
+            .temporary
+            .iter()
+            .any(|block| block.p == pos && block.world == world);
+        if !known {
+            self.saved.temporary.push(SavedBlock {
+                world: world.to_owned(),
+                p: pos,
+                s: state(),
+            });
+            self.dirty = true;
+        }
+    }
+
+    #[must_use]
+    pub const fn has_blocks(&self) -> bool {
+        !self.saved.temporary.is_empty()
+    }
+
+    /// Puts the saved blocks back with `restore`, which says whether the block is back (or
+    /// can never be); the rest stay for the next try. Returns how many are left.
+    pub fn restore_blocks(&mut self, mut restore: impl FnMut(&SavedBlock) -> bool) -> usize {
+        let before = self.saved.temporary.len();
+        self.saved.temporary.retain(|block| !restore(block));
+        self.dirty |= self.saved.temporary.len() != before;
+        self.saved.temporary.len()
+    }
+
     /// Writes the file if anything changed; deletes it once there is nothing left to undo.
     pub fn flush(&mut self) {
         if !self.dirty {
@@ -109,7 +153,10 @@ impl Journal {
     }
 
     fn write(&self) -> io::Result<()> {
-        if self.saved.active_show.is_none() && self.saved.viewers.is_empty() {
+        if self.saved.active_show.is_none()
+            && self.saved.viewers.is_empty()
+            && self.saved.temporary.is_empty()
+        {
             return match fs::remove_file(&self.file) {
                 Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
                 _ => Ok(()),

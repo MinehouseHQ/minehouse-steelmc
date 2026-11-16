@@ -17,6 +17,7 @@ use steel_registry::{
 use steel_utils::{BlockStateId, Identifier};
 
 use super::{
+    blocks::{Shape, block_state},
     camera_path::CameraPath,
     ease::Ease,
     json::{self, Object},
@@ -24,15 +25,11 @@ use super::{
 };
 
 /// Actor types of the Fabric mod that have no Steel side yet.
-const LATER_ACTORS: [&str; 5] = ["model", "train", "rig", "player", "mob"];
+const LATER_ACTORS: [&str; 4] = ["train", "rig", "player", "mob"];
 /// Cues of the Fabric mod that have no Steel side yet.
-const LATER_CUES: [&str; 16] = [
-    "blocks",
-    "clear_blocks",
+const LATER_CUES: [&str; 12] = [
     "follow",
     "sparks",
-    "lightning",
-    "explosion",
     "meteors",
     "rift",
     "rockets",
@@ -104,6 +101,12 @@ pub enum ActorKind {
         line_width: i32,
         background: i32,
     },
+    /// A captured block set drawn block by block, turning and growing as one piece.
+    Model {
+        blocks: String,
+        /// What it turns around, from the set's origin; the middle of the set if not said.
+        pivot: Option<Vec3>,
+    },
 }
 
 /// A named thing on stage, from `actors`.
@@ -135,6 +138,24 @@ pub enum Action {
     Cinematic {
         on: bool,
         actor: usize,
+    },
+    /// `pos` is where the origin goes; a set without one goes back where it was captured.
+    Blocks {
+        mode: BlockMode,
+        source: BlockSource,
+        pos: Option<DVec3>,
+    },
+    ClearBlocks {
+        ghost: bool,
+        temporary: bool,
+    },
+    /// A bolt that only looks like one: no fire, no damage.
+    Lightning {
+        pos: DVec3,
+    },
+    Explosion {
+        pos: DVec3,
+        sound: bool,
     },
     Cut {
         actor: usize,
@@ -236,6 +257,9 @@ pub struct ShowScript {
     pub id: String,
     pub title: String,
     pub stage: Option<Stage>,
+    /// The stage's yaw if the show turns with its stage (`stageFacing`), or 0: captured
+    /// blocks turn by it.
+    pub turned: i32,
     pub gather: Gather,
     pub gather_radius: f64,
     pub gather_center: DVec3,
@@ -286,6 +310,22 @@ struct TrackOrder {
 }
 
 impl ShowScript {
+    /// The captured block sets the cues put and the models are made of, by name.
+    pub fn block_sets(&self) -> impl Iterator<Item = &str> {
+        let put = self.cues.iter().filter_map(|cue| match &cue.action {
+            Action::Blocks {
+                source: BlockSource::Set(name),
+                ..
+            } => Some(name.as_str()),
+            _ => None,
+        });
+        let models = self.actors.iter().filter_map(|actor| match &actor.kind {
+            ActorKind::Model { blocks, .. } => Some(blocks.as_str()),
+            _ => None,
+        });
+        put.chain(models)
+    }
+
     /// The recorded camera paths the cues fly, by name.
     pub fn recorded_paths(&self) -> impl Iterator<Item = &str> {
         self.cues.iter().filter_map(|cue| match &cue.action {
@@ -320,11 +360,13 @@ impl ShowScript {
             (None, Some(object)) => Some(Stage::from_json(object)?),
             (None, None) => None,
         };
+        let mut turned = 0;
         if json::boolean(&root, "stageFacing", false)?
             && let Some(stage) = &stage
             && stage.yaw != 0
         {
             rotate(&mut root, stage.yaw);
+            turned = stage.yaw;
         }
         if json::get(&root, "logic").is_some_and(|logic| !is_empty(logic)) {
             return Err("ноды логики (logic) пока не перенесены в Steel".to_owned());
@@ -352,6 +394,7 @@ impl ShowScript {
             id: id.to_owned(),
             title,
             stage,
+            turned,
             gather: audience.gather,
             gather_radius: audience.radius,
             gather_center: audience.center,
@@ -444,12 +487,21 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
             line_width: json::int(object, "lineWidth", 200)?,
             background: argb(&json::string_or(object, "background", "40000000"))?,
         },
+        "model" => {
+            // The set may not be captured yet: it is read when the show starts.
+            let blocks = json::string(object, "blocks")?;
+            check_name(&blocks)?;
+            ActorKind::Model {
+                blocks,
+                pivot: json::vec_opt(object, "pivot")?.map(DVec3::as_vec3),
+            }
+        }
         later if LATER_ACTORS.contains(&later) => {
             return Err(format!("тип \"{later}\" пока не перенесён в Steel"));
         }
         other => {
             return Err(format!(
-                "нет типа \"{other}\" (есть camera, block, item, text)"
+                "нет типа \"{other}\" (есть camera, block, item, text, model)"
             ));
         }
     };
@@ -490,31 +542,6 @@ fn argb(text: &str) -> Result<i32, String> {
     u32::from_str_radix(text, 16)
         .map(u32::cast_signed)
         .map_err(|_| "background: цвет ARGB в hex, например 40000000".to_owned())
-}
-
-/// `minecraft:oak_log[axis=x]` as a block state; properties left out take their defaults.
-pub fn block_state(text: &str) -> Result<BlockStateId, String> {
-    let wrong = || format!("не понимаю блок \"{text}\"");
-    let (name, properties) = match text.split_once('[') {
-        Some((name, rest)) => (name, rest.strip_suffix(']').ok_or_else(wrong)?),
-        None => (text, ""),
-    };
-    let properties: Vec<(&str, &str)> = properties
-        .split(',')
-        .filter(|property| !property.trim().is_empty())
-        .map(|property| {
-            property
-                .split_once('=')
-                .map(|(key, value)| (key.trim(), value.trim()))
-                .ok_or_else(wrong)
-        })
-        .collect::<Result<_, _>>()?;
-    let key = Identifier::from_str(name.trim()).map_err(|_| wrong())?;
-    let block = REGISTRY.blocks.by_key(&key).ok_or_else(wrong)?;
-    REGISTRY
-        .blocks
-        .state_id_from_block_defaulted_properties(block, properties)
-        .ok_or_else(wrong)
 }
 
 /// Reads `tracks` (in the order of the file) and `cues`. Returns the cues sorted by their
@@ -605,6 +632,54 @@ const fn seconds(seconds: u32) -> u32 {
     seconds * time::TICKS_PER_SECOND
 }
 
+/// The cues that touch the world or only look like it: blocks, lightning, explosions.
+fn read_world_action(kind: &str, object: &Object) -> Result<(u32, Action), String> {
+    Ok(match kind {
+        "blocks" => {
+            let mode = match json::string_or(object, "mode", "ghost").as_str() {
+                "ghost" => BlockMode::Ghost,
+                "temporary" => BlockMode::Temporary,
+                "permanent" => BlockMode::Permanent,
+                _ => return Err("mode: ghost, temporary или permanent".to_owned()),
+            };
+            let pos = json::vec_opt(object, "pos")?;
+            let source = if let Some(shape) = json::object(object, "shape")? {
+                BlockSource::Shape(Shape::parse(shape)?)
+            } else {
+                // A set may not be captured yet while the show is being made: it is read
+                // when the show starts.
+                let name = json::string(object, "set")?;
+                check_name(&name)?;
+                BlockSource::Set(name)
+            };
+            (0, Action::Blocks { mode, source, pos })
+        }
+        "clear_blocks" => {
+            let (ghost, temporary) = match json::string_or(object, "mode", "all").as_str() {
+                "ghost" => (true, false),
+                "temporary" => (false, true),
+                "all" => (true, true),
+                _ => return Err("mode: ghost, temporary или all".to_owned()),
+            };
+            (0, Action::ClearBlocks { ghost, temporary })
+        }
+        "lightning" => (
+            0,
+            Action::Lightning {
+                pos: json::vec_opt(object, "pos")?.unwrap_or(DVec3::ZERO),
+            },
+        ),
+        "explosion" => (
+            0,
+            Action::Explosion {
+                pos: json::vec_opt(object, "pos")?.unwrap_or(DVec3::ZERO),
+                sound: json::boolean(object, "sound", true)?,
+            },
+        ),
+        other => return Err(format!("нет такого действия \"{other}\"")),
+    })
+}
+
 /// The action of a cue and how long it lasts.
 fn read_action(kind: &str, object: &Object, actors: &[ActorDef]) -> Result<(u32, Action), String> {
     let over = |fallback: u32| json::ticks(object, "over", fallback);
@@ -688,6 +763,7 @@ fn read_action(kind: &str, object: &Object, actors: &[ActorDef]) -> Result<(u32,
                 },
             )
         }
+        "blocks" | "clear_blocks" | "lightning" | "explosion" => read_world_action(kind, object)?,
         later if LATER_CUES.contains(&later) => {
             return Err("это действие пока не перенесено в Steel".to_owned());
         }
@@ -816,6 +892,25 @@ fn camera_path(object: &Object) -> Result<PathSource, String> {
         Some(target) => path.looking_at(target),
         None => path,
     }))
+}
+
+/// How a `blocks` cue puts its blocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockMode {
+    /// Only the viewers see them; the world is not touched.
+    Ghost,
+    /// Real blocks, put back when the show ends.
+    Temporary,
+    /// Real blocks that stay (a rehearsal puts them back all the same).
+    Permanent,
+}
+
+/// What a `blocks` cue puts.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BlockSource {
+    Shape(Shape),
+    /// Captured with `/show capture` and kept beside the show.
+    Set(String),
 }
 
 /// Where a `path` cue gets its flight.

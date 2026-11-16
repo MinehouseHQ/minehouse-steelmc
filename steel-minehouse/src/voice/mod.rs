@@ -204,10 +204,7 @@ impl Voice {
             state: SyncMutex::new(State::default()),
             tasks: SyncMutex::new(Vec::new()),
         });
-        if !server.set_plugin_channel_handler(Arc::clone(&voice) as Arc<dyn PluginChannelHandler>) {
-            log::error!("Another plugin channel handler is already installed: no voice chat");
-            return None;
-        }
+        server.add_plugin_channel_handler(Arc::clone(&voice) as Arc<dyn PluginChannelHandler>);
         let tasks = vec![
             tokio::spawn(Arc::clone(&voice).receive()),
             tokio::spawn(Arc::clone(&voice).watch(Arc::clone(server))),

@@ -23,6 +23,7 @@ pub use generator::{ChunkGenerator, EmptyChunkGenerator, FlatChunkGenerator, Van
 pub use region::WorldGenRegion;
 pub use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 pub use steel_worldgen::noise::EndIslands;
+pub use template::rotate_block_state;
 
 /// Compatibility path for the per-chunk carving bitset.
 /// Compatibility path for generator context types.

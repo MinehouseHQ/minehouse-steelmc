@@ -9,19 +9,26 @@
 //! are counted from), `start <show> [in]` (now, or after a countdown on a boss bar),
 //! `rehearse <show> [marker]` (for one admin, from a marker), `stop`, `status`,
 //! `cam add|undo|clear|preview <show> <path>` (camera paths recorded by standing and
-//! looking), and `optout` for a player who doesn't want to watch.
+//! looking), `capture <show> <name> <box>` (the blocks of a box become a block set),
+//! `undo <show>` (puts back what the show's permanent blocks replaced), and `optout` for a
+//! player who doesn't want to watch.
 //!
-//! Not ported yet, and refused when a script uses them: blocks placed by a show, models,
-//! trains, rigs, mannequins and mobs as actors, meteors, rifts and rockets, node logic,
-//! private cutscenes and the in-game editor.
+//! A show can also put blocks: ghost ones only its viewers see, temporary ones that are put
+//! back when it ends, and permanent ones that stay.
+//!
+//! Not ported yet, and refused when a script uses them: trains, rigs, mannequins and mobs
+//! as actors, meteors, rifts and rockets, node logic, private cutscenes and the in-game
+//! editor.
 
 mod actor;
+mod blocks;
 mod camera_path;
 mod commands;
 mod ease;
 mod journal;
 mod json;
 mod library;
+mod permanent;
 mod runner;
 mod script;
 mod time;
@@ -56,7 +63,7 @@ use self::{
     runner::{Cx, Mode, Runner, restore_viewer},
     script::ShowScript,
 };
-use crate::{config, downtime::Downtime, moderation::format::render};
+use crate::{blocklog::BlockLog, config, downtime::Downtime, moderation::format::render};
 
 /// Who may run shows.
 const PERMISSION: &str = "minehouse.command.show";
@@ -78,6 +85,7 @@ struct Shows {
     /// Who was online the tick before: whoever is new has just joined.
     online: FxHashSet<Uuid>,
     downtime: Option<Arc<Downtime>>,
+    blocklog: Option<Arc<BlockLog>>,
 }
 
 static SHOWS: LazyLock<SyncMutex<Option<Shows>>> = LazyLock::new(|| SyncMutex::new(None));
@@ -89,7 +97,11 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
 
 /// Reads the shows and starts playing them. `downtime` keeps shows from starting during
 /// maintenance.
-pub fn start(server: &Arc<Server>, downtime: Option<Arc<Downtime>>) {
+pub fn start(
+    server: &Arc<Server>,
+    downtime: Option<Arc<Downtime>>,
+    blocklog: Option<Arc<BlockLog>>,
+) {
     let mut library = Library::new();
     let loaded = library.reload();
     log::info!(
@@ -112,6 +124,12 @@ pub fn start(server: &Arc<Server>, downtime: Option<Arc<Downtime>>) {
         journal.set_active_show(None);
         journal.flush();
     }
+    if journal.has_blocks() {
+        log::warn!(
+            "MineHouse events: blocks a show replaced for a while are still in the journal; \
+             they are put back as their chunks load"
+        );
+    }
     *SHOWS.lock() = Some(Shows {
         library,
         journal,
@@ -120,6 +138,7 @@ pub fn start(server: &Arc<Server>, downtime: Option<Arc<Downtime>>) {
         opted_out: FxHashSet::default(),
         online: FxHashSet::default(),
         downtime,
+        blocklog,
     });
     server.jobs.spawn(Tick);
 }
@@ -193,11 +212,20 @@ impl Shows {
             }
         }
 
+        // Blocks left from a show the server died in go back as their chunks load.
+        if self.runner.is_none()
+            && self.journal.has_blocks()
+            && server.current_tick().is_multiple_of(20)
+        {
+            runner::restore_blocks(server, &mut self.journal);
+            self.journal.flush();
+        }
         if let Some(runner) = &mut self.runner {
             runner.step(&mut Cx {
                 server,
                 online: &online,
                 journal: &mut self.journal,
+                blocklog: self.blocklog.as_ref(),
             });
             if runner.finished() {
                 self.runner = None;
@@ -257,6 +285,7 @@ impl Shows {
         }
 
         let paths = self.library.paths_of(script)?;
+        let sets = self.library.sets_of(script)?;
 
         let online = server.get_players();
         let (mode, audience) = match rehearsal_for {
@@ -270,7 +299,7 @@ impl Shows {
                     .collect(),
             ),
         };
-        let mut runner = Runner::new(Arc::clone(script), paths, world, stage.pos, mode);
+        let mut runner = Runner::new(Arc::clone(script), paths, sets, world, stage.pos, mode);
         runner.start(
             &audience,
             from_tick,
@@ -278,6 +307,7 @@ impl Shows {
                 server,
                 online: &online,
                 journal: &mut self.journal,
+                blocklog: self.blocklog.as_ref(),
             },
         );
         log::info!(
@@ -345,6 +375,7 @@ impl Shows {
             server,
             online: &server.get_players(),
             journal: &mut self.journal,
+            blocklog: self.blocklog.as_ref(),
         });
         true
     }
@@ -363,6 +394,7 @@ impl Shows {
                     server,
                     online: &server.get_players(),
                     journal: &mut self.journal,
+                    blocklog: self.blocklog.as_ref(),
                 },
             );
         }

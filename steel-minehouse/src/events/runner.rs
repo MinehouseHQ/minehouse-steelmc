@@ -8,17 +8,27 @@ use glam::{DVec3, Quat, Vec3};
 use rustc_hash::FxHashMap;
 use steel_core::{
     chunk::heightmap::HeightmapType,
-    entity::Entity as _,
+    entity::{Entity as _, next_entity_id},
     player::Player,
     server::Server,
     world::{LevelReader, World},
 };
 use steel_protocol::packets::game::{
-    CClearTitles, CGameEvent, CLevelParticles, CSetActionBarText, CSetCamera, CSetSubtitleText,
+    BlockChange, CAddEntity, CBlockUpdate, CClearTitles, CGameEvent, CLevelParticles,
+    CRemoveEntities, CSectionBlocksUpdate, CSetActionBarText, CSetCamera, CSetSubtitleText,
     CSetTime, CSetTitleText, CSetTitlesAnimation, CSound, GameEventType, RandomizationType,
+    SoundSource,
 };
-use steel_registry::{REGISTRY, RegistryExt as _, particle_type::ParticleData};
-use steel_utils::{Identifier, types::GameType};
+use steel_registry::{
+    REGISTRY, RegistryEntry as _, RegistryExt as _,
+    particle_type::{ParticleData, ParticleTypeRef},
+    sound_event::SoundEventHolder,
+    vanilla_entities,
+};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Identifier, PackedSectionBlockPos, SectionPos,
+    types::{GameType, UpdateFlags},
+};
 use text_components::{
     Modifier as _, TextComponent,
     interactivity::{ClickEvent, HoverEvent},
@@ -27,11 +37,20 @@ use uuid::Uuid;
 
 use super::{
     actor::{Actor, Pose},
+    blocks::{BlockSet, Placed, block_state, rotation, state_text},
     camera_path::{CameraPath, look, wrap},
     journal::{Journal, ViewerState},
-    script::{Action, Cue, Gather, PathSource, ShowScript},
+    permanent,
+    script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript},
 };
-use crate::moderation::format::render;
+use crate::{blocklog::BlockLog, moderation::format::render};
+
+/// Every how many ticks the viewers are sent the ghost blocks again.
+const GHOST_RESEND_TICKS: u32 = 40;
+/// How long a bolt of lightning is left with the viewers: their game plays it out in less.
+const BOLT_TICKS: u32 = 20;
+/// Who the block log says made a show's permanent changes.
+const LOG_USER: &str = "#show";
 
 /// How far from the stage a viewer still gets the show.
 const VIEW_DISTANCE: f64 = 256.0;
@@ -70,6 +89,8 @@ pub struct Cx<'a> {
     /// Everyone online.
     pub online: &'a [Arc<Player>],
     pub journal: &'a mut Journal,
+    /// Where permanent changes of a show are logged, if the block log is on.
+    pub blocklog: Option<&'a Arc<BlockLog>>,
 }
 
 /// A show that is playing.
@@ -77,6 +98,14 @@ pub struct Runner {
     script: Arc<ShowScript>,
     /// The recorded camera paths of the script, read when the show started.
     paths: FxHashMap<String, CameraPath>,
+    /// The captured block sets of the script, read when the show started.
+    sets: FxHashMap<String, BlockSet>,
+    /// Blocks only the viewers see, over what is really there.
+    ghosts: FxHashMap<BlockPos, BlockStateId>,
+    /// Ghosts were added while nothing was sent (skipping to a marker, a new viewer).
+    ghosts_unsent: bool,
+    /// Lightning the viewers were shown, and the tick it is taken away.
+    bolts: Vec<(i32, u32)>,
     world: Arc<World>,
     origin: DVec3,
     mode: Mode,
@@ -104,6 +133,7 @@ impl Runner {
     pub fn new(
         script: Arc<ShowScript>,
         paths: FxHashMap<String, CameraPath>,
+        sets: FxHashMap<String, BlockSet>,
         world: Arc<World>,
         origin: DVec3,
         mode: Mode,
@@ -112,6 +142,10 @@ impl Runner {
         Self {
             script,
             paths,
+            sets,
+            ghosts: FxHashMap::default(),
+            ghosts_unsent: false,
+            bolts: Vec::new(),
             world,
             origin,
             mode,
@@ -198,7 +232,7 @@ impl Runner {
     fn actor_or_spawn(&mut self, index: usize) -> Option<&mut Actor> {
         if self.actor(index).is_none() {
             let def = self.script.actors.get(index)?;
-            let actor = Actor::spawn(def, self.origin, 0.0, None);
+            let actor = Actor::spawn(def, &self.sets, self.origin, 0.0, None);
             *self.actors.get_mut(index)? = Some(actor);
         }
         self.actors.get_mut(index).and_then(Option::as_mut)
@@ -216,7 +250,7 @@ impl Runner {
         let Some(def) = self.script.actors.get(index) else {
             return;
         };
-        let actor = Actor::spawn(def, pos, yaw, scale);
+        let actor = Actor::spawn(def, &self.sets, pos, yaw, scale);
         if let Some(slot) = self.actors.get_mut(index) {
             *slot = Some(actor);
         }
@@ -290,6 +324,7 @@ impl Runner {
         // Their spot before the show; kept if they were already saved (left and came back).
         journal.save_viewer(id, viewer_state(player, self.script.return_after));
         journal.flush();
+        self.ghosts_unsent = true;
 
         if player.game_mode() == GameType::Survival {
             player.set_game_mode(GameType::Adventure); // watching, not building on stage
@@ -386,6 +421,9 @@ impl Runner {
         let here = self.viewers_here(cx.online);
         for actor in self.actors.iter_mut().flatten() {
             actor.sync(&here, cx.online);
+        }
+        if self.in_world(player) && !self.ghosts.is_empty() {
+            send_blocks(player, &self.real_under_ghosts());
         }
         self.leave(player, cx);
     }
@@ -554,7 +592,29 @@ impl Runner {
             | Action::Sound { .. }
             | Action::Title { .. }
             | Action::Bar { .. }
-            | Action::Chat { .. } => self.emit(&cue.action, cx),
+            | Action::Chat { .. }
+            | Action::Explosion { .. } => self.emit(&cue.action, cx),
+            Action::Blocks { mode, source, pos } => {
+                let blocks = self.blocks_of(source, *pos);
+                match mode {
+                    BlockMode::Ghost => self.ghost(&blocks, cx.online),
+                    BlockMode::Temporary => self.place_real(&blocks, true, cx),
+                    // A rehearsal never changes the world for good.
+                    BlockMode::Permanent => {
+                        self.place_real(&blocks, self.mode == Mode::Rehearsal, cx);
+                    }
+                }
+            }
+            Action::ClearBlocks { ghost, temporary } => {
+                if *ghost {
+                    self.clear_ghosts(cx.online);
+                }
+                if *temporary {
+                    restore_blocks(cx.server, cx.journal);
+                    cx.journal.flush();
+                }
+            }
+            Action::Lightning { pos } => self.strike(*pos, cx.online),
             Action::Path { .. } | Action::Shake { .. } => {}
         }
         Held::Nothing
@@ -660,6 +720,63 @@ impl Runner {
         }
     }
 
+    /// A burst of one particle for the viewers in the show's world.
+    fn burst(
+        &self,
+        particle: ParticleTypeRef,
+        at: DVec3,
+        spread: Vec3,
+        speed: f32,
+        count: i32,
+        cx: &Cx<'_>,
+    ) {
+        for player in self.viewers_here(cx.online) {
+            player.send_packet(CLevelParticles {
+                particle: ParticleData::simple(particle),
+                override_limiter: true,
+                always_show: true,
+                x: at.x,
+                y: at.y,
+                z: at.z,
+                x_dist: spread.x,
+                y_dist: spread.y,
+                z_dist: spread.z,
+                x_max_speed: speed,
+                y_max_speed: speed,
+                z_max_speed: speed,
+                count,
+                randomization_type: RandomizationType::default(),
+            });
+        }
+    }
+
+    /// The look and the sound of an explosion; nothing in the world breaks.
+    fn explode(&self, at: DVec3, sound: bool, cx: &Cx<'_>) {
+        if let Some(particle) = REGISTRY
+            .particle_types
+            .by_key(&Identifier::vanilla_static("explosion_emitter"))
+        {
+            self.burst(particle, at, Vec3::ZERO, 0.0, 1, cx);
+        }
+        let boom = REGISTRY
+            .sound_events
+            .by_key(&Identifier::vanilla_static("entity.generic.explode"))
+            .filter(|_| sound);
+        if let Some(boom) = boom {
+            let seed = rand::random();
+            for player in self.viewers_here(cx.online) {
+                player.send_packet(CSound::new_holder(
+                    SoundEventHolder::Registry(boom),
+                    SoundSource::Master,
+                    at,
+                    4.0,
+                    0.8,
+                    seed,
+                ));
+            }
+        }
+    }
+
     /// What a cue sends to the viewers and nothing else: sounds, particles, texts.
     fn emit(&self, action: &Action, cx: &Cx<'_>) {
         if self.muted {
@@ -706,24 +823,7 @@ impl Runner {
                 let at = actor
                     .and_then(|actor| self.actor(actor))
                     .map_or_else(|| self.abs(offset), |actor| actor.pos() + offset);
-                for player in self.viewers_here(cx.online) {
-                    player.send_packet(CLevelParticles {
-                        particle: ParticleData::simple(particle),
-                        override_limiter: true,
-                        always_show: true,
-                        x: at.x,
-                        y: at.y,
-                        z: at.z,
-                        x_dist: spread.x,
-                        y_dist: spread.y,
-                        z_dist: spread.z,
-                        x_max_speed: *speed,
-                        y_max_speed: *speed,
-                        z_max_speed: *speed,
-                        count: *count,
-                        randomization_type: RandomizationType::default(),
-                    });
-                }
+                self.burst(particle, at, *spread, *speed, *count, cx);
             }
             Action::Title {
                 text,
@@ -743,6 +843,7 @@ impl Runner {
                     player.send_packet(CSetTitleText::new(render(text, &[])));
                 }
             }
+            Action::Explosion { pos, sound } => self.explode(self.abs(*pos), *sound, cx),
             Action::Bar { text } => {
                 for player in self.viewers_online(cx.online) {
                     player.send_packet(CSetActionBarText::new(render(text, &[])));
@@ -835,6 +936,159 @@ impl Runner {
                 send_weather(player, weather, false);
             }
         }
+        // A chunk sent again (the viewer walked off and back) would show the real blocks.
+        let resend = self.ghosts_unsent || self.tick.is_multiple_of(GHOST_RESEND_TICKS);
+        if resend && !self.ghosts.is_empty() && !self.muted {
+            for player in &here {
+                send_blocks(player, &self.ghosts);
+            }
+            self.ghosts_unsent = false;
+        }
+        let tick = self.tick;
+        if self.bolts.iter().any(|(_, until)| *until <= tick) {
+            let gone: Vec<i32> = self
+                .bolts
+                .iter()
+                .filter(|(_, until)| *until <= tick)
+                .map(|(id, _)| *id)
+                .collect();
+            self.bolts.retain(|(_, until)| *until > tick);
+            for player in self.viewers_online(online) {
+                player.send_packet(CRemoveEntities {
+                    entity_ids: gone.clone(),
+                });
+            }
+        }
+    }
+
+    // --- Blocks -------------------------------------------------------------------------
+
+    /// The blocks a `blocks` cue puts, at their places in the world.
+    fn blocks_of(&self, source: &BlockSource, pos: Option<DVec3>) -> Placed {
+        match source {
+            BlockSource::Shape(shape) => {
+                let center = block_pos(self.abs(pos.unwrap_or(DVec3::ZERO)));
+                shape.blocks(center, |x, z| {
+                    let height = LevelReader::height_at(
+                        &*self.world,
+                        HeightmapType::MotionBlockingNoLeaves,
+                        x,
+                        z,
+                    );
+                    height - 1
+                })
+            }
+            BlockSource::Set(name) => self.sets.get(name).map_or_else(Placed::new, |set| {
+                // A show that turns with its stage turns its sets too, blocks facing the
+                // right way. Without a place the set goes back where it was captured.
+                let origin = block_pos(self.abs(pos.unwrap_or_else(|| set.anchor())));
+                set.at(origin, rotation(self.script.turned))
+            }),
+        }
+    }
+
+    /// Shows `blocks` to the viewers over what is really there.
+    fn ghost(&mut self, blocks: &Placed, online: &[Arc<Player>]) {
+        let mut added = FxHashMap::default();
+        for (pos, state) in blocks {
+            self.ghosts.insert(*pos, *state);
+            added.insert(*pos, *state);
+        }
+        if self.muted {
+            self.ghosts_unsent = true;
+            return;
+        }
+        for player in self.viewers_here(online) {
+            send_blocks(player, &added);
+        }
+    }
+
+    /// Takes the ghosts away: the viewers see the real blocks again.
+    fn clear_ghosts(&mut self, online: &[Arc<Player>]) {
+        if self.ghosts.is_empty() {
+            return;
+        }
+        let real = self.real_under_ghosts();
+        for player in self.viewers_here(online) {
+            send_blocks(player, &real);
+        }
+        self.ghosts.clear();
+        self.ghosts_unsent = false;
+    }
+
+    fn real_under_ghosts(&self) -> FxHashMap<BlockPos, BlockStateId> {
+        self.ghosts
+            .keys()
+            .map(|pos| (*pos, self.world.get_block_state(*pos)))
+            .collect()
+    }
+
+    /// Real blocks. Temporary ones are journaled and put back at the end; permanent ones
+    /// stay, with what they replaced written down for `/show undo` and in the block log.
+    fn place_real(&self, blocks: &Placed, temporary: bool, cx: &mut Cx<'_>) {
+        let world = self.world.key.to_string();
+        let mut replaced = Vec::new();
+        let mut skipped = 0;
+        for (pos, state) in blocks {
+            if !loaded(&self.world, *pos) {
+                skipped += 1;
+                continue;
+            }
+            let old = self.world.get_block_state(*pos);
+            if temporary {
+                cx.journal
+                    .save_block(&world, [pos.x(), pos.y(), pos.z()], || state_text(old));
+            } else {
+                replaced.push((*pos, old));
+                if let Some(blocklog) = cx.blocklog {
+                    blocklog.record_change(LOG_USER, &self.world, *pos, old, *state);
+                }
+            }
+            // Without neighbor updates: no sand falling or water flowing out of the scene.
+            self.world
+                .set_block(*pos, *state, UpdateFlags::UPDATE_CLIENTS);
+        }
+        if skipped > 0 {
+            log::warn!(
+                "MineHouse events: show {} skipped {skipped} block(s) in chunks that are not \
+                 loaded",
+                self.script.id
+            );
+        }
+        if temporary {
+            // On disk before anyone sees the change: a crash now still puts them back.
+            cx.journal.flush();
+        } else if let Err(error) = permanent::backup(&self.script.id, &world, &replaced) {
+            log::error!(
+                "MineHouse events: could not back up {} block(s) of show {} before a permanent \
+                 change: {error}",
+                replaced.len(),
+                self.script.id
+            );
+        }
+    }
+
+    /// A bolt of lightning the viewers see and hear; nothing burns.
+    fn strike(&mut self, pos: DVec3, online: &[Arc<Player>]) {
+        if self.muted {
+            return;
+        }
+        let id = next_entity_id();
+        let at = self.abs(pos);
+        for player in self.viewers_here(online) {
+            player.send_packet(CAddEntity {
+                id,
+                uuid: Uuid::new_v4(),
+                entity_type: vanilla_entities::LIGHTNING_BOLT.id() as i32,
+                position: at,
+                velocity: DVec3::ZERO,
+                x_rot: 0,
+                y_rot: 0,
+                head_y_rot: 0,
+                data: 0,
+            });
+        }
+        self.bolts.push((id, self.tick + BOLT_TICKS));
     }
 
     /// Ends the show and puts everything back: actors, sky, camera, viewers.
@@ -852,6 +1106,16 @@ impl Runner {
                 actor.remove(online);
             }
         }
+        self.clear_ghosts(online);
+        restore_blocks(cx.server, cx.journal);
+        if !self.bolts.is_empty() {
+            let gone: Vec<i32> = self.bolts.drain(..).map(|(id, _)| id).collect();
+            for player in self.viewers_online(online) {
+                player.send_packet(CRemoveEntities {
+                    entity_ids: gone.clone(),
+                });
+            }
+        }
         for player in self.viewers_online(online) {
             player.send_packet(CClearTitles::new(true));
             self.leave(player, cx);
@@ -861,6 +1125,78 @@ impl Runner {
         cx.journal.set_active_show(None);
         cx.journal.flush();
     }
+}
+
+/// The block a place is in.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a place in the world, floored to its block"
+)]
+fn block_pos(at: DVec3) -> BlockPos {
+    let at = at.floor();
+    BlockPos::new(at.x as i32, at.y as i32, at.z as i32)
+}
+
+fn loaded(world: &World, pos: BlockPos) -> bool {
+    world
+        .chunk_map
+        .with_full_chunk(ChunkPos::from_block_pos(pos), |_| ())
+        .is_some()
+}
+
+/// Sends blocks to one player without touching the world, one packet per chunk section
+/// rather than per block: a ghost station of ten thousand blocks is a few dozen packets.
+fn send_blocks(player: &Player, blocks: &FxHashMap<BlockPos, BlockStateId>) {
+    if blocks.len() < 8 {
+        for (pos, state) in blocks {
+            player.send_packet(CBlockUpdate {
+                pos: *pos,
+                block_state: *state,
+            });
+        }
+        return;
+    }
+    let mut sections: FxHashMap<(i32, i32, i32), Vec<BlockChange>> = FxHashMap::default();
+    for (pos, state) in blocks {
+        sections
+            .entry((pos.x() >> 4, pos.y() >> 4, pos.z() >> 4))
+            .or_default()
+            .push(BlockChange {
+                pos: PackedSectionBlockPos::from_block_pos(*pos),
+                block_state: *state,
+            });
+    }
+    for ((x, y, z), changes) in sections {
+        player.send_packet(CSectionBlocksUpdate {
+            section_pos: SectionPos::new(x, y, z),
+            changes,
+        });
+    }
+}
+
+/// Puts back the blocks shows replaced for a while. A block in a chunk that is not loaded
+/// stays in the journal for the next try; returns how many are left.
+pub fn restore_blocks(server: &Server, journal: &mut Journal) -> usize {
+    if !journal.has_blocks() {
+        return 0;
+    }
+    journal.restore_blocks(|block| {
+        let world = Identifier::from_str(&block.world)
+            .ok()
+            .and_then(|key| server.worlds.get(&key));
+        // A world or a block that no longer exists can never be put back.
+        let (Some(world), Ok(state)) = (world, block_state(&block.s)) else {
+            return true;
+        };
+        let pos = BlockPos::new(block.p[0], block.p[1], block.p[2]);
+        if !loaded(world, pos) {
+            return false;
+        }
+        if world.get_block_state(pos) != state {
+            world.set_block(pos, state, UpdateFlags::UPDATE_CLIENTS);
+        }
+        true
+    })
 }
 
 /// The place of the n-th viewer on the ring around `center`: the golden angle spreads the
