@@ -29,16 +29,20 @@ use steel_utils::{
 use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
-use super::{Live, Zone, left, parse, standing_in};
+use super::{Live, Zone, guides, left, map, parse, standing_in};
 use crate::bank::{
     Bank, ar,
     atm::{AMOUNT_BACK, AMOUNT_OK, AMOUNT_SHOWN, Buttons, ButtonsKind, ROWS, STEPS},
     bank, body, error, gui, ok, online,
+    ores::give_stack,
 };
 
 /// The slots of the list that hold zones; the bottom row is buttons.
 const LIST_ZONES: usize = 45;
 const LIST_SIZE: usize = 54;
+const LIST_MAP: usize = 45;
+const LIST_BORDERS: usize = 46;
+const LIST_GUIDE: usize = 48;
 const LIST_HELP: usize = 49;
 const LIST_CLOSE: usize = 53;
 
@@ -171,6 +175,30 @@ fn list_layout(zones: &[Zone], now: DateTime<Utc>) -> Vec<(usize, ItemStack)> {
         })
         .collect();
     layout.push((
+        LIST_MAP,
+        gui::button(
+            &vanilla_items::FILLED_MAP,
+            "Карта зон",
+            &["Карта острова с зонами", "в руку (как обычная карта)."],
+        ),
+    ));
+    layout.push((
+        LIST_BORDERS,
+        gui::button(
+            &vanilla_items::BLAZE_POWDER,
+            "Показать границы",
+            &["Границы зон частицами 30 секунд."],
+        ),
+    ));
+    layout.push((
+        LIST_GUIDE,
+        gui::button(
+            &vanilla_items::FILLED_MAP,
+            "Гайд: зоны спавна",
+            &["Что такое зоны и где их смотреть.", "Нажми, чтобы открыть."],
+        ),
+    ));
+    layout.push((
         LIST_HELP,
         gui::button(
             &vanilla_items::BOOK,
@@ -184,6 +212,7 @@ fn list_layout(zones: &[Zone], now: DateTime<Utc>) -> Vec<(usize, ItemStack)> {
                 "по цене зоны, иначе зона снова",
                 "уйдёт на аукцион.",
                 "Одна зона на игрока.",
+                "Нажми: гайд «Аукцион и аренда».",
             ],
         ),
     ));
@@ -203,12 +232,31 @@ struct ListWindow {
 }
 
 impl ListWindow {
+    /// A button of the bottom row; the window closes after it.
+    fn button(&self, player: &Arc<Player>, slot: usize) {
+        match slot {
+            LIST_MAP => {
+                give_stack(player, map::item());
+                self.bank.zones.map.forget(self.player);
+            }
+            LIST_BORDERS => self.bank.zones.markup.show(self.player, None),
+            LIST_GUIDE => guides::show(player, guides::ZONES),
+            _ => guides::show(player, guides::AUCTION),
+        }
+    }
+
     fn act(&self, server: &Server, slot: usize) {
         let Some(player) = online(server, self.player) else {
             return;
         };
         if slot == LIST_CLOSE {
             self.state.lock().1 = true;
+            return;
+        }
+        if matches!(slot, LIST_MAP | LIST_BORDERS | LIST_GUIDE | LIST_HELP) {
+            gui::click(&player);
+            self.state.lock().1 = true;
+            self.button(&player, slot);
             return;
         }
         let (zone, all) = {

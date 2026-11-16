@@ -309,7 +309,7 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&cauldron::Broth)
     } else if id == PAPIROSA.id {
         Some(&papirosa::Papirosa)
-    } else if id == CARD.id {
+    } else if id == CARD.id || id == MAGNIFIER.id {
         Some(&guides::Opener)
     } else if id == ATM.id {
         Some(&ATM_ITEM)
@@ -532,7 +532,8 @@ mod tests {
             stack.get(ITEM_MODEL).map(ToString::to_string).as_deref(),
             Some("minehouse-tweaks:magnifier")
         );
-        assert_eq!(stack.get(LORE).map(|lore| lore.lines().len()), Some(4));
+        // Four lines of its own and the line about its guide.
+        assert_eq!(stack.get(LORE).map(|lore| lore.lines().len()), Some(5));
         assert!(MAGNIFIER.is(&stack));
         // Plain paper is not a magnifier.
         assert!(!MAGNIFIER.is(&ItemStack::with_count(&vanilla_items::PAPER, 1)));

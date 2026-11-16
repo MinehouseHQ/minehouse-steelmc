@@ -390,10 +390,13 @@ out two characters a tick, Shift shows the page, turns it or takes the answer, t
 picks an answer (the hotbar slot comes right back), Space, an opened window or five blocks
 away end the talk.
 
-The guides of the ATM and of the terminal are in `src/bank/guides.rs` (see Guides below).
+The guides of the ATM and of the terminal are in `src/bank/guides.rs`, the guides of the zones
+(`spawn-zones`, `spawn-zones-auction`) in `src/bank/zones/guides.rs` (see Guides below). No
+item opens the guides of the zones: the bottom row of the `/zones` list does, next to «Карта
+зон» (the map into the inventory) and «Показать границы» (the borders for 30 seconds).
 
-Not here yet: of the zones the guides; the banker's body animations (they were played by the
-events mod on the Fabric server).
+Not here yet: the banker's body animations (they were played by the events mod on the Fabric
+server).
 
 `config/minehouse/bank.toml`:
 
@@ -436,7 +439,9 @@ replayed instantly) and puts things off with `Stage::later`. `Stage` has blocks,
 blocks, items, labels and models of the server pack (`Stage::model`, for blocks of ours that
 a block display can't show), each under an id to move, change, glow, pulse or remove later. A
 module adds its guides to the list in `guides::all` (the bank: `bank-atm`, `bank-terminal`,
-shown while the bank is on).
+shown while the bank is on; the zones: `spawn-zones`, `spawn-zones-auction`, shown while the
+zones are open; the magnifier: `magnifier` in `src/blocklog/guide.rs`, shown while the block log
+is on, its chat pages drawn by the same code as the real answer).
 
 The book «Гайды MineHouse» (`src/guides/book.rs`) is a vanilla written book marked in its
 custom data: a book and a sheet of paper make one on a workbench (the recipe
@@ -454,7 +459,7 @@ ones that work now, and a click on a line that does not says so. For this the di
 of `steel-registry` has the variant `DialogVariant::Custom`, a dialog an extension describes
 itself.
 
-Not here yet: the guides of the zones, of the magnifier, of the metro and of the herbs.
+Not here yet: the guides of the metro and of the herbs.
 
 ## Our items
 

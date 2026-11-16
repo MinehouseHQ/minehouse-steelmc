@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 use self::{session::Session, stage::Stage};
 use crate::{
-    bank,
+    bank, blocklog,
     content::{CustomItem, id_of},
 };
 
@@ -117,6 +117,8 @@ impl Guide {
 
 static GUIDES: LazyLock<Vec<Guide>> = LazyLock::new(|| {
     let mut guides = bank::guides::all();
+    guides.extend(bank::zones::guides::all());
+    guides.push(blocklog::guide::guide());
     guides.retain(|guide| !guide.steps.is_empty());
     guides
 });
