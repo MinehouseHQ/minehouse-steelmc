@@ -14,8 +14,8 @@ pub use mobs::hostile::WardenEntity;
 pub use mobs::hostile::{
     BlazeEntity, BoggedEntity, CaveSpiderEntity, CreeperEntity, DrownedEntity, EndermiteEntity,
     GhastEntity, GiantEntity, HuskEntity, MagmaCubeEntity, ParchedEntity, PhantomEntity,
-    SilverfishEntity, SkeletonEntity, SlimeEntity, SpiderEntity, StrayEntity, VexEntity,
-    WitherSkeletonEntity, ZombieEntity, ZombieGroupData, ZombieVillagerEntity,
+    SilverfishEntity, SkeletonEntity, SlimeEntity, SpiderEntity, StrayEntity, SulfurCubeEntity,
+    VexEntity, WitherSkeletonEntity, ZombieEntity, ZombieGroupData, ZombieVillagerEntity,
     ZombifiedPiglinEntity,
 };
 pub use mobs::hostile::{ElderGuardianEntity, Guardian, GuardianEntity};

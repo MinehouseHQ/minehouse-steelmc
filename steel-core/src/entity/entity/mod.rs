@@ -22,7 +22,7 @@ use crate::world::game_event::DynamicListenerAction;
 use crate::world::game_event::vibrations::VibrationSystem;
 use crate::world::ticking_world::LevelRef;
 use rand::{RngExt, rng};
-use steel_math::DEGREE_90;
+use steel_math::{DEGREE_90, lerp};
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -3935,17 +3935,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         // Vanilla `LivingEntity.getAirDrag`: omnidirectional air movers use
         // the 0.91 horizontal air friction.
         let air_drag = if entity.omnidirectional_air_mover() {
-            OMNIDIRECTIONAL_AIR_DRAG
+            0.91
         } else {
-            DEFAULT_AIR_DRAG
+            0.98
         };
-        compute_modified_friction(
+        f64::from(compute_modified_friction(
             air_drag,
             entity
                 .attributes()
                 .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
-        )
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+        ))
     }
 
     /// Applies gravity to the entity's velocity.
@@ -3998,10 +3998,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// The base `Entity.move`; overrides of [`Entity::move_entity`] call this
     /// for vanilla `super.move(...)`.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "keeps vanilla movement phases in order"
-    )]
     fn default_move_entity(
         self: Arc<Self>,
         mover_type: MoverType,
@@ -4077,57 +4073,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return Some(result);
         }
 
-        // Vanilla: Entity.move() zeros velocity components on collision.
-        // Horizontal collision zeros X/Z individually based on which axis collided.
-        // Vertical collision calls Block.updateEntityMovementAfterFallOn.
-        // The default block behavior zeros Y velocity; block-specific behavior
-        // can override this for slime, beds, and similar landing surfaces.
-        if result.horizontal_collision {
-            let vel = self.velocity();
-            self.set_velocity(DVec3::new(
-                if result.x_collision { 0.0 } else { vel.x },
-                vel.y,
-                if result.z_collision { 0.0 } else { vel.z },
-            ));
-        }
-        if result.vertical_collision && self.can_simulate_movement() {
-            let velocity = self.velocity();
-            let landing_context = EntityLandingContext::new(
-                velocity,
-                result.actual_movement.y,
-                self.is_living_entity(),
-                self.is_suppressing_bounce(),
-                self.as_living_entity()
-                    .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity),
-                self.get_air_drag(),
-            );
-
-            let next_velocity =
-                if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
-                    let effect_state = world.get_block_state(effect_pos);
-                    let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    let (res, bounced) = behavior.update_entity_movement_after_fall_on(
-                        effect_state,
-                        &world,
-                        effect_pos,
-                        landing_context,
-                    );
-                    if bounced {
-                        behavior.bounce_on(
-                            effect_state,
-                            &world,
-                            effect_pos,
-                            EntityFallOnContext::from_entity(
-                                self.fall_distance(),
-                                self.as_entity_event_source(),
-                            ),
-                        );
-                    }
-                    res
-                } else {
-                    landing_context.default_velocity_after_fall_on()
-                };
-            self.set_velocity(next_velocity);
+        let moved_vertically = movement.y.abs() > 0.0;
+        if self.can_simulate_movement()
+            && (moved_vertically && result.vertical_collision || result.horizontal_collision)
+        {
+            self.restitute_movement_after_collisions(&world, &result, movement.y < 0.0);
         }
 
         self.apply_movement_side_effects_after_move(&world, result.actual_movement);
@@ -4141,6 +4091,103 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         ));
 
         Some(result)
+    }
+
+    /// Vanilla `Entity.getEntityBounciness`: how much of its speed this
+    /// entity keeps when it hits a wall or the ground.
+    fn entity_bounciness(&self) -> f64 {
+        self.as_living_entity().map_or(0.0, |living| {
+            living
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::BOUNCINESS)
+        })
+    }
+
+    /// Vanilla `Entity.restituteMovementAfterCollisions`: bounces off the
+    /// walls by the entity's own bounciness, off the ground by the larger of
+    /// it and the block's, or stops along each blocked axis.
+    fn restitute_movement_after_collisions(
+        &self,
+        world: &Arc<World>,
+        result: &MoveResult,
+        collided_below: bool,
+    ) {
+        let effect_state = self
+            .on_pos_legacy()
+            .map_or_else(BlockStateId::default, |pos| world.get_block_state(pos));
+        let suppressing = self.is_suppressing_bounce();
+        let mut restitution = if suppressing {
+            0.0
+        } else {
+            self.entity_bounciness()
+        };
+        let current = self.velocity();
+        let mut after = current;
+        if result.x_collision {
+            after.x = -current.x * restitution;
+        }
+        if result.z_collision {
+            after.z = -current.z * restitution;
+        }
+        let mut bounced = restitution > 0.0 && (result.x_collision || result.z_collision);
+        if result.vertical_collision {
+            let gravity = self
+                .as_living_entity()
+                .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity);
+            if collided_below {
+                restitution = if -current.y <= gravity
+                    || suppressing
+                    || effect_state
+                        .get_block()
+                        .has_tag(&BlockTag::SUPPRESSES_BOUNCE)
+                {
+                    0.0
+                } else {
+                    restitution.max(self.block_bounciness(effect_state))
+                };
+            }
+            let (gravity_compensation, effective_drag) = if restitution > 0.0 {
+                let portion_with_movement = result.actual_movement.y / current.y;
+                bounced = true;
+                (
+                    portion_with_movement * gravity,
+                    lerp(portion_with_movement, 1.0, self.get_air_drag()),
+                )
+            } else {
+                (0.0, 1.0)
+            };
+            after.y = (gravity_compensation - current.y) * effective_drag * restitution;
+        }
+        if bounced && let Some(pos) = self.block_pos_below_that_affects_movement() {
+            BLOCK_BEHAVIORS
+                .get_behavior(effect_state.get_block())
+                .bounce_on(
+                    effect_state,
+                    world,
+                    pos,
+                    EntityFallOnContext::from_entity(
+                        self.fall_distance(),
+                        self.as_entity_event_source(),
+                    ),
+                );
+            self.game_event(&vanilla_game_events::BOUNCE);
+            // TODO(sync-position): vanilla also sets `syncPosition` so the
+            // tracker sends the position on its next interval.
+        }
+        self.set_velocity(after);
+    }
+
+    /// Vanilla `Entity.getBlockBounciness`: a block's restitution, scaled
+    /// down for anything that isn't alive.
+    fn block_bounciness(&self, state: BlockStateId) -> f64 {
+        let restitution = state.get_block().config.bounce_restitution;
+        let restitution = if self.is_living_entity() {
+            restitution
+        } else {
+            restitution * 0.8
+        };
+        f64::from(restitution)
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
@@ -4595,7 +4642,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+/// Vanilla `LivingEntity.computeModifiedFriction`, in vanilla's float math.
+pub(crate) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 

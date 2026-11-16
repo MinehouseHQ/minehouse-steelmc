@@ -8,6 +8,8 @@ mod goals;
 pub mod magma_cube;
 /// Slime.
 pub mod slime;
+/// Sulfur cube.
+pub mod sulfur_cube;
 
 use std::f32::consts::PI;
 use std::mem;
@@ -26,6 +28,7 @@ pub(crate) use goals::{
 };
 pub use magma_cube::MagmaCubeEntity;
 pub use slime::SlimeEntity;
+pub use sulfur_cube::SulfurCubeEntity;
 
 use crate::enchantment_helper::{self, EnchantmentPostAttackContext};
 use crate::entity::ai::control::MoveControlOperation;
@@ -102,27 +105,40 @@ pub trait AbstractCubeMob: AgeableMob {
 
     /// Vanilla `setSize`: clamps the size and rescales hitbox, health and speed.
     fn set_size(&self, size: i32, update_health: bool) {
+        self.cube_set_size(size, update_health);
+    }
+
+    /// Vanilla `AbstractCubeMob.setSize`, callable from overrides as `super`.
+    fn cube_set_size(&self, size: i32, update_health: bool) {
         let actual_size = size.clamp(MIN_SIZE, MAX_SIZE);
         if self.get_size() != actual_size {
             self.set_synced_size(actual_size);
             self.on_size_synced();
         }
         self.refresh_dimensions();
-        {
-            let mut attributes = self.attributes().lock();
-            attributes.set_base_value(
-                vanilla_attributes::MAX_HEALTH,
-                f64::from(actual_size * actual_size),
-            );
-            attributes.set_base_value(
-                vanilla_attributes::MOVEMENT_SPEED,
-                f64::from(0.2_f32 + 0.1_f32 * actual_size as f32),
-            );
-        }
+        self.set_cube_mob_health(actual_size);
+        self.attributes().lock().set_base_value(
+            vanilla_attributes::MOVEMENT_SPEED,
+            f64::from(0.2_f32 + 0.1_f32 * actual_size as f32),
+        );
         if update_health {
             self.set_health(self.get_max_health());
         }
         self.apply_size_attributes(actual_size, size);
+    }
+
+    /// Vanilla `setCubeMobHealth`: the max health for a size.
+    fn set_cube_mob_health(&self, actual_size: i32) {
+        self.attributes().lock().set_base_value(
+            vanilla_attributes::MAX_HEALTH,
+            f64::from(actual_size * actual_size),
+        );
+    }
+
+    /// Vanilla `setUpSplitCube`: sizes and places one half of a split cube.
+    fn set_up_split_cube(&self, cube: &dyn AbstractCubeMob, half_size: i32, position: DVec3) {
+        cube.set_size(half_size, true);
+        cube.snap_to(position, rand::random::<f32>() * 360.0, 0.0);
     }
 
     /// Vanilla `onSyncedDataUpdated(ID_SIZE)` on the server.
@@ -306,15 +322,14 @@ pub trait AbstractCubeMob: AgeableMob {
                     let Some(cube) = converted.as_cube_mob() else {
                         return;
                     };
-                    cube.set_size(half_size, true);
-                    cube.snap_to(
+                    self.set_up_split_cube(
+                        cube,
+                        half_size,
                         DVec3::new(
                             position.x + xd,
                             position.y + SPLIT_SPAWN_Y_OFFSET,
                             position.z + zd,
                         ),
-                        rand::random::<f32>() * 360.0,
-                        0.0,
                     );
                 }),
             );

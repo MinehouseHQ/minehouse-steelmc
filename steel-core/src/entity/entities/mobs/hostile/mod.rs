@@ -12,7 +12,7 @@ pub use endermite::EndermiteEntity;
 
 /// Slime and magma cube, the vanilla `AbstractCubeMob` family.
 pub mod cube_mob;
-pub use cube_mob::{MagmaCubeEntity, SlimeEntity};
+pub use cube_mob::{MagmaCubeEntity, SlimeEntity, SulfurCubeEntity};
 
 /// Silverfish entity module.
 pub mod silverfish;

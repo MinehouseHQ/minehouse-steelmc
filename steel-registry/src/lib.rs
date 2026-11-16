@@ -86,6 +86,7 @@ pub mod sound_event;
 pub mod stat;
 pub mod steel_ticket_types;
 pub mod structure;
+pub mod sulfur_cube_archetype;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
 pub use structure::template_pool;
@@ -270,6 +271,11 @@ pub mod vanilla_damage_types;
 #[rustfmt::skip]
 #[path = "generated/vanilla_block_transformers.rs"]
 pub mod vanilla_block_transformers;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_sulfur_cube_archetypes.rs"]
+pub mod vanilla_sulfur_cube_archetypes;
 
 #[expect(warnings)]
 #[rustfmt::skip]
