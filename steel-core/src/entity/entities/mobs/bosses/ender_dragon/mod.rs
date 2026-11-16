@@ -3,9 +3,9 @@
 //! and healing from the End Crystals.
 //!
 //! The fight around it (boss bar, crystal count, exit portal, egg, respawn)
-//! is vanilla `EnderDragonFight`; until Steel has it, every dragon behaves
-//! like one summoned outside a fight. Those spots are marked
-//! `TODO(dragon-fight)`.
+//! is [`EnderDragonFight`]; a dragon joins it when the fight spawns it or
+//! when its UUID is the fight's dragon. Any other dragon, such as one
+//! summoned by a command, flies outside a fight.
 
 mod nodes;
 mod part;
@@ -60,6 +60,7 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{MoveResult, MoverType};
 use crate::world::World;
+use crate::world::dragon_fight::EnderDragonFight;
 use crate::world::explosion::explosion_damage_source;
 
 /// Index of the head in [`EnderDragonEntity::parts`].
@@ -90,6 +91,8 @@ const CRYSTAL_DESTROY_RANGE: f64 = 64.0;
 const DEATH_DURATION: i32 = 200;
 /// XP of a dragon that is not the first one killed in its fight.
 const XP_REPEAT_KILL: i32 = 500;
+/// XP of the first dragon killed in a fight.
+const XP_FIRST_KILL: i32 = 12000;
 
 const TAG_DRAGON_PHASE: &str = "DragonPhase";
 const TAG_DRAGON_DEATH_TIME: &str = "DragonDeathTime";
@@ -159,6 +162,9 @@ pub struct EnderDragonEntity {
     parts: [Arc<EnderDragonPartEntity>; 8],
     /// Whether the world's dragon index knows this dragon.
     registered: AtomicBool,
+    /// Vanilla `dragonFight != null`: whether this dragon is its world's
+    /// fight dragon.
+    in_fight: AtomicBool,
 }
 
 // SAFETY: The owner-scoped type key uniquely identifies EnderDragonEntity.
@@ -252,6 +258,7 @@ impl EnderDragonEntity {
             }),
             parts,
             registered: AtomicBool::new(false),
+            in_fight: AtomicBool::new(false),
         };
         dragon.set_health(dragon.get_max_health());
         dragon.set_no_physics(true);
@@ -294,16 +301,23 @@ impl EnderDragonEntity {
         self.state.lock().death_time
     }
 
+    /// Vanilla `setDragonFight`: makes this dragon its world's fight dragon.
+    pub fn join_fight(&self) {
+        self.in_fight.store(true, Ordering::Relaxed);
+    }
+
+    /// Vanilla `getDragonFight`: the fight this dragon belongs to.
+    fn with_fight<R>(&self, world: &World, f: impl FnOnce(&EnderDragonFight) -> R) -> Option<R> {
+        if !self.in_fight.load(Ordering::Relaxed) {
+            return None;
+        }
+        world.dragon_fight().map(f)
+    }
+
     /// The crystals left in the dragon's fight; `None` outside a fight.
-    ///
-    /// TODO(dragon-fight): read `EnderDragonFight.aliveCrystals` once Steel
-    /// runs the fight.
-    #[expect(
-        clippy::unused_self,
-        reason = "the dragon's fight answers this once it exists"
-    )]
-    const fn alive_crystals(&self) -> Option<i32> {
-        None
+    fn alive_crystals(&self) -> Option<i32> {
+        let world = self.level()?;
+        self.with_fight(&world, EnderDragonFight::alive_crystals)
     }
 
     /// Vanilla `EndPodiumFeature.getLocation(fightOrigin)` on the surface.
@@ -743,7 +757,7 @@ impl EnderDragonEntity {
             | Self::check_walls(world, self.part(NECK).bounding_box())
             | Self::check_walls(world, self.part(BODY).bounding_box());
         self.state.lock().in_wall = in_wall;
-        // TODO(dragon-fight): `dragonFight.updateDragon(this)`.
+        self.with_fight(world, |fight| fight.update_dragon(self));
 
         for (part, old) in self.parts.iter().zip(old_positions) {
             part.base().set_old_position(old);
@@ -797,6 +811,13 @@ impl EnderDragonEntity {
     fn dragon_ai_step(&self, world: &Arc<World>, this: &SharedEntity) {
         if !self.registered.swap(true, Ordering::Relaxed) {
             world.register_ender_dragon(this);
+        }
+        if !self.in_fight.load(Ordering::Relaxed)
+            && world
+                .dragon_fight()
+                .is_some_and(|fight| fight.dragon_uuid() == Some(self.uuid()))
+        {
+            self.join_fight();
         }
         {
             let mut state = self.state.lock();
@@ -882,7 +903,12 @@ impl Entity for EnderDragonEntity {
     fn kill(&self, _world: &World) {
         self.set_removed(RemovalReason::Killed);
         self.game_event(&vanilla_game_events::ENTITY_DIE);
-        // TODO(dragon-fight): `updateDragon` and `setDragonKilled`.
+        if let Some(world) = self.level() {
+            self.with_fight(&world, |fight| {
+                fight.update_dragon(self);
+                fight.set_dragon_killed(&world, self);
+            });
+        }
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -981,15 +1007,22 @@ impl LivingEntity for EnderDragonEntity {
     /// Vanilla `tickDeath`: rise for ten seconds dropping experience, then
     /// vanish.
     fn tick_death(&self) {
-        // TODO(dragon-fight): `updateDragon`, and 12000 XP for the first kill.
+        let Some(world) = self.level() else {
+            return;
+        };
+        self.with_fight(&world, |fight| fight.update_dragon(self));
         let death_time = {
             let mut state = self.state.lock();
             state.death_time += 1;
             state.death_time
         };
-        let xp_count = XP_REPEAT_KILL;
-        let Some(world) = self.level() else {
-            return;
+        let first_kill = self
+            .with_fight(&world, |fight| !fight.has_previously_killed_dragon())
+            .unwrap_or(false);
+        let xp_count = if first_kill {
+            XP_FIRST_KILL
+        } else {
+            XP_REPEAT_KILL
         };
         let drops = world.get_game_rule(&MOB_DROPS);
         if death_time > 150 && death_time % 5 == 0 && drops {
@@ -1014,6 +1047,7 @@ impl LivingEntity for EnderDragonEntity {
             if drops {
                 ExperienceOrbEntity::award(&world, self.position(), (xp_count as f32 * 0.2) as i32);
             }
+            self.with_fight(&world, |fight| fight.set_dragon_killed(&world, self));
             self.set_removed(RemovalReason::Killed);
             self.game_event(&vanilla_game_events::ENTITY_DIE);
         }

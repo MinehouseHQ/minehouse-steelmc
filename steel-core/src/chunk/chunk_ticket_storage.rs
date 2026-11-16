@@ -127,6 +127,14 @@ const fn portal_ticket() -> ChunkTicket {
     ChunkTicket::for_full_chunk_radius(&vanilla_ticket_types::PORTAL, PORTAL_TICKET_RADIUS)
 }
 
+/// Vanilla `EnderDragonFight.ARENA_TICKET_LEVEL`.
+pub(crate) const DRAGON_TICKET_RADIUS: u8 = 9;
+
+#[must_use]
+const fn dragon_ticket() -> ChunkTicket {
+    ChunkTicket::for_full_chunk_radius(&vanilla_ticket_types::DRAGON, DRAGON_TICKET_RADIUS)
+}
+
 #[must_use]
 const fn ender_pearl_ticket() -> ChunkTicket {
     ChunkTicket::for_full_chunk_radius(
@@ -325,6 +333,21 @@ impl ChunkTicketStorage {
         pos: ChunkPos,
     ) -> SourceProjectionChanges {
         self.add_ticket(pos, portal_ticket())
+    }
+
+    /// Adds or removes the End arena's dragon ticket, as vanilla
+    /// `EnderDragonFight.tick` does with `addTicketWithRadius` and
+    /// `removeTicketWithRadius`.
+    pub(crate) fn update_dragon_ticket(
+        &mut self,
+        pos: ChunkPos,
+        held: bool,
+    ) -> SourceProjectionChanges {
+        if held {
+            self.add_ticket(pos, dragon_ticket())
+        } else {
+            self.remove_ticket(pos, dragon_ticket())
+        }
     }
 
     /// Vanilla `TicketStorage.updateChunkForced`: adds or removes the

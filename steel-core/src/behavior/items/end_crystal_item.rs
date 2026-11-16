@@ -20,8 +20,6 @@ pub struct EndCrystalItem;
 
 impl ItemBehavior for EndCrystalItem {
     /// Vanilla `EndCrystalItem.useOn`.
-    // TODO(dragon-fight): vanilla then calls `EnderDragonFight.tryRespawn`;
-    // Steel has no End dragon fight yet.
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let world = context.world;
         let pos = context.hit_result.block_pos;
@@ -67,6 +65,9 @@ impl ItemBehavior for EndCrystalItem {
             above,
             &GameEventContext::new(Some(player), None),
         );
+        if let Some(fight) = world.dragon_fight() {
+            fight.try_respawn(world);
+        }
 
         context.inv.with_item(|item| item.shrink(1));
         InteractionResult::Success
