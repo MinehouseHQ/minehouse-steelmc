@@ -308,7 +308,7 @@ impl BlockBehavior for Station {
         _moved_by_piston: bool,
     ) {
         stations::with(|stations| stations.remove(&world.key, pos));
-        rail_graph::remove_node(&world.key, pos.above());
+        rail_graph::remove_node(world, pos.above());
     }
 }
 
@@ -335,7 +335,7 @@ impl BlockBehavior for Junction {
         pos: BlockPos,
         _moved_by_piston: bool,
     ) {
-        rail_graph::remove_node(&world.key, pos.above());
+        rail_graph::remove_node(world, pos.above());
     }
 }
 

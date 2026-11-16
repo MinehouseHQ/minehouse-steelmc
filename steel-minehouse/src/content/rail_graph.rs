@@ -9,7 +9,7 @@
 
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, BinaryHeap},
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
     fs, io,
     path::PathBuf,
     ptr,
@@ -123,9 +123,73 @@ impl RailGraph {
         if edge.from == edge.to && edge.exit == edge.entry {
             return false;
         }
+        // A new junction or station on a line that carts drove before it was there: the
+        // old runs through it end there now, both ways, whichever branch the carts take from
+        // now on. Cut before the new edge goes in, or it replaces the old run on its side
+        // before that is cut.
+        let fresh: BTreeSet<Key> = [edge.from, edge.to]
+            .into_iter()
+            .filter(|&end| !self.has_node(end))
+            .map(key)
+            .collect();
+        let split = self.split_through(&fresh);
         let forward = self.put_one(edge.clone());
         let back = self.put_one(edge.reversed());
-        forward || back
+        split || forward || back
+    }
+
+    /// Whether any edge starts or ends at `node`.
+    #[must_use]
+    pub fn has_node(&self, node: BlockPos) -> bool {
+        self.edges
+            .range((key(node), 0)..=(key(node), u8::MAX))
+            .next()
+            .is_some()
+    }
+
+    /// Every node that has an edge.
+    fn nodes(&self) -> BTreeSet<Key> {
+        self.edges.keys().map(|&(node, _)| node).collect()
+    }
+
+    /// Cuts every edge whose rails run through one of `nodes` (other than at its ends) into
+    /// the runs before and after it. Says whether anything changed.
+    pub fn split_through(&mut self, nodes: &BTreeSet<Key>) -> bool {
+        if nodes.is_empty() {
+            return false;
+        }
+        let mut todo: Vec<Edge> = self
+            .edges
+            .values()
+            .filter(|edge| cut(edge, nodes).is_some())
+            .cloned()
+            .collect();
+        if todo.is_empty() {
+            return false;
+        }
+        for edge in &todo {
+            self.edges.remove(&(key(edge.from), side_index(edge.exit)));
+        }
+        let mut parts = Vec::new();
+        while let Some(edge) = todo.pop() {
+            match cut(&edge, nodes) {
+                Some((first, second)) => {
+                    parts.push(first);
+                    todo.push(second);
+                }
+                None => parts.push(edge),
+            }
+        }
+        // Every part goes in both ways: the reversed copy of an old run may be gone already
+        // (a cart that took the new branch replaced it on its side). A run already learned
+        // from a side is newer than a part cut out of an old one, so it stays.
+        let backs: Vec<Edge> = parts.iter().map(Edge::reversed).collect();
+        for edge in parts.into_iter().chain(backs) {
+            self.edges
+                .entry((key(edge.from), side_index(edge.exit)))
+                .or_insert(edge);
+        }
+        true
     }
 
     fn put_one(&mut self, edge: Edge) -> bool {
@@ -157,14 +221,137 @@ impl RailGraph {
         self.edges.is_empty()
     }
 
-    /// The block under the rail `node` went away: so do the edges through it. Says whether
-    /// there were any.
-    pub fn remove_node(&mut self, node: BlockPos) -> bool {
+    /// The block under the rail `node` went away: the rail there is plain track now, so the
+    /// two runs that met there through each pair of sides in `through` (the sides the rail
+    /// joins) become one, and every other edge at it goes. Says whether anything changed.
+    pub fn remove_node(&mut self, node: BlockPos, through: &[[Direction; 2]]) -> bool {
+        let merged: Vec<Edge> = through
+            .iter()
+            .filter_map(|&[a, b]| {
+                let a = self.edge(node, a)?;
+                let b = self.edge(node, b)?;
+                (a.to != node && b.to != node).then(|| join(&a.reversed(), b))
+            })
+            .collect();
         let before = self.edges.len();
         self.edges
             .retain(|_, edge| edge.from != node && edge.to != node);
-        self.edges.len() != before
+        let mut changed = self.edges.len() != before;
+        for edge in merged {
+            if edge.from == edge.to && edge.exit == edge.entry {
+                continue;
+            }
+            let back = edge.reversed();
+            changed |= self.put_one(edge);
+            changed |= self.put_one(back);
+        }
+        changed
     }
+}
+
+/// `a` runs into the node that `b` leaves: the run from one end to the other.
+fn join(a: &Edge, b: &Edge) -> Edge {
+    let mut points = a.points.clone();
+    for (i, &pos) in b.points.iter().enumerate() {
+        if i == 0 && points.last() == Some(&pos) {
+            continue;
+        }
+        let size = points.len();
+        if size >= 2 && straight(points[size - 2], points[size - 1], pos) {
+            points[size - 1] = pos;
+        } else {
+            points.push(pos);
+        }
+    }
+    Edge {
+        from: a.from,
+        exit: a.exit,
+        to: b.to,
+        entry: b.entry,
+        length: a.length + b.length,
+        points,
+    }
+}
+
+/// Rails from `a` to `b` along a straight run.
+fn steps(a: BlockPos, b: BlockPos) -> i32 {
+    (b.x() - a.x())
+        .abs()
+        .max((b.y() - a.y()).abs())
+        .max((b.z() - a.z()).abs())
+}
+
+/// The edge cut at the first of `nodes` its rails pass through: the run up to it and the
+/// run from it on. `None` if it passes through none.
+fn cut(edge: &Edge, nodes: &BTreeSet<Key>) -> Option<(Edge, Edge)> {
+    let points = &edge.points;
+    let total: i32 = points.windows(2).map(|pair| steps(pair[0], pair[1])).sum();
+    let mut walked = 0;
+    for i in 0..points.len().saturating_sub(1) {
+        let (a, b) = (points[i], points[i + 1]);
+        let n = steps(a, b);
+        let (dx, dy, dz) = (b.x() - a.x(), b.y() - a.y(), b.z() - a.z());
+        let even = n > 0 && dx % n == 0 && dy % n == 0 && dz % n == 0;
+        for k in i32::from(i == 0)..=n {
+            if !even && k != 0 && k != n {
+                continue;
+            }
+            let at = if even {
+                BlockPos::new(a.x() + dx / n * k, a.y() + dy / n * k, a.z() + dz / n * k)
+            } else if k == 0 {
+                a
+            } else {
+                b
+            };
+            if i + 2 == points.len() && k == n {
+                return None; // the far end of the edge
+            }
+            if at == edge.from || at == edge.to || !nodes.contains(&key(at)) {
+                continue;
+            }
+            let mut before: Vec<BlockPos> = points[..=i].to_vec();
+            if before.last() != Some(&at) {
+                before.push(at);
+            }
+            let mut after = vec![at];
+            after.extend(points[i + 1..].iter().copied().filter(|&p| p != at));
+            let prev = before[before.len() - 2];
+            let next = after[1];
+            let done = walked + k;
+            let length = if total <= 0 {
+                (edge.length / 2).max(1)
+            } else {
+                let share = f64::from(edge.length) * f64::from(done) / f64::from(total);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a share of a u32"
+                )]
+                let share = share.round() as u32;
+                share
+            };
+            let length = length.clamp(1, edge.length.saturating_sub(1).max(1));
+            let first = Edge {
+                from: edge.from,
+                exit: edge.exit,
+                to: at,
+                entry: side(at, prev),
+                length,
+                points: before,
+            };
+            let second = Edge {
+                from: at,
+                exit: side(at, next),
+                to: edge.to,
+                entry: edge.entry,
+                length: edge.length.saturating_sub(length).max(1),
+                points: after,
+            };
+            return Some((first, second));
+        }
+        walked += n;
+    }
+    None
 }
 
 /// What a cart remembers of its way since the last node.
@@ -223,10 +410,13 @@ pub fn learn(
 
     let mut learned = Learned::default();
     if is_node(pos) {
+        if !graph.has_node(pos) {
+            learned.changed |= graph.split_through(&BTreeSet::from([key(pos)]));
+        }
         if let (Some(from), Some(exit), Some(prev)) = (nav.from, nav.exit, prev)
             && pos != from
         {
-            learned.changed = graph.put(&Edge {
+            learned.changed |= graph.put(&Edge {
                 from,
                 exit,
                 to: pos,
@@ -418,6 +608,10 @@ impl RailGraphs {
                     };
                     graph.put_one(edge);
                 }
+                // Saved before junctions and stations put on a driven line cut the old runs
+                // there.
+                let nodes = graph.nodes();
+                graph.split_through(&nodes);
                 (world, graph)
             })
             .collect();
@@ -498,10 +692,23 @@ pub fn with<T>(action: impl FnOnce(&mut RailGraphs) -> T) -> T {
     action(graphs)
 }
 
-/// The block under the rail `node` went away: forgets the edges through it, at once.
-pub fn remove_node(world: &Identifier, node: BlockPos) {
+/// The block under the rail `node` went away: the runs through the rail there join up,
+/// the other edges at it go, at once.
+pub fn remove_node(world: &World, node: BlockPos) {
+    let state = world.get_block_state(node);
+    let through: Vec<[Direction; 2]> = if state.get_block().has_tag(&BlockTag::RAILS) {
+        let [a, b] = exits(state.get_value(&BlockStateProperties::RAIL_SHAPE));
+        let side = |(x, z)| side(BlockPos::new(0, 0, 0), BlockPos::new(x, 0, z));
+        vec![[side(a), side(b)]]
+    } else {
+        // The rail fell off with the block: it went straight on, as a station does.
+        vec![
+            [Direction::North, Direction::South],
+            [Direction::East, Direction::West],
+        ]
+    };
     with(|graphs| {
-        if graphs.of(world).remove_node(node) {
+        if graphs.of(&world.key).remove_node(node, &through) {
             graphs.save();
         }
     });
@@ -808,9 +1015,9 @@ mod tests {
         let nodes = [rail(0, 0), rail(4, 0), rail(8, 0)];
         drive(&mut graph, &way, &nodes);
         assert_eq!(graph.len(), 4);
-        assert!(graph.remove_node(rail(8, 0)));
+        assert!(graph.remove_node(rail(8, 0), &[]));
         assert_eq!(graph.len(), 2);
-        assert!(!graph.remove_node(rail(8, 0)));
+        assert!(!graph.remove_node(rail(8, 0), &[]));
     }
 
     #[test]
@@ -912,6 +1119,164 @@ mod tests {
             vec![(rail(4, 0), 4), (rail(8, 0), 8)]
         );
         assert_eq!(graph.reachable_stations(rail(20, 0), kind), vec![]);
+    }
+
+    /// The players' line: stations A, B, C along x, a junction X between B and C, a branch
+    /// south from X to station D.
+    fn line_kind(junction: BlockPos) -> impl Fn(BlockPos) -> Kind {
+        move |pos| {
+            if pos == junction {
+                Kind::Junction
+            } else if [rail(0, 0), rail(20, 0), rail(60, 0), rail(40, 30)].contains(&pos) {
+                Kind::Station
+            } else {
+                Kind::Plain
+            }
+        }
+    }
+
+    fn east(from: BlockPos, to: BlockPos) -> Edge {
+        Edge {
+            from,
+            exit: Direction::East,
+            to,
+            entry: Direction::West,
+            length: u32::try_from(to.x() - from.x()).unwrap_or(0),
+            points: vec![from, to],
+        }
+    }
+
+    fn reachable(graph: &RailGraph, from: BlockPos) -> BTreeSet<Key> {
+        graph
+            .reachable_stations(from, line_kind(rail(40, 0)))
+            .into_iter()
+            .map(|(pos, _)| key(pos))
+            .collect()
+    }
+
+    fn keys(rails: &[BlockPos]) -> BTreeSet<Key> {
+        rails.iter().copied().map(key).collect()
+    }
+
+    #[test]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "the stations of the players' example"
+    )]
+    fn a_junction_on_a_driven_line_cuts_the_old_run() {
+        let (a, b, x, c, d) = (
+            rail(0, 0),
+            rail(20, 0),
+            rail(40, 0),
+            rail(60, 0),
+            rail(40, 30),
+        );
+        let mut graph = RailGraph::default();
+        // Driven before the junction was there: B–C straight over where X is now.
+        graph.put(&east(a, b));
+        graph.put(&east(b, c));
+        // The junction is built; carts only take the new branch: B -> X -> D.
+        graph.put(&east(b, x));
+        graph.put(&Edge {
+            from: x,
+            exit: Direction::South,
+            to: d,
+            entry: Direction::North,
+            length: 30,
+            points: vec![x, d],
+        });
+        assert_eq!(reachable(&graph, a), keys(&[b, c, d]));
+        assert_eq!(reachable(&graph, b), keys(&[a, c, d]));
+        assert_eq!(reachable(&graph, c), keys(&[a, b, d]));
+        assert_eq!(reachable(&graph, d), keys(&[a, b, c]));
+        let xc = graph.edge(x, Direction::East).cloned();
+        assert_eq!(
+            xc.map(|edge| (edge.to, edge.entry, edge.length)),
+            Some((c, Direction::West, 20))
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "the stations of the players' example"
+    )]
+    fn a_saved_graph_with_an_old_run_is_cut_on_load() {
+        let (a, b, x, c, d) = (
+            rail(0, 0),
+            rail(20, 0),
+            rail(40, 0),
+            rail(60, 0),
+            rail(40, 30),
+        );
+        let mut graph = RailGraph::default();
+        // What a server saved before the fix: B -> X -> D learned, C -> B still over X.
+        let branch = Edge {
+            from: x,
+            exit: Direction::South,
+            to: d,
+            entry: Direction::North,
+            length: 30,
+            points: vec![x, d],
+        };
+        for edge in [
+            east(a, b),
+            east(a, b).reversed(),
+            east(b, x),
+            east(b, x).reversed(),
+            east(b, c).reversed(),
+            branch.reversed(),
+            branch,
+        ] {
+            graph.put_one(edge);
+        }
+        assert_eq!(reachable(&graph, b), keys(&[a, d]));
+        let nodes = graph.nodes();
+        assert!(graph.split_through(&nodes));
+        assert_eq!(reachable(&graph, b), keys(&[a, c, d]));
+        assert_eq!(reachable(&graph, a), keys(&[b, c, d]));
+    }
+
+    #[test]
+    fn a_run_is_cut_inside_a_straight_stretch() {
+        let (a, corner, end) = (rail(0, 0), rail(60, 40), rail(80, 40));
+        let edge = Edge {
+            from: a,
+            exit: Direction::East,
+            to: end,
+            entry: Direction::West,
+            length: 120,
+            points: vec![a, rail(60, 0), corner, end],
+        };
+        let (first, second) = cut(&edge, &keys(&[rail(60, 20)])).expect("cut");
+        assert_eq!(first.points, vec![a, rail(60, 0), rail(60, 20)]);
+        assert_eq!((first.entry, first.length), (Direction::North, 80));
+        assert_eq!(second.points, vec![rail(60, 20), corner, end]);
+        assert_eq!((second.exit, second.length), (Direction::South, 40));
+        assert!(cut(&edge, &keys(&[a, end])).is_none());
+    }
+
+    #[test]
+    fn a_station_broken_and_put_back_keeps_the_line() {
+        let (a, b, c) = (rail(0, 0), rail(20, 0), rail(60, 0));
+        let mut graph = RailGraph::default();
+        graph.put(&east(a, b));
+        graph.put(&east(b, c));
+        assert!(graph.remove_node(b, &[[Direction::East, Direction::West]]));
+        let without_b = |pos| {
+            if pos == a || pos == c {
+                Kind::Station
+            } else {
+                Kind::Plain
+            }
+        };
+        assert_eq!(graph.reachable_stations(a, without_b), vec![(c, 60)]);
+        assert_eq!(graph.reachable_stations(c, without_b), vec![(a, 60)]);
+        // Put back: a cart that only got as far as B cuts A–C there again.
+        graph.put(&east(a, b));
+        assert_eq!(reachable(&graph, a), keys(&[b, c]));
+        assert_eq!(reachable(&graph, c), keys(&[a, b]));
+        assert_eq!(reachable(&graph, b), keys(&[a, c]));
     }
 
     #[test]
