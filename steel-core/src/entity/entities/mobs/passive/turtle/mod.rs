@@ -679,7 +679,7 @@ impl Mob for TurtleEntity {
 
 impl PathfinderMob for TurtleEntity {
     /// Vanilla `TurtlePathNavigation.isStableDestination`: water while
-    /// travelling, otherwise anything with ground under it.
+    /// traveling, otherwise anything with ground under it.
     fn is_stable_destination(&self, pos: BlockPos) -> bool {
         let Some(world) = self.level() else {
             return false;
