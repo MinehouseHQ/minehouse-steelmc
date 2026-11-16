@@ -60,6 +60,13 @@ impl ParticleType {
             network_writer: write_network::<T>,
         }
     }
+
+    /// Whether the particle takes no options (vanilla `SimpleParticleType`), so
+    /// [`ParticleData::simple`] can build it.
+    #[must_use]
+    pub fn is_simple(&self) -> bool {
+        self.expected_type_key == SimpleParticleOptions::TYPE_KEY
+    }
 }
 
 impl Debug for ParticleType {
