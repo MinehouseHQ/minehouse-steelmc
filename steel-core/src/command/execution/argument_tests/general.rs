@@ -1,5 +1,6 @@
 use super::*;
 use crate::inventory::slot_range::SlotRange;
+use steel_registry::particle_type::DustParticleOptions;
 use steel_utils::translations;
 
 #[test]
@@ -464,4 +465,43 @@ fn slot_source_reads_a_range_name_up_to_the_next_space() {
             .component()
     );
     assert!(parsed_slot_source("slots container.99").is_err());
+}
+
+#[test]
+fn particle_argument_reads_the_id_and_its_snbt_options() {
+    init_vanilla_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::particle());
+
+    let parse = dispatcher.parse("resource flame", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("a simple particle should parse");
+    };
+    let Ok(particle) = chain.top_context().particle("value") else {
+        panic!("particle should be retained");
+    };
+    assert_eq!(particle.particle_type().key.path.as_ref(), "flame");
+
+    let parse = dispatcher.parse(
+        "resource dust{color:[0.0,1.0,0.0],scale:1.5}",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("dust with options should parse");
+    };
+    let Ok(particle) = chain.top_context().particle("value") else {
+        panic!("particle should be retained");
+    };
+    let Some(dust) = particle.downcast_ref::<DustParticleOptions>() else {
+        panic!("dust options should be retained");
+    };
+    assert_eq!(dust.color().raw() & 0xFF_FFFF, 0x00_FF00);
+
+    for input in [
+        "resource not_a_particle",
+        "resource dust",
+        "resource dust{color:1,scale:9.0}",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(dispatcher.context_chain(parse).is_err(), "{input}");
+    }
 }

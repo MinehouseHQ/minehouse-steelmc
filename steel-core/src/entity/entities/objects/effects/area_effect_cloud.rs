@@ -27,7 +27,7 @@ use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityReference, EntitySyncedData, LivingEntity,
     RemovalReason, SharedEntity,
 };
-use crate::world::World;
+use crate::world::{World, particle_codec};
 
 /// Ticks between two effect application passes.
 const TIME_BETWEEN_APPLICATIONS: i32 = 5;
@@ -80,9 +80,6 @@ impl AreaEffectCloudState {
 }
 
 /// An area effect cloud, spawned by lingering potions.
-// TODO: Persist `custom_particle` once particle options have an NBT codec. Vanilla
-// only sets it for dragon breath and commands; potion clouds always derive their
-// particle from the potion color.
 #[entity_behavior(class = "AreaEffectCloud")]
 pub struct AreaEffectCloudEntity {
     base: EntityBase,
@@ -437,6 +434,13 @@ impl Entity for AreaEffectCloudEntity {
         nbt.insert("RadiusOnUse", state.radius_on_use);
         nbt.insert("RadiusPerTick", state.radius_per_tick);
         nbt.insert("Radius", self.radius());
+        if let Some(particle) = state
+            .custom_particle
+            .as_ref()
+            .and_then(particle_codec::encode)
+        {
+            nbt.insert("custom_particle", particle);
+        }
         if let Some(owner) = &state.owner {
             owner.store(nbt, "Owner");
         }
@@ -464,6 +468,9 @@ impl Entity for AreaEffectCloudEntity {
             state.radius_on_use = nbt.float("RadiusOnUse").unwrap_or(0.0);
             state.radius_per_tick = nbt.float("RadiusPerTick").unwrap_or(0.0);
             state.owner = EntityReference::read(&nbt, "Owner");
+            state.custom_particle = nbt
+                .get("custom_particle")
+                .and_then(|tag| particle_codec::decode(&tag.to_owned()).ok());
             state.potion_duration_scale = nbt
                 .float("potion_duration_scale")
                 .unwrap_or(DEFAULT_POTION_DURATION_SCALE);

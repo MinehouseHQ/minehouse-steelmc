@@ -9,6 +9,7 @@ mod item;
 mod item_predicate;
 mod message;
 mod nbt;
+mod particle;
 mod permission;
 mod profile;
 mod queue;
