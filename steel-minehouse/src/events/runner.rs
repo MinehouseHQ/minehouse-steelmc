@@ -39,9 +39,10 @@ use super::{
     actor::{Actor, Pose},
     blocks::{BlockSet, Placed, block_state, rotation, state_text},
     camera_path::{CameraPath, look, wrap},
+    effects::{Fx, Rift, RocketEnd, Shower, Volley},
     journal::{Journal, ViewerState},
     permanent,
-    script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript},
+    script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript, Stage},
 };
 use crate::{blocklog::BlockLog, moderation::format::render};
 
@@ -76,6 +77,31 @@ enum Held {
     Shape { rotation: Quat, scale: Vec3 },
     Time { from: f64, target: f64 },
     Weather { rain: f32, thunder: f32 },
+    Meteors(Box<Shower>),
+    Rift(Box<Rift>),
+    Rockets(Box<Volley>),
+}
+
+impl Held {
+    /// Takes away what an effect still shows.
+    fn clear(&mut self, fx: &Fx<'_>) {
+        match self {
+            Self::Meteors(shower) => shower.clear(fx),
+            Self::Rift(rift) => rift.clear(fx),
+            Self::Rockets(volley) => volley.clear(fx),
+            _ => {}
+        }
+    }
+
+    /// A viewer's game was started again and has none of the effect's entities.
+    fn forget(&mut self, id: Uuid) {
+        match self {
+            Self::Meteors(shower) => shower.forget(id),
+            Self::Rift(rift) => rift.forget(id),
+            Self::Rockets(volley) => volley.forget(id),
+            _ => {}
+        }
+    }
 }
 
 struct Active {
@@ -106,6 +132,10 @@ pub struct Runner {
     ghosts_unsent: bool,
     /// Lightning the viewers were shown, and the tick it is taken away.
     bolts: Vec<(i32, u32)>,
+    /// The show's places apart from its stage, where meteors fall.
+    places: FxHashMap<String, Stage>,
+    /// The rifts that are open, by name: where rockets fly.
+    rifts: FxHashMap<String, DVec3>,
     world: Arc<World>,
     origin: DVec3,
     mode: Mode,
@@ -146,6 +176,8 @@ impl Runner {
             ghosts: FxHashMap::default(),
             ghosts_unsent: false,
             bolts: Vec::new(),
+            places: FxHashMap::default(),
+            rifts: FxHashMap::default(),
             world,
             origin,
             mode,
@@ -189,6 +221,23 @@ impl Runner {
     #[must_use]
     pub fn is_viewer(&self, id: Uuid) -> bool {
         self.viewers.contains(&id)
+    }
+
+    /// The show's spots (`/show spot`), as they are when it starts.
+    pub fn set_places(&mut self, places: FxHashMap<String, Stage>) {
+        self.places = places;
+    }
+
+    /// What the effects of this tick work with.
+    fn fx<'a>(&'a self, cx: &'a Cx<'_>) -> Fx<'a> {
+        Fx {
+            tick: self.tick,
+            muted: self.muted,
+            server: cx.server,
+            world: &self.world,
+            viewers: self.viewers_online(cx.online),
+            online: cx.online,
+        }
     }
 
     /// A stage-relative position in world coordinates.
@@ -409,6 +458,9 @@ impl Runner {
         for actor in self.actors.iter_mut().flatten() {
             actor.forget(id);
         }
+        for running in &mut self.active {
+            running.held.forget(id);
+        }
     }
 
     /// Out of the show early (`/show optout`): back where and how they were.
@@ -491,16 +543,16 @@ impl Runner {
         {
             let index = self.next;
             self.next += 1;
-            let held = self.start_cue(cue, cx);
+            let mut held = self.start_cue(cue, cx);
             if cue.duration == 0 {
-                self.end_cue(cue, &held, cx);
+                self.end_cue(cue, &mut held, cx);
             } else {
-                self.update_cue(cue, &held, 0.0, cx);
+                self.update_cue(cue, &mut held, 0.0, cx);
                 self.active.push(Active { cue: index, held });
             }
         }
 
-        for running in mem::take(&mut self.active) {
+        for mut running in mem::take(&mut self.active) {
             let Some(cue) = script.cues.get(running.cue) else {
                 continue;
             };
@@ -510,9 +562,9 @@ impl Runner {
                 continue;
             }
             let progress = (f64::from(elapsed) / f64::from(cue.duration)).min(1.0);
-            self.update_cue(cue, &running.held, progress, cx);
+            self.update_cue(cue, &mut running.held, progress, cx);
             if elapsed >= cue.duration {
-                self.end_cue(cue, &running.held, cx);
+                self.end_cue(cue, &mut running.held, cx);
             } else {
                 self.active.push(running);
             }
@@ -615,15 +667,65 @@ impl Runner {
                 }
             }
             Action::Lightning { pos } => self.strike(*pos, cx.online),
-            Action::Path { .. } | Action::Shake { .. } => {}
+            Action::Meteors(_) | Action::Rockets(_) | Action::Rift(_) => {
+                return self.start_effect(cue, cx);
+            }
+            Action::Path { .. } | Action::Shake { .. } | Action::Shockwave(_) => {}
         }
         Held::Nothing
     }
 
     /// Called every tick of a cue with a duration; `progress` goes from 0 to 1, before any
     /// easing.
-    fn update_cue(&mut self, cue: &Cue, held: &Held, progress: f64, cx: &mut Cx<'_>) {
+    /// What a big effect keeps while it runs.
+    fn start_effect(&mut self, cue: &Cue, cx: &Cx<'_>) -> Held {
+        match &cue.action {
+            Action::Meteors(_) => Held::Meteors(Box::default()),
+            Action::Rockets(_) => Held::Rockets(Box::default()),
+            Action::Rift(def) => {
+                let center = self.abs(def.pos);
+                let rift = Rift::open(def, cue.at, center, &self.fx(cx));
+                self.rifts.insert(def.name.clone(), center);
+                Held::Rift(Box::new(rift))
+            }
+            _ => Held::Nothing,
+        }
+    }
+
+    /// One tick of a cue that is a big effect.
+    fn update_effect(&mut self, cue: &Cue, held: &mut Held, progress: f64, cx: &Cx<'_>) {
+        let elapsed = self.tick.saturating_sub(cue.at);
         match (&cue.action, held) {
+            (Action::Meteors(def), Held::Meteors(shower)) => {
+                shower.update(def, cue.duration, elapsed, &self.places, &self.fx(cx));
+            }
+            (Action::Rift(def), Held::Rift(rift)) => {
+                rift.update(def, cue.duration, elapsed, &self.fx(cx));
+                if rift.closing {
+                    self.rifts.remove(&def.name);
+                }
+            }
+            (Action::Rockets(def), Held::Rockets(volley)) => {
+                let ends: Vec<DVec3> = def
+                    .between
+                    .iter()
+                    .filter_map(|end| match end {
+                        RocketEnd::Rift(name) => self.rifts.get(name).copied(),
+                        RocketEnd::Point(pos) => Some(self.abs(*pos)),
+                    })
+                    .collect();
+                volley.update(def, cue.duration, elapsed, &ends, &self.fx(cx));
+            }
+            (Action::Shockwave(def), _) => {
+                def.update(self.abs(def.pos), progress, &self.fx(cx));
+            }
+            _ => {}
+        }
+    }
+
+    fn update_cue(&mut self, cue: &Cue, held: &mut Held, progress: f64, cx: &mut Cx<'_>) {
+        self.update_effect(cue, held, progress, cx);
+        match (&cue.action, &*held) {
             (Action::Path { actor, ease, path }, _) => {
                 let at = ease.apply(progress);
                 let pose = match path {
@@ -709,8 +811,12 @@ impl Runner {
 
     /// Called once after the last update, or right after the start of a cue without a
     /// duration: whatever the cue changes over time is at its end.
-    fn end_cue(&mut self, cue: &Cue, held: &Held, cx: &mut Cx<'_>) {
-        match (&cue.action, held) {
+    fn end_cue(&mut self, cue: &Cue, held: &mut Held, cx: &mut Cx<'_>) {
+        if let Action::Rift(def) = &cue.action {
+            self.rifts.remove(&def.name);
+        }
+        held.clear(&self.fx(cx));
+        match (&cue.action, &*held) {
             (Action::Move { .. }, _) => self.update_cue(cue, held, 1.0, cx),
             (Action::Time { .. }, Held::Time { target, .. }) => self.time = Some(*target),
             (Action::Weather { rain, thunder }, _) if cue.duration == 0 => {
@@ -1099,7 +1205,10 @@ impl Runner {
         self.finished = true;
         self.muted = false;
         self.cinematic = None;
-        self.active.clear();
+        for mut running in mem::take(&mut self.active) {
+            running.held.clear(&self.fx(cx));
+        }
+        self.rifts.clear();
         let online = cx.online;
         for slot in &mut self.actors {
             if let Some(mut actor) = slot.take() {
@@ -1137,7 +1246,7 @@ fn block_pos(at: DVec3) -> BlockPos {
     BlockPos::new(at.x as i32, at.y as i32, at.z as i32)
 }
 
-fn loaded(world: &World, pos: BlockPos) -> bool {
+pub fn loaded(world: &World, pos: BlockPos) -> bool {
     world
         .chunk_map
         .with_full_chunk(ChunkPos::from_block_pos(pos), |_| ())

@@ -10,25 +10,30 @@
 //! `rehearse <show> [marker]` (for one admin, from a marker), `stop`, `status`,
 //! `cam add|undo|clear|preview <show> <path>` (camera paths recorded by standing and
 //! looking), `capture <show> <name> <box>` (the blocks of a box become a block set),
-//! `undo <show>` (puts back what the show's permanent blocks replaced), and `optout` for a
+//! `undo <show>` (puts back what the show's permanent blocks replaced),
+//! `spot add|remove|list <show>` (places where meteors fall), and `optout` for a
 //! player who doesn't want to watch.
 //!
 //! A show can also put blocks: ghost ones only its viewers see, temporary ones that are put
 //! back when it ends, and permanent ones that stay.
 //!
+//! The big effects (meteor showers at the show's spots, rifts, rockets, shockwaves) are
+//! display entities, particles and blocks sent to the viewers too.
+//!
 //! Not ported yet, and refused when a script uses them: trains, rigs, mannequins and mobs
-//! as actors, meteors, rifts and rockets, node logic, private cutscenes and the in-game
-//! editor.
+//! as actors, node logic, private cutscenes and the in-game editor.
 
 mod actor;
 mod blocks;
 mod camera_path;
 mod commands;
 mod ease;
+mod effects;
 mod journal;
 mod json;
 mod library;
 mod permanent;
+mod prop;
 mod runner;
 mod script;
 mod time;
@@ -300,6 +305,7 @@ impl Shows {
             ),
         };
         let mut runner = Runner::new(Arc::clone(script), paths, sets, world, stage.pos, mode);
+        runner.set_places(self.library.spots(&script.id).into_iter().collect());
         runner.start(
             &audience,
             from_tick,

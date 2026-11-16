@@ -27,6 +27,9 @@ pub struct Library {
     assets_dir: PathBuf,
     stages_file: PathBuf,
     stages: Object,
+    /// The places of each show apart from its stage (`/show spot`): show, then name.
+    spots_file: PathBuf,
+    spots: Object,
     shows: BTreeMap<String, Arc<ShowScript>>,
     errors: BTreeMap<String, String>,
 }
@@ -48,8 +51,10 @@ impl Library {
         Self {
             shows_dir,
             assets_dir,
+            spots_file: stages_file.with_file_name("spots.json"),
             stages_file,
             stages: Object::new(),
+            spots: Object::new(),
             shows: BTreeMap::new(),
             errors: BTreeMap::new(),
         }
@@ -85,6 +90,13 @@ impl Library {
             Ok(stages) => stages,
             Err(error) => {
                 self.errors.insert("(сцены)".to_owned(), error);
+                Object::new()
+            }
+        };
+        self.spots = match read_object(&self.spots_file) {
+            Ok(spots) => spots,
+            Err(error) => {
+                self.errors.insert("(места)".to_owned(), error);
                 Object::new()
             }
         };
@@ -147,6 +159,49 @@ impl Library {
         fs::write(&self.stages_file, text).map_err(|error| error.to_string())?;
         self.reload();
         Ok(())
+    }
+}
+
+/// The spots of a show: places anywhere in the world, where meteors fall.
+impl Library {
+    /// The show's spots by name, in world coordinates.
+    #[must_use]
+    pub fn spots(&self, show: &str) -> BTreeMap<String, Stage> {
+        let Some(Value::Object(spots)) = self.spots.get(show) else {
+            return BTreeMap::new();
+        };
+        spots
+            .iter()
+            .filter_map(|(name, spot)| match spot {
+                Value::Object(spot) => Some((name.clone(), Stage::from_json(spot).ok()?)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn set_spot(&mut self, show: &str, name: &str, spot: &Stage) -> Result<(), String> {
+        check_name(show)?;
+        check_name(name)?;
+        let entry = self
+            .spots
+            .entry(show.to_owned())
+            .or_insert_with(|| Value::Object(Object::new()));
+        if let Value::Object(spots) = entry {
+            spots.insert(name.to_owned(), spot.to_json());
+        }
+        write_whole(&self.spots_file, &Value::Object(self.spots.clone()), true)
+    }
+
+    /// Forgets a spot; false if the show has none by that name.
+    pub fn remove_spot(&mut self, show: &str, name: &str) -> Result<bool, String> {
+        let Some(Value::Object(spots)) = self.spots.get_mut(show) else {
+            return Ok(false);
+        };
+        if spots.remove(name).is_none() {
+            return Ok(false);
+        }
+        write_whole(&self.spots_file, &Value::Object(self.spots.clone()), true)?;
+        Ok(true)
     }
 }
 

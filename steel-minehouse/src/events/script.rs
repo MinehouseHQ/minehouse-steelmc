@@ -20,6 +20,7 @@ use super::{
     blocks::{Shape, block_state},
     camera_path::CameraPath,
     ease::Ease,
+    effects::{MeteorsDef, RiftDef, RocketsDef, ShockwaveDef},
     json::{self, Object},
     time,
 };
@@ -27,19 +28,8 @@ use super::{
 /// Actor types of the Fabric mod that have no Steel side yet.
 const LATER_ACTORS: [&str; 4] = ["train", "rig", "player", "mob"];
 /// Cues of the Fabric mod that have no Steel side yet.
-const LATER_CUES: [&str; 12] = [
-    "follow",
-    "sparks",
-    "meteors",
-    "rift",
-    "rockets",
-    "shockwave",
-    "animate",
-    "pose",
-    "swing",
-    "ignite",
-    "chest",
-    "scatter",
+const LATER_CUES: [&str; 8] = [
+    "follow", "sparks", "animate", "pose", "swing", "ignite", "chest", "scatter",
 ];
 
 /// Where a show plays. `yaw` is the way the admin faced at `/show stage`, snapped to a
@@ -157,6 +147,10 @@ pub enum Action {
         pos: DVec3,
         sound: bool,
     },
+    Meteors(Box<MeteorsDef>),
+    Rift(Box<RiftDef>),
+    Rockets(Box<RocketsDef>),
+    Shockwave(Box<ShockwaveDef>),
     Cut {
         actor: usize,
         pos: DVec3,
@@ -676,6 +670,22 @@ fn read_world_action(kind: &str, object: &Object) -> Result<(u32, Action), Strin
                 sound: json::boolean(object, "sound", true)?,
             },
         ),
+        "meteors" => {
+            let (over, def) = MeteorsDef::parse(object)?;
+            (over, Action::Meteors(Box::new(def)))
+        }
+        "rift" => {
+            let (over, def) = RiftDef::parse(object)?;
+            (over, Action::Rift(Box::new(def)))
+        }
+        "rockets" => {
+            let (over, def) = RocketsDef::parse(object)?;
+            (over, Action::Rockets(Box::new(def)))
+        }
+        "shockwave" => {
+            let (over, def) = ShockwaveDef::parse(object)?;
+            (over, Action::Shockwave(Box::new(def)))
+        }
         other => return Err(format!("нет такого действия \"{other}\"")),
     })
 }
@@ -763,7 +773,8 @@ fn read_action(kind: &str, object: &Object, actors: &[ActorDef]) -> Result<(u32,
                 },
             )
         }
-        "blocks" | "clear_blocks" | "lightning" | "explosion" => read_world_action(kind, object)?,
+        "blocks" | "clear_blocks" | "lightning" | "explosion" | "meteors" | "rift" | "rockets"
+        | "shockwave" => read_world_action(kind, object)?,
         later if LATER_CUES.contains(&later) => {
             return Err("это действие пока не перенесено в Steel".to_owned());
         }

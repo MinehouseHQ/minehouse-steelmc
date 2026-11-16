@@ -138,8 +138,8 @@ fn mistakes_name_the_place() {
             "пока не перенесён",
         ),
         (
-            r#"{"tracks": {"fx": [{"at": "0:02", "do": "meteors"}]}}"#,
-            "tracks.fx[0] (\"meteors\" на 0:02): это действие пока не перенесено",
+            r#"{"tracks": {"fx": [{"at": "0:02", "do": "follow"}]}}"#,
+            "tracks.fx[0] (\"follow\" на 0:02): это действие пока не перенесено",
         ),
         (
             r#"{"cues": [{"at": 0, "do": "dance"}]}"#,
