@@ -9,13 +9,16 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_registry::{vanilla_damage_types, vanilla_entities, vanilla_game_events};
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use crate::behavior::blocks::FireBlock;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData};
 use crate::entity::{RemovalReason, SharedEntity};
@@ -73,9 +76,14 @@ impl EndCrystalEntity {
     }
 
     /// Vanilla `onDestroyedBy`: tells the dragon fight a crystal is gone.
-    // TODO(dragon-fight): call `EnderDragonFight.onCrystalDestroyed` once Steel
-    // has the End dragon fight.
-    const fn on_destroyed_by(_world: &World, _source: &DamageSource) {}
+    fn on_destroyed_by(&self, this: Option<&SharedEntity>, source: &DamageSource) {
+        let (Some(world), Some(this)) = (self.level(), this) else {
+            return;
+        };
+        if let Some(fight) = world.dragon_fight() {
+            fight.on_crystal_destroyed(&world, this, source);
+        }
+    }
 
     /// Sets the optional beam target.
     pub fn set_beam_target(&self, target: Option<BlockPos>) {
@@ -135,13 +143,24 @@ impl Entity for EndCrystalEntity {
         EntityMovementEmission::None
     }
 
-    /// Vanilla `EndCrystal.tick`.
-    // TODO(dragon-fight): vanilla also keeps fire lit under the crystal while
-    // the level has a dragon fight; Steel has no End dragon fight yet.
+    /// Vanilla `EndCrystal.tick`: in a dimension with a dragon fight, keeps
+    /// fire lit in the crystal's block.
     fn tick(self: Arc<Self>) {
         self.time.fetch_add(1, Ordering::Relaxed);
         self.apply_effects_from_blocks();
         self.handle_portal();
+        if let Some(world) = self.level()
+            && world.dragon_fight().is_some()
+        {
+            let pos = self.block_position();
+            if world.get_block_state(pos).is_air() {
+                world.set_block(
+                    pos,
+                    FireBlock::get_state(world.as_ref(), pos),
+                    UpdateFlags::UPDATE_ALL,
+                );
+            }
+        }
     }
 
     /// Vanilla `EndCrystal.hurtServer`: any hit but the dragon's removes the
@@ -158,17 +177,18 @@ impl Entity for EndCrystalEntity {
             let this = world.get_entity_by_id(self.id());
             self.set_removed(RemovalReason::Killed);
             if !source.is(&DamageTypeTag::IS_EXPLOSION) {
-                self.explode(this, source);
+                self.explode(this.clone(), source);
             }
-            Self::on_destroyed_by(world, source);
+            self.on_destroyed_by(this.as_ref(), source);
         }
         true
     }
 
     /// Vanilla `EndCrystal.kill`.
     fn kill(&self, world: &World) {
-        Self::on_destroyed_by(
-            world,
+        let this = world.get_entity_by_id(self.id());
+        self.on_destroyed_by(
+            this.as_ref(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
         );
         self.set_removed(RemovalReason::Killed);
@@ -216,11 +236,10 @@ mod tests {
     use super::*;
 
     use crate::inventory::container::Container as _;
-    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::ChunkPos;
-    use steel_utils::types::{InteractionHand, UpdateFlags};
+    use steel_utils::types::InteractionHand;
     use steel_utils::{Direction, Downcast as _, WorldAabb};
 
     use crate::behavior::{

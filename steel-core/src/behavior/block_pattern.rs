@@ -74,6 +74,24 @@ impl BlockPattern {
         }
     }
 
+    /// Vanilla `getWidth`: the length of a row.
+    #[must_use]
+    pub(crate) const fn width(&self) -> i32 {
+        self.width
+    }
+
+    /// Vanilla `getHeight`: the rows in an aisle.
+    #[must_use]
+    pub(crate) const fn height(&self) -> i32 {
+        self.height
+    }
+
+    /// Vanilla `getDepth`: the number of aisles.
+    #[must_use]
+    pub(crate) const fn depth(&self) -> i32 {
+        self.depth
+    }
+
     /// Finds this pattern with any orientation among the positions within
     /// `max(width, height, depth)` of `origin` in the positive axes.
     pub(crate) fn find(&self, world: &World, origin: BlockPos) -> Option<BlockPatternMatch> {
