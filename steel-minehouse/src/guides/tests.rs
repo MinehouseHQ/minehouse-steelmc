@@ -27,6 +27,19 @@ fn every_guide_has_an_id_for_the_command_and_steps() {
         assert!(guide.width > 0 && guide.depth > 0);
     }
     assert!(seen.contains(&"bank-atm"));
+    assert!(seen.contains(&"spawn-zones"));
+    assert!(seen.contains(&"magnifier"));
+    assert!(seen.contains(&"magic-herb"));
+    for id in [
+        "metro-station",
+        "metro-junction",
+        "metro-train",
+        "metro-map",
+    ] {
+        assert!(seen.contains(&id), "{id}");
+    }
+    assert!(seen.contains(&"magic-broth"));
+    assert!(seen.contains(&"spawn-zones-auction"));
     assert!(seen.contains(&"bank-terminal"));
 }
 
@@ -36,7 +49,10 @@ fn the_items_of_a_guide_tell_of_it() {
         lore_of(&CARD).as_deref(),
         Some("Shift + ПКМ в воздух: гайд «Банк: банкомат и карта»")
     );
-    assert_eq!(lore_of(&MAGNIFIER), None);
+    assert_eq!(
+        lore_of(&MAGNIFIER).as_deref(),
+        Some("Shift + ПКМ в воздух: гайд «Лупа»")
+    );
 }
 
 #[test]

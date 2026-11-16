@@ -18,11 +18,13 @@ mod commands;
 mod couplings;
 mod end_lock;
 mod first_join;
+pub mod herb_guides;
 mod herbs;
 mod leaf_decay;
 pub mod map_markers;
 mod map_view;
 mod metro;
+pub mod metro_guides;
 mod minecart_names;
 mod nametags;
 mod papirosa;
@@ -288,6 +290,9 @@ static SEEDS_ITEM: blocks::PlacesBlock = blocks::PlacesBlock(&herbs::CROP_BLOCK)
 /// item: clouds are white wool to the client, and must not be placed as wool.
 fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
     let Some(id) = id_of(stack) else {
+        if guides::book::is_book(stack) {
+            return Some(&guides::book::GuideBook);
+        }
         return stack
             .is(&vanilla_items::MILK_BUCKET)
             .then_some(&cauldron::MilkBucket);
@@ -306,7 +311,7 @@ fn use_behavior(stack: &ItemStack) -> Option<&'static dyn ItemBehavior> {
         Some(&cauldron::Broth)
     } else if id == PAPIROSA.id {
         Some(&papirosa::Papirosa)
-    } else if id == CARD.id {
+    } else if id == CARD.id || id == MAGNIFIER.id || id == LEAF.id {
         Some(&guides::Opener)
     } else if id == ATM.id {
         Some(&ATM_ITEM)
@@ -433,6 +438,9 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     if !extend_registry(recipes::register) {
         log::warn!("MineHouse items: the registry is already built, our recipes are off");
     }
+    if !extend_registry(guides::menu::register_dialog) {
+        log::warn!("MineHouse menu: the registry is already built, no button in the pause screen");
+    }
     ride::register(registry)?;
     nametags::register(registry)?;
     admin_mode::register(registry)?;
@@ -526,7 +534,8 @@ mod tests {
             stack.get(ITEM_MODEL).map(ToString::to_string).as_deref(),
             Some("minehouse-tweaks:magnifier")
         );
-        assert_eq!(stack.get(LORE).map(|lore| lore.lines().len()), Some(4));
+        // Four lines of its own and the line about its guide.
+        assert_eq!(stack.get(LORE).map(|lore| lore.lines().len()), Some(5));
         assert!(MAGNIFIER.is(&stack));
         // Plain paper is not a magnifier.
         assert!(!MAGNIFIER.is(&ItemStack::with_count(&vanilla_items::PAPER, 1)));

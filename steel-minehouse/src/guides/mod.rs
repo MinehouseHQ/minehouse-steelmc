@@ -6,6 +6,8 @@
 //! A module that has something to explain builds its guides (see `bank/guides.rs`) and adds
 //! them to [`all`].
 
+pub mod book;
+pub mod menu;
 mod session;
 pub mod stage;
 
@@ -35,8 +37,8 @@ use uuid::Uuid;
 
 use self::{session::Session, stage::Stage};
 use crate::{
-    bank,
-    content::{CustomItem, id_of},
+    bank, blocklog,
+    content::{self, CustomItem, id_of},
 };
 
 /// One step of a guide: a caption and a script that builds or animates the scene. The
@@ -115,6 +117,10 @@ impl Guide {
 
 static GUIDES: LazyLock<Vec<Guide>> = LazyLock::new(|| {
     let mut guides = bank::guides::all();
+    guides.extend(bank::zones::guides::all());
+    guides.push(blocklog::guide::guide());
+    guides.extend(content::metro_guides::all());
+    guides.extend(content::herb_guides::all());
     guides.retain(|guide| !guide.steps.is_empty());
     guides
 });
@@ -249,7 +255,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     registry.register(
         CommandRegistration::new(Identifier::new("minehouse", "guide"), tree).default_access(),
     )?;
-    Ok(())
+    menu::register(registry)
 }
 
 fn tree() -> CommandNode {

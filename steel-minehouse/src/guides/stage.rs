@@ -269,6 +269,16 @@ impl Piece {
         }
     }
 
+    /// An item put in the cell's space by `local`, not turning to the player.
+    #[must_use]
+    pub fn fixed(stack: ItemStack, local: Mat4) -> Self {
+        Self {
+            element: Element::item(stack, CONTEXT_FIXED),
+            place: Place::Local(local),
+            model: false,
+        }
+    }
+
     /// An item model of the pack as a full block of the cell.
     #[must_use]
     pub fn model(model: &str) -> Self {

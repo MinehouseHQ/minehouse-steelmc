@@ -325,8 +325,8 @@ blocks.
 account the money leaves (a click goes through the player's accounts), the ATM's amount picker up
 to the balance, and the recipient: a number typed in an anvil window that the site resolves
 before the transfer is offered. The player's own account and a frozen one are refused there. The
-owner of the receiving account is told if they are online. On the Fabric server the window was a
-line of the server menu, which Steel does not have yet.
+owner of the receiving account is told if they are online. The line «Переводы» of the server
+menu opens the same window.
 
 **Spawn zones** (`bank/zones/`): a shared circle in the middle of the spawn island and lots
 around it that go to auction and are rented for 7 days. A zone only says whose land it is, nothing
@@ -390,10 +390,13 @@ out two characters a tick, Shift shows the page, turns it or takes the answer, t
 picks an answer (the hotbar slot comes right back), Space, an opened window or five blocks
 away end the talk.
 
-The guides of the ATM and of the terminal are in `src/bank/guides.rs` (see Guides below).
+The guides of the ATM and of the terminal are in `src/bank/guides.rs`, the guides of the zones
+(`spawn-zones`, `spawn-zones-auction`) in `src/bank/zones/guides.rs` (see Guides below). No
+item opens the guides of the zones: the bottom row of the `/zones` list does, next to «Карта
+зон» (the map into the inventory) and «Показать границы» (the borders for 30 seconds).
 
-Not here yet: of the zones the guides; the banker's body animations (they were played by the
-events mod on the Fabric server).
+Not here yet: the banker's body animations (they were played by the events mod on the Fabric
+server).
 
 `config/minehouse/bank.toml`:
 
@@ -436,10 +439,29 @@ replayed instantly) and puts things off with `Stage::later`. `Stage` has blocks,
 blocks, items, labels and models of the server pack (`Stage::model`, for blocks of ours that
 a block display can't show), each under an id to move, change, glow, pulse or remove later. A
 module adds its guides to the list in `guides::all` (the bank: `bank-atm`, `bank-terminal`,
-shown while the bank is on).
+shown while the bank is on; the zones: `spawn-zones`, `spawn-zones-auction`, shown while the
+zones are open; the magnifier: `magnifier` in `src/blocklog/guide.rs`, shown while the block log
+is on, its chat pages drawn by the same code as the real answer; the herbs: `magic-herb` with
+the seeds and `magic-broth` with a leaf, in `src/content/herb_guides.rs`; the metro:
+`metro-station` with a station, `metro-junction` with a junction, `metro-train` and
+`metro-map`, in `src/content/metro_guides.rs`). That is every guide of the Fabric server.
 
-Not here yet: the book «Гайды MineHouse», the server menu, the guides of the zones, of the
-magnifier, of the metro and of the herbs.
+The book «Гайды MineHouse» (`src/guides/book.rs`) is a vanilla written book marked in its
+custom data: a book and a sheet of paper make one on a workbench (the recipe
+`minehouse-guides:guide_book`, in everybody's recipe book from the start). Its pages are put
+together every time it is opened, so a book made long ago lists the guides of today: a first
+page, the contents five guides a page (a line runs `/guide <id>`), and a last page about
+recipes with a link to the wiki.
+
+«Меню сервера» (`src/guides/menu.rs`) is a vanilla dialog: `/menu` opens it, and every client
+has a «Меню сервера» button in its pause screen with no mod of ours, because the dialog
+`minehouse-guides:server_menu` is in the tag `minecraft:pause_screen_additions`. Its lines are
+the book of guides (gives one, once), the transfers and the spawn zones. The copy of the pause
+screen goes out with the registries when a player joins and has every line; `/menu` shows the
+ones that work now, and a click on a line that does not says so. For this the dialog registry
+of `steel-registry` has the variant `DialogVariant::Custom`, a dialog an extension describes
+itself.
+
 
 ## Our items
 

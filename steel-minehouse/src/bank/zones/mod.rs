@@ -10,6 +10,7 @@ mod bluemap;
 mod bossbars;
 pub mod commands;
 pub mod gui;
+pub mod guides;
 pub mod map;
 pub mod markup;
 mod zone;

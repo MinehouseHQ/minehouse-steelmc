@@ -97,32 +97,34 @@ fn items_reads_entity_slots() {
     init_block_entities();
     with_server_world("execute_if_items_entity", |server, world| {
         setup(world, server);
-        assert_eq!(run(server, "summon minecraft:zombie 0.5 70 0.5"), Some(1));
+        // A pig, not a zombie: a zombie now and then spawns with a sword or a shovel in its
+        // hand, and the hand must be empty for the first check.
+        assert_eq!(run(server, "summon minecraft:pig 0.5 70 0.5"), Some(1));
         assert_eq!(
             run(
                 server,
-                "execute if items entity @e[type=minecraft:zombie] weapon.mainhand *"
+                "execute if items entity @e[type=minecraft:pig] weapon.mainhand *"
             ),
             None
         );
         assert_eq!(
             run(
                 server,
-                "loot replace entity @e[type=minecraft:zombie] weapon.mainhand mine 1 64 1"
+                "loot replace entity @e[type=minecraft:pig] weapon.mainhand mine 1 64 1"
             ),
             Some(1)
         );
         assert_eq!(
             run(
                 server,
-                "execute if items entity @e[type=minecraft:zombie] weapon.mainhand minecraft:cobblestone"
+                "execute if items entity @e[type=minecraft:pig] weapon.mainhand minecraft:cobblestone"
             ),
             Some(1)
         );
         assert_eq!(
             run(
                 server,
-                "execute if slots entity @e[type=minecraft:zombie] weapon.mainhand"
+                "execute if slots entity @e[type=minecraft:pig] weapon.mainhand"
             ),
             Some(1)
         );

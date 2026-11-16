@@ -38,6 +38,7 @@ use uuid::Uuid;
 
 mod commands;
 mod format;
+pub mod guide;
 pub mod import;
 mod magnifier;
 mod params;
@@ -81,6 +82,15 @@ pub struct BlockLog {
     store: Store,
     sessions: SyncMutex<FxHashMap<Uuid, Session>>,
     importing: AtomicBool,
+}
+
+/// Whether the block log listens to the world.
+static ON: AtomicBool = AtomicBool::new(false);
+
+/// Whether the block log is on: the magnifier answers only then.
+#[must_use]
+pub fn on() -> bool {
+    ON.load(Ordering::Relaxed)
 }
 
 fn now_ms() -> i64 {
@@ -190,6 +200,7 @@ impl BlockLog {
     /// Starts listening to the world.
     pub fn start(self: &Arc<Self>, server: &Arc<Server>) {
         if server.set_world_log(Arc::clone(self) as Arc<dyn WorldLog>) {
+            ON.store(true, Ordering::Relaxed);
             log::info!(
                 "MineHouse block log on (keeps {} days)",
                 self.config.keep_days
