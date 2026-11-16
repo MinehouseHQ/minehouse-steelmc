@@ -69,8 +69,8 @@ const INVENTORY_SIZE: usize = 8;
 const PROBABILITY_OF_SPAWNING_AS_BABY: f32 = 0.2;
 /// Vanilla `Piglin.PROBABILITY_OF_SPAWNING_WITH_CROSSBOW_INSTEAD_OF_SWORD`.
 const PROBABILITY_OF_SPAWNING_WITH_CROSSBOW: f32 = 0.5;
-/// Vanilla `Piglin.CHANCE_OF_WEARING_EACH_ARMOUR_ITEM`.
-const CHANCE_OF_WEARING_EACH_ARMOUR_ITEM: f32 = 0.1;
+/// Vanilla's per-slot chance that a spawned piglin wears golden armor.
+const CHANCE_OF_WEARING_EACH_ARMOR_ITEM: f32 = 0.1;
 /// Vanilla `Piglin.MAX_PASSENGERS_ON_ONE_HOGLIN`.
 const MAX_PASSENGERS_ON_ONE_HOGLIN: i32 = 3;
 /// Vanilla `Piglin.performRangedAttack` -> `performCrossbowAttack(this, 1.6F)`.
@@ -276,7 +276,7 @@ impl PiglinEntity {
             (EquipmentSlot::Legs, &vanilla_items::GOLDEN_LEGGINGS),
             (EquipmentSlot::Feet, &vanilla_items::GOLDEN_BOOTS),
         ] {
-            if random.next_f32() < CHANCE_OF_WEARING_EACH_ARMOUR_ITEM {
+            if random.next_f32() < CHANCE_OF_WEARING_EACH_ARMOR_ITEM {
                 self.set_item_slot(slot, ItemStack::new(item));
             }
         }
