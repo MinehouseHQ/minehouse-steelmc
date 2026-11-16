@@ -3,6 +3,18 @@ use super::{
     StructureMirror, StructureTemplate,
 };
 
+/// Turns a block state around the Y axis the way a structure template turns its blocks:
+/// `facing`, `axis`, the sides of fences and walls, rails and so on.
+#[must_use]
+pub fn rotate_block_state(state: BlockStateId, rotation: Rotation) -> BlockStateId {
+    StructureTemplate::transform_state(
+        &steel_registry::REGISTRY,
+        state,
+        StructureMirror::None,
+        rotation,
+    )
+}
+
 impl StructureTemplate {
     pub(crate) fn transform_state(
         registry: &Registry,

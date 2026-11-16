@@ -314,6 +314,43 @@ impl BlockLog {
     }
 }
 
+impl BlockLog {
+    /// Logs a block the server itself changed (a show's permanent blocks) under `cause`,
+    /// like `#show`: what was there is broken, what is there now is placed.
+    pub fn record_change(
+        &self,
+        cause: &str,
+        world: &World,
+        pos: BlockPos,
+        replaced: BlockStateId,
+        placed: BlockStateId,
+    ) {
+        if replaced == placed {
+            return;
+        }
+        for (state, action) in [(replaced, BREAK), (placed, PLACE)] {
+            if state.is_air() {
+                continue;
+            }
+            self.store.record(Event {
+                time: now_ms(),
+                actor: Actor {
+                    name: cause.to_owned(),
+                    uuid: None,
+                },
+                world: world.key.to_string(),
+                pos: place(pos),
+                kind: state.get_block().key.to_string(),
+                action,
+                rolled_back: false,
+                subject: Subject::Block {
+                    state: state_text(state),
+                },
+            });
+        }
+    }
+}
+
 impl WorldLog for BlockLog {
     fn block_broken(
         &self,

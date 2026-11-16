@@ -1,7 +1,10 @@
 use glam::{DVec3, Vec3};
 use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
 
-use super::script::{Action, ActorKind, Gather, ShowScript, Stage, block_state, snap};
+use super::{
+    blocks::block_state,
+    script::{Action, ActorKind, Gather, ShowScript, Stage, snap},
+};
 
 /// The meteor show of the Fabric mod without the cues that are not ported yet.
 const METEOR: &str = r#"{

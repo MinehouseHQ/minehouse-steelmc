@@ -1,7 +1,7 @@
 //! `/show` (the Fabric `ShowCommands`): `optout` for every player, the rest for whoever has
 //! `minehouse.command.show`.
 
-use std::sync::Arc;
+use std::{str::FromStr as _, sync::Arc};
 
 use serde_json::json;
 use steel_core::{
@@ -15,12 +15,13 @@ use steel_core::{
     player::Player,
 };
 use steel_protocol::packets::game::{ArgumentStringTypeBehavior, ArgumentType, SuggestionType};
-use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier};
 
 use super::{
     SHOWS, Shows,
+    blocks::BlockSet,
     camera_path::{CameraPath, Point},
-    may_run_shows,
+    may_run_shows, permanent,
     runner::Mode,
     script::{ShowScript, Stage, snap},
     time,
@@ -178,6 +179,49 @@ fn tree() -> CommandNode {
                     ),
                 ),
         )
+        .then(
+            literal("undo")
+                .requires(admin)
+                .then(show_argument().executes(|context| undo(*context))),
+        )
+        .then(
+            literal("capture")
+                .requires(admin)
+                .then(
+                    show_argument().then(argument("name", CommandArgument::word()).then(corner(
+                        "1",
+                        |last| {
+                            last.then(corner("2", |last| {
+                                last.executes(|context| capture(*context, false)).then(
+                                    argument("withAir", CommandArgument::boolean()).executes(
+                                        |context| capture(*context, context.boolean("withAir")?),
+                                    ),
+                                )
+                            }))
+                        },
+                    ))),
+                ),
+        )
+}
+
+/// Three whole numbers `x<n> y<n> z<n>`: a corner of the box to capture. `then` gets the
+/// last of them, to hang what follows off it.
+fn corner(n: &str, then: impl FnOnce(CommandNode) -> CommandNode) -> CommandNode {
+    let number = |axis: &str| {
+        argument(
+            format!("{axis}{n}"),
+            CommandArgument::integer(-30_000_000, 30_000_000),
+        )
+    };
+    number("x").then(number("y").then(then(number("z"))))
+}
+
+fn corner_of(context: CommandContext<'_>, n: &str) -> Result<BlockPos, CommandError> {
+    Ok(BlockPos::new(
+        context.integer(&format!("x{n}"))?,
+        context.integer(&format!("y{n}"))?,
+        context.integer(&format!("z{n}"))?,
+    ))
 }
 
 fn path_argument() -> CommandNode {
@@ -569,4 +613,69 @@ fn cam_preview(context: CommandContext<'_>, over: &str) -> Result<i32, CommandEr
             .map_err(|error| CommandError::from(format!("Не запустилось: {error}")))
     })?;
     Ok(1)
+}
+
+/// The most blocks one capture takes.
+const CAPTURE_LIMIT: i64 = 32_768;
+
+/// Copies the blocks between two corners into a set of the show.
+fn capture(context: CommandContext<'_>, with_air: bool) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let name = context.string("name")?;
+    let (from, to) = (corner_of(context, "1")?, corner_of(context, "2")?);
+    let side = |a: i32, b: i32| i64::from(a.abs_diff(b)) + 1;
+    let volume = side(from.x(), to.x()) * side(from.y(), to.y()) * side(from.z(), to.z());
+    if volume > CAPTURE_LIMIT {
+        return Err(CommandError::from(format!(
+            "Слишком большая область: {volume} блоков, можно до {CAPTURE_LIMIT}"
+        )));
+    }
+    // The console captures in the stage's world, a player in their own.
+    let count = with(|shows| {
+        let stage = stage_for(shows, id)?;
+        let world = match context.source().player() {
+            Some(player) => player.get_world(),
+            None => Identifier::from_str(&stage.world)
+                .ok()
+                .and_then(|key| context.source().server().worlds.get(&key).cloned())
+                .ok_or_else(|| CommandError::from(format!("Нет мира {}", stage.world)))?,
+        };
+        let set = BlockSet::capture(
+            |pos| world.get_block_state(pos),
+            from,
+            to,
+            stage.pos,
+            with_air,
+        );
+        shows
+            .library
+            .save_blocks(id, name, &set)
+            .map_err(|error| CommandError::from(format!("Не сохранилось: {error}")))?;
+        Ok(set.entries().len())
+    })?;
+    ok(
+        context,
+        &format!(
+            "&aСнято блоков: {count}. Блоки на сцене: {{\"do\": \"blocks\", \"set\": \
+             \"{name}\"}}"
+        ),
+    );
+    Ok(i32::try_from(count).unwrap_or(i32::MAX))
+}
+
+/// Puts back what the permanent blocks of a show replaced.
+fn undo(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let restored = permanent::undo(context.source().server(), id)
+        .map_err(|error| CommandError::from(format!("Не вышло: {error}")))?
+        .ok_or_else(|| {
+            CommandError::from(format!("У шоу {id} нет постоянных изменений для отмены"))
+        })?;
+    ok(
+        context,
+        &format!(
+            "&aВозвращено блоков: {restored}. Содержимое сундуков, если было, есть в логе блоков."
+        ),
+    );
+    Ok(i32::try_from(restored).unwrap_or(i32::MAX))
 }

@@ -115,7 +115,7 @@ impl Minehouse {
         }
         tab::Tab::start(server);
         villagers::start();
-        events::start(server, setup.downtime.clone());
+        events::start(server, setup.downtime.clone(), setup.blocklog.clone());
         if let Some(blocklog) = &setup.blocklog {
             blocklog.start(server);
         }

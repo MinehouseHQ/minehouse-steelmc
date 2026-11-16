@@ -204,6 +204,9 @@ are counted from the stage, the place an admin sets with `/show stage <id>`; wit
 - `cam add <show> <path>`: where you stand and look becomes the next point of a camera
   path; `cam undo` takes the last point back, `cam clear` forgets the path, and
   `cam preview <show> <path> [over]` flies you along it (8 seconds unless said)
+- `capture <show> <name> <x1 y1 z1> <x2 y2 z2> [withAir]`: the blocks of that box become a
+  block set of the show, counted from its stage
+- `undo <show>`: puts back the blocks the show's last permanent changes replaced
 - `optout`: skip shows, or watch them again
 
 What works now:
@@ -212,15 +215,20 @@ What works now:
   `billboard`, `bright`, `viewRange`
 - cues `cinematic`, `cut`, `path` (`points`, `orbit`, or a recorded `path`), `shake`, `spawn`, `move`,
   `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
-  `chat`
+  `chat`, `blocks`, `clear_blocks`, `lightning`, `explosion`
+- `blocks` puts a `shape` (`sphere`, `box`, `disc`, `bowl` with a `palette`) or a captured
+  `set` at `pos`, in one of three modes: `ghost` blocks are only shown to the viewers,
+  `temporary` ones are real and put back when the show ends (what they replaced is in the
+  journal, so also after a crash), `permanent` ones stay; a rehearsal makes permanent
+  blocks temporary
+- `lightning` and `explosion` are looks and sounds only: nothing burns or breaks
 - viewers: gathered in a ring around the stage (`audience`), in adventure mode and
   unhurt during the show; where they stood and their game mode are in a journal on disk
   (`events/journal.json` in the data directory), so they are put back at the end, on
   `/show stop`, or when they next join after the server died mid-show
 
-A script that uses anything else (blocks placed by a show, `model`, `train`, `rig`,
-`player` and `mob` actors, `meteors`, `rift`, `rockets`, `shockwave`, `lightning`,
-`explosion`, `follow`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
+A script that uses anything else (`model`, `train`, `rig`, `player` and `mob` actors,
+`meteors`, `rift`, `rockets`, `shockwave`, `follow`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
 ported yet either.
 
 Different from Fabric: actors are display entities that exist only in the packets sent to
@@ -229,7 +237,10 @@ behind after a crash. Where shows are staged is kept in `events/stages.json` of 
 directory, not next to the scripts. Recorded camera paths are where Fabric kept them, in
 `config/minehouse/events/assets/<show>/paths/<name>.json`, so they can be copied over as
 they are; a show that flies a path nobody has recorded yet loads, and refuses to start
-with the command that records it. A `weather` cue without `over` changes the weather at
+with the command that records it. Block sets are in `assets/<show>/blocks/<name>.json`
+the same way. What permanent blocks replaced is kept in `events/permanent/<show>.txt` of
+the data directory for `/show undo`, and the change is in the block log under `#show`. A
+`weather` cue without `over` changes the weather at
 once (on Fabric it did nothing).
 
 ## Voice chat
