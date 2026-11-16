@@ -13,6 +13,7 @@ use rustc_hash::FxHashMap;
 use serde_json::Value;
 
 use super::{
+    blocks::BlockSet,
     camera_path::CameraPath,
     json::Object,
     script::{ShowScript, Stage, check_name},
@@ -204,17 +205,59 @@ impl Library {
         Ok(paths)
     }
 
+    fn blocks_file(&self, show: &str, name: &str) -> Result<PathBuf, String> {
+        check_name(show)?;
+        check_name(name)?;
+        Ok(self
+            .assets_dir
+            .join(show)
+            .join("blocks")
+            .join(format!("{name}.json")))
+    }
+
+    /// The captured set `name` of `show`.
+    pub fn blocks(&self, show: &str, name: &str) -> Result<BlockSet, String> {
+        let file = self.blocks_file(show, name)?;
+        let text = match fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Err(format!(
+                    "нет набора блоков \"{name}\" (снимите: /show capture {show} {name} \
+                     x1 y1 z1 x2 y2 z2)"
+                ));
+            }
+            Err(error) => return Err(format!("набор \"{name}\" не читается: {error}")),
+        };
+        match serde_json::from_str(&text) {
+            Ok(Value::Object(object)) => {
+                BlockSet::from_json(&object).map_err(|error| format!("набор \"{name}\": {error}"))
+            }
+            Ok(_) => Err(format!("набор \"{name}\": ожидаю объект")),
+            Err(error) => Err(format!("набор \"{name}\" не читается: {error}")),
+        }
+    }
+
+    /// Every captured set `script` puts, or why the show can't start.
+    pub fn sets_of(&self, script: &ShowScript) -> Result<FxHashMap<String, BlockSet>, String> {
+        let mut sets = FxHashMap::default();
+        for name in script.block_sets() {
+            if !sets.contains_key(name) {
+                sets.insert(name.to_owned(), self.blocks(&script.id, name)?);
+            }
+        }
+        Ok(sets)
+    }
+
+    pub fn save_blocks(&self, show: &str, name: &str, set: &BlockSet) -> Result<(), String> {
+        let file = self.blocks_file(show, name)?;
+        // Thousands of blocks: one line, nobody reads this file.
+        write_whole(&file, &set.to_json(), false)
+    }
+
     /// Keeps `path` under `name`; the old file stays whole if the write fails halfway.
     pub fn save_path(&self, show: &str, name: &str, path: &CameraPath) -> Result<(), String> {
         let file = self.path_file(show, name)?;
-        if let Some(parent) = file.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let text =
-            serde_json::to_string_pretty(&path.to_json()).map_err(|error| error.to_string())?;
-        let partial = file.with_extension("json.tmp");
-        fs::write(&partial, text).map_err(|error| error.to_string())?;
-        fs::rename(&partial, &file).map_err(|error| error.to_string())
+        write_whole(&file, &path.to_json(), true)
     }
 
     /// Forgets the path; one that was never recorded is no error.
@@ -231,6 +274,23 @@ impl Default for Library {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Writes `value` to `file` through a file beside it, so the old one stays whole if the
+/// write fails halfway.
+fn write_whole(file: &Path, value: &Value, pretty: bool) -> Result<(), String> {
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let text = if pretty {
+        serde_json::to_string_pretty(value)
+    } else {
+        serde_json::to_string(value)
+    }
+    .map_err(|error| error.to_string())?;
+    let partial = file.with_extension("json.tmp");
+    fs::write(&partial, text).map_err(|error| error.to_string())?;
+    fs::rename(&partial, file).map_err(|error| error.to_string())
 }
 
 fn read_object(file: &Path) -> Result<Object, String> {
