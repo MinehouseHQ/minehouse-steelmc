@@ -168,6 +168,25 @@ Header and footer go out once a second with the player's own ping; names and ord
 someone joins or leaves or a player's style changes. The core hook is `TabListProvider`
 (`steel-core/src/server/tab_list.rs`), which replaces the built-in header and footer.
 
+## Villagers
+
+`src/villagers.rs`: what our mod MineHouse Villagers did on the Fabric server.
+`config/minehouse/villagers.toml`:
+
+- `discounts_disabled = true`: a cured zombie villager, Hero of the Village and a good
+  reputation do not lower a price. Hitting or killing a villager still raises it, even for
+  a player who cured it. A price never goes below the base price.
+- `demand_disabled = false`: `true` removes the price rise of a trade that keeps selling out.
+- `infinite_trades = true`: a villager's trade never locks. Buying past the vanilla limit
+  counts as one full buy-out, so demand raises the price as in vanilla and not without
+  bound. The wandering trader keeps its vanilla limits.
+
+The trade screen shows the real price and no limit with no client mod: the offers packet
+leaves out what is switched off. The core part is `TradeRules`
+(`steel-core/src/entity/entities/mobs/villagers/trading/rules.rs`), vanilla by default.
+Different from Fabric: unlimited trades are a config option read at startup, not the
+gamerule `minehouse:infinite_trades`.
+
 ## Voice chat
 
 Proximity voice for clients with the [Plasmo Voice](https://github.com/plasmoapp/plasmo-voice)
