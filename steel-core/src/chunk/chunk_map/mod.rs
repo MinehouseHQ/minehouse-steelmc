@@ -651,6 +651,11 @@ impl ChunkMap {
         self.scheduling.add_or_refresh_portal_ticket(center);
     }
 
+    /// Adds or removes the End arena's dragon ticket at `pos`.
+    pub(crate) fn update_dragon_ticket(&self, pos: ChunkPos, held: bool) {
+        self.scheduling.update_dragon_ticket(pos, held);
+    }
+
     /// Vanilla `ServerChunkCache.updateChunkForced`; `true` when the chunk's
     /// forced state changed.
     pub(crate) fn update_chunk_forced(&self, pos: ChunkPos, forced: bool) -> bool {

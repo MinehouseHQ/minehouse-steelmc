@@ -374,6 +374,13 @@ impl ChunkSchedulingCoordinator {
         ingress.record_changes(changes);
     }
 
+    /// Adds or removes the dragon ticket at `pos`.
+    pub(crate) fn update_dragon_ticket(&self, pos: ChunkPos, held: bool) {
+        let mut ingress = self.ticket_ingress.lock();
+        let changes = ingress.storage.update_dragon_ticket(pos, held);
+        ingress.record_changes(changes);
+    }
+
     /// Adds or removes the forced ticket at `pos`; `true` when it changed.
     pub(crate) fn update_chunk_forced(&self, pos: ChunkPos, forced: bool) -> bool {
         let mut ingress = self.ticket_ingress.lock();

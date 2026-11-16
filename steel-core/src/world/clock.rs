@@ -244,7 +244,7 @@ impl World {
     }
 
     /// Returns the total ticks of one clock in this world.
-    pub(crate) fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+    pub fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
         self.level_data.read().world_clocks().total_ticks(clock)
     }
 
@@ -261,7 +261,7 @@ impl World {
     }
 
     /// Creates a full per-world time synchronization packet.
-    pub(crate) fn time_sync_packet(&self) -> CSetTime {
+    pub fn time_sync_packet(&self) -> CSetTime {
         let level_data = self.level_data.read();
         let advance_time = self.advance_time_with_guard(&level_data);
         CSetTime::new(

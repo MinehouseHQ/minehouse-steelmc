@@ -131,5 +131,7 @@ mod placement;
 mod processors;
 mod state_transforms;
 
+pub use state_transforms::rotate_block_state;
+
 #[cfg(test)]
 mod tests;

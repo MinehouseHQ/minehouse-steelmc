@@ -20,7 +20,7 @@ pub use api::{
     CommandSuggestions, DetachedCommandSource, SuspendedCommand, SuspendedCommandPoll, argument,
     literal,
 };
-pub use execution::CommandSuspensionOrder;
+pub use execution::{CommandSuspensionOrder, ExtensionItems, set_extension_items};
 
 pub(crate) use builtins::{
     create_registered_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,

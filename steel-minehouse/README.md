@@ -187,6 +187,65 @@ leaves out what is switched off. The core part is `TradeRules`
 Different from Fabric: unlimited trades are a config option read at startup, not the
 gamerule `minehouse:infinite_trades`.
 
+## Shows and cutscenes
+
+`src/events/`: the start of our mod MineHouse Events. A show is a script in
+`config/minehouse/events/shows/<id>.json`, in the same format as on the Fabric server: a
+timeline of cues in `tracks` (or `cues`), named `actors`, `markers`, `audience`. Coordinates
+are counted from the stage, the place an admin sets with `/show stage <id>`; with
+`"stageFacing": true` the script also turns with the way the admin faced.
+
+`/show` (permission `minehouse.command.show`, `optout` is for every player):
+
+- `list`, `reload`, `status`, `stop`
+- `stage <show>`: the stage is where you stand
+- `start <show> [in]`: now, or after a countdown on a boss bar (`10m`, `90s`, `1:30`)
+- `rehearse <show> [marker]`: for you alone, from a marker
+- `cam add <show> <path>`: where you stand and look becomes the next point of a camera
+  path; `cam undo` takes the last point back, `cam clear` forgets the path, and
+  `cam preview <show> <path> [over]` flies you along it (8 seconds unless said)
+- `capture <show> <name> <x1 y1 z1> <x2 y2 z2> [withAir]`: the blocks of that box become a
+  block set of the show, counted from its stage
+- `undo <show>`: puts back the blocks the show's last permanent changes replaced
+- `optout`: skip shows, or watch them again
+
+What works now:
+
+- actors `camera`, `block`, `item` (with `model`), `text`, `model`, with `scale`, `glow`,
+  `billboard`, `bright`, `viewRange`
+- a `model` actor is a captured block set (`"blocks": "<name>"`) drawn block by block; it
+  moves, turns and grows as one piece around its `pivot`, the middle of the set unless
+  the script names one
+- cues `cinematic`, `cut`, `path` (`points`, `orbit`, or a recorded `path`), `shake`, `spawn`, `move`,
+  `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
+  `chat`, `blocks`, `clear_blocks`, `lightning`, `explosion`
+- `blocks` puts a `shape` (`sphere`, `box`, `disc`, `bowl` with a `palette`) or a captured
+  `set` at `pos`, in one of three modes: `ghost` blocks are only shown to the viewers,
+  `temporary` ones are real and put back when the show ends (what they replaced is in the
+  journal, so also after a crash), `permanent` ones stay; a rehearsal makes permanent
+  blocks temporary
+- `lightning` and `explosion` are looks and sounds only: nothing burns or breaks
+- viewers: gathered in a ring around the stage (`audience`), in adventure mode and
+  unhurt during the show; where they stood and their game mode are in a journal on disk
+  (`events/journal.json` in the data directory), so they are put back at the end, on
+  `/show stop`, or when they next join after the server died mid-show
+
+A script that uses anything else (`train`, `rig`, `player` and `mob` actors,
+`meteors`, `rift`, `rockets`, `shockwave`, `follow`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
+ported yet either.
+
+Different from Fabric: actors are display entities that exist only in the packets sent to
+the viewers. Nothing enters the world, so nobody else sees a show and nothing is left
+behind after a crash. Where shows are staged is kept in `events/stages.json` of the data
+directory, not next to the scripts. Recorded camera paths are where Fabric kept them, in
+`config/minehouse/events/assets/<show>/paths/<name>.json`, so they can be copied over as
+they are; a show that flies a path nobody has recorded yet loads, and refuses to start
+with the command that records it. Block sets are in `assets/<show>/blocks/<name>.json`
+the same way. What permanent blocks replaced is kept in `events/permanent/<show>.txt` of
+the data directory for `/show undo`, and the change is in the block log under `#show`. A
+`weather` cue without `over` changes the weather at
+once (on Fabric it did nothing).
+
 ## Voice chat
 
 Proximity voice for clients with the [Plasmo Voice](https://github.com/plasmoapp/plasmo-voice)

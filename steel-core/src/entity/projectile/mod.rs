@@ -925,7 +925,9 @@ pub(crate) fn get_entity_hit_result(
     let mut nearest: Option<EntityHitResult> = None;
     let mut nearest_dist_sq = f64::MAX;
 
-    for entity in world.get_entities_in_aabb(&search_box) {
+    // Vanilla `level.getEntities(projectile, box, predicate)` also finds
+    // Ender Dragon parts.
+    for entity in world.get_entities_in_aabb_with_parts(None, &search_box, |_| true) {
         if !predicate(entity.as_ref()) {
             continue;
         }

@@ -123,6 +123,7 @@ pub(crate) mod clock;
 mod custom_spawner;
 mod difficulty;
 mod domain_entity_directory;
+pub mod dragon_fight;
 mod entity_management;
 mod environment;
 mod events;
@@ -349,12 +350,18 @@ pub struct World {
     custom_spawners: SyncMutex<Vec<Box<dyn custom_spawner::CustomSpawner>>>,
     /// Vanilla `ServerLevel.raids`.
     raids: raid::Raids,
+    /// Vanilla `ServerLevel.dragonFight`, present in dimensions with an
+    /// Ender Dragon fight.
+    dragon_fight: Option<dragon_fight::EnderDragonFight>,
     /// Container loot waiting on exploration map searches.
     exploration_loot: SyncMutex<maps::exploration::ExplorationLoot>,
     /// Vanilla `WanderingTraderData`, read by the wandering trader spawner.
     pub(crate) wandering_trader_data: SyncMutex<custom_spawner::WanderingTraderData>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Vanilla `ServerLevel.dragonParts`: the Ender Dragons whose parts
+    /// lookups by id and area must find.
+    ender_dragons: SyncMutex<Vec<Weak<dyn Entity>>>,
     /// Vanilla `ServerLevel.noSave`, set by `/save-off`.
     no_save: AtomicBool,
 }
@@ -441,6 +448,19 @@ impl World {
         }
         let ticket_storage = ChunkTicketStorage::load(&saved_data, &key).await;
         let raids = raid::Raids::load(&saved_data, &key).await;
+        let dragon_fight = if dimension_type.has_ender_dragon_fight {
+            Some(
+                dragon_fight::EnderDragonFight::load(
+                    &saved_data,
+                    &key,
+                    level_data.data().seed,
+                    BlockPos::ZERO,
+                )
+                .await,
+            )
+        } else {
+            None
+        };
         let wandering_trader_data =
             custom_spawner::WanderingTraderData::load(&saved_data, &key).await;
         let seed = level_data.data().seed;
@@ -523,8 +543,10 @@ impl World {
                     dimension_type,
                 )),
                 raids,
+                dragon_fight,
                 exploration_loot: SyncMutex::new(maps::exploration::ExplorationLoot::default()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                ender_dragons: SyncMutex::new(Vec::new()),
                 wandering_trader_data: SyncMutex::new(wandering_trader_data),
                 no_save: AtomicBool::new(false),
             }
@@ -571,10 +593,27 @@ impl World {
             Err(e) => log::error!("Failed to save world raid data: {e}"),
         }
 
+        if let Some(fight) = &self.dragon_fight {
+            let saved = fight.to_saved();
+            if let Err(e) = self
+                .saved_data
+                .save(saved_data_names::ENDER_DRAGON_FIGHT, &saved)
+                .await
+            {
+                log::error!("Failed to save world dragon fight data: {e}");
+            }
+        }
+
         match self.save_all_chunks().await {
             Ok(count) => *total_saved += count,
             Err(e) => log::error!("Failed to save world chunks: {e}"),
         }
+    }
+
+    /// Vanilla `ServerLevel.getDragonFight`.
+    #[must_use]
+    pub const fn dragon_fight(&self) -> Option<&dragon_fight::EnderDragonFight> {
+        self.dragon_fight.as_ref()
     }
 
     /// Returns the domain this loaded world belongs to.
@@ -632,6 +671,20 @@ impl World {
         })
     }
 
+    /// Vanilla keeps ticking removed players from their connection. Steel ticks
+    /// players through the entity manager, which skips removed entities, so tick
+    /// them here instead. This must run before the entity tick so the removal
+    /// tick itself is not processed twice. Unlike the entity tick, this skips
+    /// `commonTick`, so `tickCount` stays frozen like vanilla.
+    fn tick_removed_players(&self) {
+        self.players.iter_players(|_, player| {
+            if player.is_removed() {
+                Arc::clone(player).tick();
+            }
+            true
+        });
+    }
+
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
     /// and player logic (without chunk sending).
     ///
@@ -685,6 +738,13 @@ impl World {
 
         // Vanilla clears this before ticking entities and block entities.
         self.with_region_queues(|queues| queues.set_handling_tick(false));
+
+        if runs_normally && let Some(fight) = &self.dragon_fight {
+            let _span = tracing::trace_span!("dragon_fight").entered();
+            fight.tick(self);
+        }
+
+        self.tick_removed_players();
 
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();
