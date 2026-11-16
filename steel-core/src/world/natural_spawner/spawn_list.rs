@@ -1,10 +1,11 @@
 //! Weighted natural spawn lists: biome spawners, structure overrides and the fortress list.
 
-use std::ptr;
 use std::str::FromStr as _;
+use std::sync::{Arc, OnceLock};
+use std::{array, ptr};
 
 use rand::{Rng, RngExt as _};
-use steel_registry::biome::SpawnerData;
+use steel_registry::biome::{BiomeRef, SpawnerData};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityTypeRef, MobCategory};
 use steel_registry::structure::{StructureSpawnBoundingBox, StructureSpawnerData};
@@ -96,14 +97,57 @@ impl SpawnerEntry {
 }
 
 /// Vanilla `WeightedList<SpawnerData>`.
+///
+/// Shared, so a biome's lists are built once and handed out without copying.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SpawnList {
-    entries: Vec<SpawnerEntry>,
+    entries: Arc<[SpawnerEntry]>,
 }
 
 impl SpawnList {
-    pub(crate) const fn new(entries: Vec<SpawnerEntry>) -> Self {
-        Self { entries }
+    pub(crate) fn new(entries: Vec<SpawnerEntry>) -> Self {
+        Self {
+            entries: entries.into(),
+        }
+    }
+
+    /// The biome's spawners for `category`, built from its data.
+    pub(super) fn of_biome(biome: BiomeRef, category: MobCategory) -> Self {
+        biome
+            .spawners
+            .get(category.serialized_name())
+            .map_or_else(Self::default, |spawners| {
+                Self::new(
+                    spawners
+                        .iter()
+                        .filter_map(SpawnerEntry::from_biome)
+                        .collect(),
+                )
+            })
+    }
+
+    /// [`Self::of_biome`] for the biome with registry id `biome_id`, built once per
+    /// biome and category: spawning asks for it on every spawn attempt.
+    pub(super) fn of_biome_id(biome_id: u16, category: MobCategory) -> Self {
+        static LISTS: OnceLock<Box<[[SpawnList; MobCategory::VALUES.len()]]>> = OnceLock::new();
+        let lists = LISTS.get_or_init(|| {
+            let mut lists = vec![
+                array::from_fn(|_| Self::default());
+                REGISTRY
+                    .biomes
+                    .iter()
+                    .map(|(id, _)| id + 1)
+                    .max()
+                    .unwrap_or(0)
+            ];
+            for (id, biome) in REGISTRY.biomes.iter() {
+                lists[id] = MobCategory::VALUES.map(|category| Self::of_biome(biome, category));
+            }
+            lists.into_boxed_slice()
+        });
+        lists
+            .get(usize::from(biome_id))
+            .map_or_else(Self::default, |lists| lists[category as usize].clone())
     }
 
     fn total_weight(&self) -> i32 {
@@ -130,13 +174,13 @@ impl SpawnList {
     }
 
     /// Whether the list has no entries.
-    pub(crate) const fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// The entry whose cumulative weight covers `selection`.
     fn pick(&self, mut selection: i32) -> Option<SpawnerEntry> {
-        for entry in &self.entries {
+        for entry in self.entries.iter() {
             let weight = entry.weight.max(0);
             if selection < weight {
                 return Some(*entry);
@@ -218,15 +262,9 @@ impl World {
 
     /// The biome's spawners for `category`, vanilla `MobSpawnSettings.getMobsToSpawn`.
     pub(crate) fn biome_mobs_at(&self, category: MobCategory, pos: BlockPos) -> SpawnList {
-        self.biome_at(pos)
-            .and_then(|biome| biome.spawners.get(category.serialized_name()))
-            .map_or_else(SpawnList::default, |spawners| {
-                SpawnList::new(
-                    spawners
-                        .iter()
-                        .filter_map(SpawnerEntry::from_biome)
-                        .collect(),
-                )
+        self.biome_id_at(pos)
+            .map_or_else(SpawnList::default, |biome_id| {
+                SpawnList::of_biome_id(biome_id, category)
             })
     }
 
