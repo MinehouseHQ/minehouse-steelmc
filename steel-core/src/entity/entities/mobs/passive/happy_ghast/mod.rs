@@ -65,7 +65,7 @@ const RESTRICTION_RADIUS_BUFFER: i32 = 16;
 const FAST_HEALING_TICKS: i32 = 20;
 /// Vanilla `SLOW_HEALING_TICKS`.
 const SLOW_HEALING_TICKS: i32 = 600;
-/// Vanilla `MAX_PASSANGERS`.
+/// Vanilla `HappyGhast`'s passenger limit.
 pub const MAX_PASSENGERS: usize = 4;
 /// Vanilla `STILL_TIMEOUT_ON_LOAD_GRACE_PERIOD`.
 const STILL_TIMEOUT_ON_LOAD_GRACE_PERIOD: i32 = 60;
