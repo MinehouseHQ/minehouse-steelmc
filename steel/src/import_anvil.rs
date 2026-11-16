@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use steel_core::anvil_import::{self, AnvilImportError, ImportReport, LevelReport, PlayerReport};
 use steel_core::bootstrap::init_globals;
-use steel_minehouse::content::register_for_import;
+use steel_minehouse::migrate;
 use tokio::runtime::Builder;
 
 const USAGE: &str =
@@ -67,7 +67,7 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     // A world of our Fabric server has our blocks and items in it.
-    register_for_import();
+    migrate::register();
     init_globals();
     let runtime = match Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
@@ -121,6 +121,7 @@ async fn import(
     print!("{players}");
 
     let mut chunks = ImportReport::default();
+    let mut dropped_block_entities = Vec::new();
     for dimension in &dimensions {
         println!(
             "Importing {} into {}",
@@ -129,7 +130,22 @@ async fn import(
         );
         let report = anvil_import::import_dimension(dimension, Arc::clone(pool)).await?;
         print!("{report}");
+        dropped_block_entities.push(report.dropped_block_entities.clone());
         chunks.merge(report);
+    }
+
+    // What our Fabric mods kept beside the blocks goes to the data directory of the save.
+    let carried: Vec<migrate::Dimension<'_>> = dimensions
+        .iter()
+        .zip(&dropped_block_entities)
+        .map(|(dimension, dropped)| migrate::Dimension {
+            key: &dimension.key,
+            source: &dimension.source,
+            dropped_block_entities: dropped,
+        })
+        .collect();
+    for line in migrate::carry_over(&carried, &options.save_path.join("minehouse")) {
+        println!("{line}");
     }
     Ok(Summary {
         level,

@@ -485,6 +485,9 @@ impl ChunkConverter {
                     .filter(|key| REGISTRY.block_entity_types.by_key(key).is_some())
                 else {
                     ImportReport::count(&mut report.unknown_block_entities, id);
+                    if report.dropped_block_entities.len() < ImportReport::KEPT_BLOCK_ENTITIES {
+                        report.dropped_block_entities.push(compound.clone());
+                    }
                     continue;
                 };
                 Some(key)
