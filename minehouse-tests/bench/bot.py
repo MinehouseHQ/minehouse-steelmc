@@ -7,15 +7,17 @@ position packet every tick (like a real idle client).
 
 BOT_SPEED=<blocks per tick> makes each bot fly along +X at that speed once it has
 spawned, so the server keeps generating and sending new chunks (1.0 is about
-creative flight; 0 keeps them idle).
+creative flight; 0 keeps them idle). With BOT_SPREAD=1 the bots fly apart instead,
+each on its own heading around the circle, so every bot ends up in its own region.
 """
-import asyncio, json, struct, sys, zlib, uuid, os, time
+import asyncio, json, math, struct, sys, zlib, uuid, os, time
 
 PK = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "steel-registry", "build_assets", "packets.json")))
 SB = {st: {n: i for i, n in enumerate(v)} for st, v in PK["serverbound"].items()}
 CB = {st: {i: n for i, n in enumerate(v)} for st, v in PK["clientbound"].items()}
 PROTO = PK["version"]
 SPEED = float(os.environ.get("BOT_SPEED", "0"))
+SPREAD = os.environ.get("BOT_SPREAD") == "1"
 
 
 def varint(v):
@@ -53,6 +55,7 @@ def read_varint_buf(buf, i):
 class Bot:
     def __init__(self, host, port, name, stats):
         self.host, self.port, self.name, self.stats = host, port, name, stats
+        self.heading = (1.0, 0.0)
         self.threshold = -1
         self.state = "login"
         self.pos = None
@@ -169,7 +172,8 @@ class Bot:
             await asyncio.sleep(0.05)
             if self.pos:
                 if SPEED and self.stats.get("loaded_" + self.name):
-                    self.pos[0] += SPEED
+                    self.pos[0] += SPEED * self.heading[0]
+                    self.pos[2] += SPEED * self.heading[1]
                 self.send("move_player_pos", struct.pack(">dddB", *self.pos, 0))
             self.send("client_tick_end")
             try:
@@ -184,7 +188,11 @@ async def main():
     stats = {"joined": 0, "deaths": 0}
     tasks = []
     for i in range(count):
-        tasks.append(asyncio.create_task(Bot(host, port, f"{prefix}{i:02d}", stats).run()))
+        bot = Bot(host, port, f"{prefix}{i:02d}", stats)
+        if SPREAD:
+            angle = 2 * math.pi * i / count
+            bot.heading = (math.cos(angle), math.sin(angle))
+        tasks.append(asyncio.create_task(bot.run()))
         await asyncio.sleep(1.0)
     while True:
         print(time.strftime("%H:%M:%S"), "online", stats["joined"], "deaths", stats["deaths"], flush=True)

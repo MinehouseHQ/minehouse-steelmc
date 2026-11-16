@@ -242,7 +242,7 @@ impl ChunkMap {
 
         let island_count = islands.len();
         let parallel_start = Instant::now();
-        let results: Vec<(FxHashSet<ChunkPos>, Vec<DeferredWork>, Duration)> =
+        let results: Vec<(FxHashSet<ChunkPos>, Vec<DeferredWork>, IslandSize, Duration)> =
             install_on_tick_pool(|| {
                 work.into_par_iter()
                     .zip(island_entities)
@@ -250,6 +250,10 @@ impl ChunkMap {
                     .with_max_len(1)
                     .map(|(island, (work, entities))| {
                         let island_start = Instant::now();
+                        let size = IslandSize {
+                            entities: entities.len(),
+                            random_chunks: work.random_chunks.len(),
+                        };
                         let queues = Arc::clone(&island_queues[island]);
                         let _region = RegionScope::enter(world, Arc::clone(&queues));
                         let _ticking = TickingWorldScope::enter(world);
@@ -302,7 +306,7 @@ impl ChunkMap {
                         let dirty = entity_manager.tick_entity_list(entities, runs_normally);
                         let _ = lookup_cache.finish();
                         world.requeue_island_block_events(&queues);
-                        (dirty, queues.take_deferred(), island_start.elapsed())
+                        (dirty, queues.take_deferred(), size, island_start.elapsed())
                     })
                     .collect()
             });
@@ -313,8 +317,11 @@ impl ChunkMap {
         };
         let results = results
             .into_iter()
-            .map(|(dirty, deferred, elapsed)| {
-                stats.slowest = stats.slowest.max(elapsed);
+            .map(|(dirty, deferred, size, elapsed)| {
+                if elapsed >= stats.slowest {
+                    stats.slowest = elapsed;
+                    stats.slowest_size = size;
+                }
                 stats.busy += elapsed;
                 (dirty, deferred)
             })
@@ -330,6 +337,15 @@ impl ChunkMap {
     }
 }
 
+/// How much one island ticks, for slow-tick reports.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IslandSize {
+    /// Entities ticked by the island.
+    pub entities: usize,
+    /// Chunks the island random-ticks.
+    pub random_chunks: usize,
+}
+
 /// How one island phase went, for slow-tick reports.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IslandPhaseStats {
@@ -339,6 +355,8 @@ pub struct IslandPhaseStats {
     pub parallel: Duration,
     /// Time of the slowest island.
     pub slowest: Duration,
+    /// What the slowest island held.
+    pub slowest_size: IslandSize,
     /// Sum of all island times (CPU time spent in islands).
     pub busy: Duration,
 }
