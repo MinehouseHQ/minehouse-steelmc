@@ -78,9 +78,10 @@ impl Player {
             return;
         }
 
-        if packet.hand == InteractionHand::MainHand
-            && let Some(world_log) = self.world_log()
-            && world_log.block_clicked(self, &world, pos, direction, false)
+        if let Some(world_log) = self.world_log()
+            && (world_log.item_used(self, packet.hand)
+                || (packet.hand == InteractionHand::MainHand
+                    && world_log.block_clicked(self, &world, pos, direction, false)))
         {
             self.send_block_updates(pos, direction);
             self.broadcast_inventory_changes_and_trigger();

@@ -1,5 +1,5 @@
-//! Fast minecarts, up to [`MAX_SPEED`] blocks a second (faster than a boat on blue ice). A
-//! port of the Fabric `MinecartSpeed`.
+//! Fast minecarts, up to `[minecarts] max_speed` of `tweaks.toml` blocks a second (80 unless
+//! set, faster than a boat on blue ice). A port of the Fabric `MinecartSpeed`.
 //!
 //! The server moves a minecart at most 0.4 blocks a tick (8 blocks a second). The movement
 //! each tick is a straight line followed by snapping back onto the rail, so a cart that
@@ -32,10 +32,8 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 use uuid::Uuid;
 
-use super::{ride, trains};
+use super::{end_lock, ride, trains};
 
-/// The top speed of a fast cart, blocks a second.
-const MAX_SPEED: f64 = 80.0;
 /// What every powered rail passed adds to a fast cart, blocks a second.
 const BOOST_PER_RAIL: f64 = 6.0;
 /// Blocks a tick: keeps every pass within the current or the next block.
@@ -83,7 +81,7 @@ pub(super) fn max_speed(cart: &dyn Entity, vanilla: f64) -> f64 {
     if MOVING.get() != Some(cart.uuid()) && !fast(cart) {
         return vanilla;
     }
-    let boosted = (MAX_SPEED / 20.0).min(MAX_STEP);
+    let boosted = (end_lock::minecart_top_speed() / 20.0).min(MAX_STEP);
     if boosted <= vanilla {
         return vanilla;
     }
@@ -140,7 +138,7 @@ fn substeps(cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut()) {
         return;
     };
     let scale = if cart.is_vehicle() { 0.75 } else { 1.0 };
-    let top = MAX_SPEED / 20.0 / scale;
+    let top = end_lock::minecart_top_speed() / 20.0 / scale;
     let start = cart.velocity();
     let start_speed = horizontal_length(start);
     let mut speed = start_speed.min(top * CATCH_UP);

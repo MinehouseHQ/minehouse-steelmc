@@ -247,6 +247,12 @@ impl Player {
         self.send_packet(CAwardStats { stats });
     }
 
+    /// The count of one stat of the player: ticks for `play_time`.
+    #[must_use]
+    pub fn stat(&self, stat: Stat) -> i32 {
+        self.stats.lock().get(&stat)
+    }
+
     /// Returns the player's currently tracked stats and their counters.
     /// This excludes stats marked as reset (from transferring domains).
     #[must_use]
