@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 
 use super::{
     params::kind,
-    store::{Actor, Event, Store, Subject},
+    store::{Actor, CLICK, Event, Store, Subject},
 };
 
 /// Rows handed to the writer at once.
@@ -143,12 +143,21 @@ const fn time_ms(time: i64) -> i64 {
     }
 }
 
-/// The properties of a block state out of what `CoreProtect` kept: `facing=north,lit=true`,
-/// a whole `minecraft:chest[facing=north]`, or ids into its data map.
+/// The properties of a block state out of what `CoreProtect` kept. Its `DuckDB` storage
+/// writes words of `key=value`, `type=minecraft:chest data=facing=west,waterlogged=false`:
+/// the properties are the `data` word. Older forms: `facing=north,lit=true`, a whole
+/// `minecraft:chest[facing=north]`, or ids into its data map.
 fn state(blockdata: &str, data_map: &FxHashMap<String, String>) -> String {
     let blockdata = blockdata.trim();
     if blockdata.is_empty() {
         return String::new();
+    }
+    if blockdata.starts_with("type=") {
+        return blockdata
+            .split(' ')
+            .find_map(|word| word.strip_prefix("data="))
+            .unwrap_or_default()
+            .to_owned();
     }
     let resolved = if blockdata
         .split(',')
@@ -312,7 +321,10 @@ pub fn run(
             worlds,
             &mut report.skipped,
             |row| {
-                Some(Subject::Block {
+                // `CoreProtect` keeps killed mobs and other entity events in the same table
+                // (actions 3 and up): they are not block changes.
+                let action: u8 = row.number("action")?;
+                (action <= CLICK).then(|| Subject::Block {
                     state: state(row.text("blockdata"), &data_map),
                 })
             },
@@ -367,6 +379,23 @@ mod tests {
         assert_eq!(state("waterlogged=true", &map), "waterlogged=true");
         // Ids without their map say nothing.
         assert_eq!(state("17", &map), "");
+        // The words of the DuckDB storage.
+        assert_eq!(
+            state(
+                "type=minecraft:chest data=facing=west,type=left,waterlogged=false",
+                &map
+            ),
+            "facing=west,type=left,waterlogged=false"
+        );
+        assert_eq!(
+            state("type=minecraft:water data=level=0 fluid_level=8", &map),
+            "level=0"
+        );
+        assert_eq!(state("type=minecraft:stone", &map), "");
+        assert_eq!(
+            state("type=minecraft:evoker uuid=7cc0 health=0.0", &map),
+            ""
+        );
     }
 
     #[test]
@@ -397,6 +426,7 @@ mod file_tests {
             "id,time,user,uuid,world,x,y,z,type,blockdata,action,rolled_back\n\
              1,1790000000,Steve,0f1e,world,1,64,-2,minecraft:furnace,3,1,0\n\
              2,1790000050,#tnt,,world,1,64,-2,furnace,,0,1\n\
+             4,1790000060,Steve,0f1e,world,1,64,-2,minecraft:zombie,type=minecraft:zombie,3,0\n\
              3,broken row\n",
         )
         .expect("blocks.csv");
@@ -416,7 +446,7 @@ mod file_tests {
             Report {
                 blocks: 2,
                 containers: 1,
-                skipped: 1
+                skipped: 2
             }
         );
         // Nothing twice.
