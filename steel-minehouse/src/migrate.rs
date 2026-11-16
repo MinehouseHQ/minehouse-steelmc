@@ -27,6 +27,22 @@ use crate::{
 /// The block entity of a payment terminal on the Fabric server.
 const TERMINAL: &str = "minehouse-bank:terminal";
 
+/// The id the terminals of prod are saved under: the block Polymer showed the terminal as.
+/// A stone button is no block entity in vanilla, so one that carries the fields of a
+/// terminal is a terminal.
+const TERMINAL_AS_SAVED: &str = "minecraft:stone_button";
+
+/// Whether a block entity the import dropped is a payment terminal.
+fn is_terminal(saved: &NbtCompound) -> bool {
+    match saved.string("id").map(|id| id.to_str()) {
+        Some(id) if id == TERMINAL => true,
+        Some(id) if id == TERMINAL_AS_SAVED => {
+            saved.string("account").is_some() && saved.string("mode").is_some()
+        }
+        _ => false,
+    }
+}
+
 /// Has the import know our blocks and items. Call before the registry is built.
 pub fn register() {
     content::register_for_import();
@@ -80,7 +96,7 @@ pub fn carry_over(dimensions: &[Dimension<'_>], data: &Path) -> Vec<String> {
     let mut found = 0;
     for dimension in dimensions {
         for saved in dimension.dropped_block_entities {
-            if saved.string("id").is_none_or(|id| id.to_str() != TERMINAL) {
+            if !is_terminal(saved) {
                 continue;
             }
             let (Some(x), Some(y), Some(z)) = (saved.int("x"), saved.int("y"), saved.int("z"))
@@ -113,6 +129,25 @@ pub fn carry_over(dimensions: &[Dimension<'_>], data: &Path) -> Vec<String> {
     lines.push(format!(
         "MineHouse: {found} payment terminals carried over, {set_up} of them set up"
     ));
+    let strangers: Vec<&NbtCompound> = dimensions
+        .iter()
+        .flat_map(|dimension| dimension.dropped_block_entities)
+        .filter(|saved| {
+            !is_terminal(saved)
+                && saved
+                    .string("id")
+                    .is_some_and(|id| id.to_str() == TERMINAL_AS_SAVED)
+        })
+        .collect();
+    if let Some(first) = strangers.first() {
+        let mut fields: Vec<String> = first.iter().map(|(name, _)| name.to_string()).collect();
+        fields.sort();
+        lines.push(format!(
+            "MineHouse: {} block entities saved as {TERMINAL_AS_SAVED} are no terminals, the first has the fields: {}",
+            strangers.len(),
+            fields.join(", ")
+        ));
+    }
     lines
 }
 
@@ -203,7 +238,19 @@ mod tests {
         terminal.insert("sample", sample);
         let mut chest = NbtCompound::new();
         chest.insert("id", "other:thing");
-        let dropped = [terminal, chest];
+        let mut as_saved = NbtCompound::new();
+        as_saved.insert("id", TERMINAL_AS_SAVED);
+        as_saved.insert("x", 6);
+        as_saved.insert("y", 70);
+        as_saved.insert("z", -8);
+        as_saved.insert("account", "");
+        as_saved.insert("mode", "till");
+        let mut button = NbtCompound::new();
+        button.insert("id", TERMINAL_AS_SAVED);
+        button.insert("x", 7);
+        button.insert("y", 70);
+        button.insert("z", -8);
+        let dropped = [terminal, chest, as_saved, button];
 
         let lines = carry_over(
             &[Dimension {
@@ -216,7 +263,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("1 payment terminals"))
+                .any(|line| line.contains("2 payment terminals"))
         );
 
         let read = Terminals::load(data.join("bank-terminals.json"));
@@ -231,7 +278,8 @@ mod tests {
         assert_eq!(terminal.count, 3);
         let sample = terminal.sample_stack().expect("the sample is kept");
         assert!(sample.is(&vanilla_items::DIAMOND));
-        assert_eq!(read.count(), 1);
+        assert!(read.get(&world, BlockPos::new(6, 70, -8)).is_some());
+        assert_eq!(read.count(), 2);
         let _ = fs::remove_dir_all(&data);
         let _ = fs::remove_dir_all(&source);
     }
