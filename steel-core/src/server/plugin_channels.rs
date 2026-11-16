@@ -6,8 +6,9 @@ use steel_utils::Identifier;
 
 use crate::{player::Player, server::Server};
 
-/// Receives the plugin messages of players in the world. Installed once with
-/// [`Server::set_plugin_channel_handler`]. Answers go out as
+/// Receives the plugin messages of players in the world. Added with
+/// [`Server::add_plugin_channel_handler`]; every handler gets every message and picks the
+/// channels it knows. Answers go out as
 /// `steel_protocol::packets::common::CPluginMessage`.
 pub trait PluginChannelHandler: Send + Sync {
     /// Called on the server tick for every custom payload of a player in the play state.
@@ -21,14 +22,14 @@ pub trait PluginChannelHandler: Send + Sync {
 }
 
 impl Server {
-    /// Installs the plugin channel handler. Returns `false` if one is already installed.
-    pub fn set_plugin_channel_handler(&self, handler: Arc<dyn PluginChannelHandler>) -> bool {
-        self.plugin_channel_handler.set(handler).is_ok()
+    /// Adds a plugin channel handler next to the ones already there.
+    pub fn add_plugin_channel_handler(&self, handler: Arc<dyn PluginChannelHandler>) {
+        self.plugin_channel_handlers.write().push(handler);
     }
 
-    /// The installed plugin channel handler.
+    /// The plugin channel handlers, in the order they were added.
     #[must_use]
-    pub fn plugin_channel_handler(&self) -> Option<&Arc<dyn PluginChannelHandler>> {
-        self.plugin_channel_handler.get()
+    pub fn plugin_channel_handlers(&self) -> Vec<Arc<dyn PluginChannelHandler>> {
+        self.plugin_channel_handlers.read().clone()
     }
 }

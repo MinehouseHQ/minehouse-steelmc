@@ -1,5 +1,7 @@
 //! Vanilla item-stack command argument parsing.
 
+use std::sync::OnceLock;
+
 use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtTag;
 use steel_registry::{
@@ -21,6 +23,33 @@ use crate::command::brigadier::{
 use super::argument::parse_identifier;
 use super::suggestions::matches_substring;
 
+/// Items of a registry extension, for the item-stack argument of `/give` and the like.
+///
+/// An extension's item is a vanilla item with components (a vanilla client knows no other
+/// items), so the registry does not hold it. With these, `/give @s minehouse-tweaks:magnifier`
+/// works and the extension's ids are suggested next to the vanilla ones.
+#[derive(Clone, Copy)]
+pub struct ExtensionItems {
+    /// Every id the extension has, as `namespace:path`.
+    pub ids: fn() -> Vec<&'static str>,
+    /// A stack of one of the item with this id, or `None` if there is no such item.
+    pub stack: fn(&str) -> Option<ItemStack>,
+}
+
+static EXTENSION_ITEMS: OnceLock<ExtensionItems> = OnceLock::new();
+
+/// Lets item-stack arguments name the items of a registry extension. Returns `false` if
+/// another extension set them first.
+pub fn set_extension_items(items: ExtensionItems) -> bool {
+    EXTENSION_ITEMS.set(items).is_ok()
+}
+
+/// A stack of one of the extension item `key`, if it is one.
+fn extension_stack(key: &Identifier) -> Option<ItemStack> {
+    let items = EXTENSION_ITEMS.get()?;
+    (items.stack)(&key.to_string())
+}
+
 pub(super) fn parse_item_stack(
     reader: &mut StringReader<'_>,
 ) -> Result<ItemStack, CommandSyntaxError> {
@@ -36,6 +65,16 @@ fn parse_item_stack_inner(reader: &mut StringReader<'_>) -> Result<ItemStack, Co
     let item_start = reader.checkpoint();
     let item_key = parse_identifier(reader)?;
     let Some(item) = REGISTRY.items.by_key(&item_key) else {
+        if let Some(stack) = extension_stack(&item_key) {
+            // The extension's components stay; the ones typed in brackets go on top.
+            let mut patch = stack.patch().clone();
+            if reader.peek() == Some('[') {
+                parse_components(reader, &mut patch)?;
+            }
+            let stack = ItemStack::with_count_and_patch(stack.item, 1, patch);
+            validate_item_stack(reader, &stack)?;
+            return Ok(stack);
+        }
         reader.restore(item_start);
         let message = translations::ARGUMENT_ITEM_ID_INVALID
             .message([item_key.to_string()])
@@ -242,12 +281,13 @@ pub(super) fn suggest_item_stack(builder: &mut SuggestionsBuilder<'_>) {
     let input = builder.remaining();
     let Some(component_start) = input.find('[') else {
         suggest_items(input, builder);
-        if item_by_input(input).is_some() {
+        if item_by_input(input).is_some() || extension_by_input(input) {
             builder.suggest(format!("{input}["));
         }
         return;
     };
-    if item_by_input(&input[..component_start]).is_none() {
+    let item = &input[..component_start];
+    if item_by_input(item).is_none() && !extension_by_input(item) {
         return;
     }
 
@@ -306,6 +346,20 @@ fn suggest_items(input: &str, builder: &mut SuggestionsBuilder<'_>) {
             builder.suggest(item.key.to_string());
         }
     }
+    if let Some(items) = EXTENSION_ITEMS.get() {
+        for id in (items.ids)() {
+            if let Ok(key) = id.parse::<Identifier>()
+                && resource_matches(input, &key)
+            {
+                builder.suggest(id.to_owned());
+            }
+        }
+    }
+}
+
+/// Whether `input` is the whole id of an extension item.
+fn extension_by_input(input: &str) -> bool {
+    parse_identifier_text(input).is_some_and(|key| extension_stack(&key).is_some())
 }
 
 fn item_by_input(input: &str) -> Option<ItemRef> {

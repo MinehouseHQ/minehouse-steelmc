@@ -471,3 +471,83 @@ fn item_stack_argument_suggests_items_and_supported_component_operations() {
             == "stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},minecraft:weapon="
     }));
 }
+
+/// An item of a registry extension: a stick named and modelled as the extension says.
+fn extension_widget(id: &str) -> Option<ItemStack> {
+    (id == "steel-test:widget").then(|| {
+        let mut stack = ItemStack::new(&vanilla_items::STICK);
+        stack.set(
+            vanilla_components::ITEM_MODEL,
+            Identifier::new_static("steel-test", "widget"),
+        );
+        stack
+    })
+}
+
+fn set_test_extension_items() {
+    use crate::command::execution::{ExtensionItems, set_extension_items};
+    // Other tests may have set them already: the same function either way.
+    let _ = set_extension_items(ExtensionItems {
+        ids: || vec!["steel-test:widget"],
+        stack: extension_widget,
+    });
+}
+
+#[test]
+fn item_stack_argument_takes_extension_items_with_their_components() {
+    init_vanilla_registry();
+    set_test_extension_items();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let parse = dispatcher.parse(
+        "resource steel-test:widget[max_stack_size=16]",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("an extension item should parse");
+    };
+    let Ok(stack) = chain.top_context().item_stack("value") else {
+        panic!("item stack should be retained");
+    };
+
+    assert!(stack.is(&vanilla_items::STICK));
+    assert_eq!(
+        stack.get(vanilla_components::ITEM_MODEL),
+        Some(&Identifier::new_static("steel-test", "widget"))
+    );
+    assert_eq!(stack.max_stack_size(), 16);
+
+    let parse = dispatcher.parse("resource steel-test:gadget", TestSource::new());
+    assert!(
+        dispatcher.context_chain(parse).is_err(),
+        "an id the extension does not have stays unknown"
+    );
+}
+
+#[test]
+fn item_stack_argument_suggests_extension_items() {
+    init_vanilla_registry();
+    set_test_extension_items();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+
+    let parse = dispatcher.parse("resource wid", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("item suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "steel-test:widget")
+    );
+
+    let parse = dispatcher.parse("resource steel-test:widget", TestSource::new());
+    let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
+        panic!("item suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| suggestion.text() == "steel-test:widget[")
+    );
+}
