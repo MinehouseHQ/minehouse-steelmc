@@ -626,10 +626,11 @@ impl Server {
             return;
         }
 
-        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
         world
             .entity_tracker()
-            .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
+            .update_player(player, &view, |chunk| {
+                player.chunk_sender().lock().is_chunk_sent(chunk)
+            });
     }
 
     /// Advances game time, then ticks every world, as one game tick without
