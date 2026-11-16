@@ -41,6 +41,7 @@ mod format;
 pub mod guide;
 pub mod import;
 mod magnifier;
+pub mod newbies;
 mod params;
 mod rollback;
 mod settings;
@@ -50,6 +51,7 @@ pub use settings::BlockLogConfig;
 use store::{Actions, Actor, BREAK, Event, PLACE, PUT, Query, Store, Subject, TAKE};
 
 use magnifier::Glance;
+use newbies::Newbies;
 
 use crate::{config, content::MAGNIFIER, moderation::format::render};
 
@@ -82,6 +84,8 @@ pub struct BlockLog {
     store: Store,
     sessions: SyncMutex<FxHashMap<Uuid, Session>>,
     importing: AtomicBool,
+    /// Newbies may not touch what others built.
+    newbies: Option<Arc<Newbies>>,
 }
 
 /// Whether the block log listens to the world.
@@ -190,6 +194,7 @@ impl BlockLog {
             store,
             sessions: SyncMutex::new(FxHashMap::default()),
             importing: AtomicBool::new(false),
+            newbies: Newbies::register(registry),
         });
         if let Err(error) = commands::register(registry, &log) {
             log::error!("MineHouse block log: /co is not registered: {error:?}");
@@ -201,6 +206,12 @@ impl BlockLog {
     pub fn start(self: &Arc<Self>, server: &Arc<Server>) {
         if server.set_world_log(Arc::clone(self) as Arc<dyn WorldLog>) {
             ON.store(true, Ordering::Relaxed);
+            if let Some(newbies) = &self.newbies {
+                server.jobs.spawn(newbies::Prefetch {
+                    newbies: Arc::clone(newbies),
+                    log: Arc::clone(self),
+                });
+            }
             log::info!(
                 "MineHouse block log on (keeps {} days)",
                 self.config.keep_days
@@ -359,6 +370,9 @@ impl WorldLog for BlockLog {
         pos: BlockPos,
         state: BlockStateId,
     ) {
+        if let Some(newbies) = &self.newbies {
+            newbies.broken(world, pos);
+        }
         self.store.record(Event {
             time: now_ms(),
             actor: actor(player),
@@ -381,6 +395,9 @@ impl WorldLog for BlockLog {
         _replaced: BlockStateId,
         placed: BlockStateId,
     ) {
+        if let Some(newbies) = &self.newbies {
+            newbies.placed(player, world, pos);
+        }
         self.store.record(Event {
             time: now_ms(),
             actor: actor(player),
@@ -416,8 +433,12 @@ impl WorldLog for BlockLog {
                 .get_item_in_hand(InteractionHand::MainHand));
             if holds_magnifier {
                 self.magnify(player, world, pos, face, hit);
+                return true;
             }
-            return holds_magnifier;
+            return self
+                .newbies
+                .as_ref()
+                .is_some_and(|newbies| newbies.keeps_from(&self.store, player, world, pos, hit));
         }
         let (x, y, z) = place(pos);
         let lookup = Lookup {
@@ -447,6 +468,12 @@ impl WorldLog for BlockLog {
             Err(error) => log::warn!("Block log lookup failed: {error}"),
         });
         true
+    }
+
+    fn item_used(&self, player: &Arc<Player>, hand: InteractionHand) -> bool {
+        self.newbies
+            .as_ref()
+            .is_some_and(|newbies| newbies.keeps_from_item(player, hand))
     }
 
     fn menu_opened(&self, player: &Player, menu: &Menu) {

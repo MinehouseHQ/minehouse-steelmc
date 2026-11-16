@@ -298,6 +298,13 @@ impl Player {
             self.set_rotation(target_rotation);
         }
 
+        if let Some(world_log) = self.world_log()
+            && world_log.item_used(self, packet.hand)
+        {
+            self.broadcast_inventory_changes_and_trigger();
+            return;
+        }
+
         let world = self.get_world();
         let animation = self.interact_animation(packet.hand);
         let result = use_item(self, &world, packet.hand);

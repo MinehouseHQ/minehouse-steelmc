@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId, Direction, types::InteractionHand};
 
 use crate::{inventory::menu::Menu, player::Player, server::Server, world::World};
 
@@ -35,6 +35,12 @@ pub trait WorldLog: Send + Sync {
         face: Direction,
         hit: bool,
     ) -> bool;
+
+    /// A player is about to use the item in `hand`, in the air or on a block. Returning `true`
+    /// refuses it: nothing is used or placed.
+    fn item_used(&self, _player: &Arc<Player>, _hand: InteractionHand) -> bool {
+        false
+    }
 
     /// A menu was opened for a player. [`Menu::block_containers`] has its contents.
     fn menu_opened(&self, player: &Player, menu: &Menu);
