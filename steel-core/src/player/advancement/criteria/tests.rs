@@ -27,10 +27,14 @@ mod triggers {
     use super::super::{TICK, init_criteria};
     use crate::behavior::init_behaviors;
     use crate::entity::Entity as _;
+    use crate::entity::next_entity_id;
     use crate::inventory::container::{Container as _, SimpleContainer};
     use crate::inventory::menu::{MenuBuilder, kinds::BasicKind};
     use crate::player::Player;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+    use crate::player::ResetReason;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::world::World;
+    use steel_registry::vanilla_blocks;
 
     fn setup() {
         steel_registry::init_vanilla_registry();
@@ -181,5 +185,156 @@ mod triggers {
 
         assert!(same.matches(world, pos.x, pos.y, pos.z));
         assert!(!other.matches(world, pos.x, pos.y, pos.z));
+    }
+
+    fn player_in(world: &Arc<World>, name: &str) -> Arc<Player> {
+        let player =
+            TestPlayerBuilder::new(Arc::clone(world), name.to_owned(), next_entity_id()).build();
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        player
+    }
+
+    #[test]
+    fn eating_and_enchanting_count_their_items() {
+        setup();
+        let fixture = fresh_test_world("criteria_consume_enchant");
+        let player = TestPlayerBuilder::new(Arc::clone(&fixture.world), "Eater", 1).build();
+
+        player.trigger_consume_item(&ItemStack::new(&vanilla_items::APPLE));
+        player.trigger_enchanted_item(&ItemStack::new(&vanilla_items::DIAMOND_SWORD), 1);
+        player.trigger_shot_crossbow(&ItemStack::new(&vanilla_items::CROSSBOW));
+
+        assert!(criterion_done(
+            &player,
+            "minecraft:husbandry/balanced_diet",
+            "apple"
+        ));
+        assert!(!criterion_done(
+            &player,
+            "minecraft:husbandry/balanced_diet",
+            "beef"
+        ));
+        assert!(criterion_done(
+            &player,
+            "minecraft:story/enchant_item",
+            "enchanted_item"
+        ));
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/ol_betsy",
+            "shot_crossbow"
+        ));
+    }
+
+    #[test]
+    fn changing_dimension_and_entering_a_gateway_are_reported() {
+        setup();
+        let fixture = fresh_test_world("criteria_dimension_gateway");
+        let player = TestPlayerBuilder::new(Arc::clone(&fixture.world), "Traveler", 1).build();
+
+        player.trigger_changed_dimension(
+            &Identifier::vanilla_static("the_nether"),
+            &Identifier::vanilla_static("overworld"),
+        );
+        assert!(!criterion_done(
+            &player,
+            "minecraft:story/enter_the_nether",
+            "entered_nether"
+        ));
+        player.trigger_changed_dimension(
+            &Identifier::vanilla_static("overworld"),
+            &Identifier::vanilla_static("the_nether"),
+        );
+        assert!(criterion_done(
+            &player,
+            "minecraft:story/enter_the_nether",
+            "entered_nether"
+        ));
+
+        player.trigger_enter_block(vanilla_blocks::STONE.default_state());
+        assert!(!criterion_done(
+            &player,
+            "minecraft:end/enter_end_gateway",
+            "entered_end_gateway"
+        ));
+        player.trigger_enter_block(vanilla_blocks::END_GATEWAY.default_state());
+        assert!(criterion_done(
+            &player,
+            "minecraft:end/enter_end_gateway",
+            "entered_end_gateway"
+        ));
+    }
+
+    #[test]
+    fn an_effect_from_an_axolotl_counts_its_source() {
+        use crate::entity::LivingEntity as _;
+        use crate::entity::MobEffectInstance;
+        use crate::entity::entities::AxolotlEntity;
+        use steel_registry::{vanilla_entities, vanilla_mob_effects};
+
+        setup();
+        let fixture = fresh_test_world("criteria_effects_source");
+        let world = &fixture.world;
+        let player = player_in(world, "Diver");
+        let axolotl = AxolotlEntity::new(
+            &vanilla_entities::AXOLOTL,
+            next_entity_id(),
+            player.position(),
+            Arc::downgrade(world),
+        );
+
+        player.add_mob_effect(MobEffectInstance::new(vanilla_mob_effects::SPEED, 0));
+        assert!(!criterion_done(
+            &player,
+            "minecraft:husbandry/kill_axolotl_target",
+            "kill_axolotl_target"
+        ));
+        player.add_mob_effect_with_source(
+            MobEffectInstance::new(vanilla_mob_effects::REGENERATION, 0),
+            Some(&axolotl),
+        );
+        assert!(criterion_done(
+            &player,
+            "minecraft:husbandry/kill_axolotl_target",
+            "kill_axolotl_target"
+        ));
+    }
+
+    #[test]
+    fn killing_a_mob_credits_the_player_who_hurt_it() {
+        use crate::entity::damage::DamageSource;
+        use crate::entity::entities::ZombieEntity;
+        use crate::entity::{LivingEntity as _, SharedEntity};
+        use glam::DVec3;
+        use steel_registry::{vanilla_damage_types, vanilla_entities};
+        use steel_utils::ChunkPos;
+
+        setup();
+        let fixture = fresh_test_world("criteria_kill_credit");
+        let world = &fixture.world;
+        let position = DVec3::new(8.5, 64.0, 8.5);
+        insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
+        let player = player_in(world, "Hunter");
+        let zombie = Arc::new(ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            next_entity_id(),
+            position,
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&zombie) as SharedEntity)
+            .expect("zombie should attach to the loaded chunk");
+        let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+            .with_causing_entity(Arc::clone(&player) as SharedEntity)
+            .with_direct_entity(Arc::clone(&player) as SharedEntity);
+
+        assert!(zombie.hurt(world, &source, 100.0));
+
+        assert!(zombie.is_dead_or_dying());
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/kill_a_mob",
+            "minecraft:zombie"
+        ));
     }
 }

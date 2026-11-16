@@ -17,6 +17,7 @@ use crate::behavior::weathering::get_weather_state;
 use crate::behavior::{BlockBehavior, BlockPlaceContext, BlockRef};
 use crate::entity::entities::{CopperGolemEntity, IronGolemEntity, SnowGolemEntity};
 use crate::entity::{SharedEntity, next_entity_id};
+use crate::player::advancement::criteria::trigger_summoned_entity_nearby;
 use crate::world::World;
 
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
@@ -162,9 +163,10 @@ fn golem_spawn_position(pos: BlockPos) -> DVec3 {
     )
 }
 
+/// How far from a built golem players get the `summoned_entity` trigger.
+const GOLEM_SUMMON_TRIGGER_RANGE: f64 = 5.0;
+
 /// Vanilla `CarvedPumpkinBlock.spawnGolemInWorld`.
-// TODO: Trigger `CriteriaTriggers.SUMMONED_ENTITY` for players within 5 blocks once
-// Steel has advancement triggers.
 fn spawn_golem_in_world(world: &Arc<World>, found: &BlockPatternMatch, golem: SharedEntity) {
     found.clear_blocks(world);
     golem.set_rotation((0.0, 0.0));
@@ -173,9 +175,10 @@ fn spawn_golem_in_world(world: &Arc<World>, found: &BlockPatternMatch, golem: Sh
         living.set_y_head_rot(0.0);
         living.set_y_body_rot(0.0);
     }
-    if let Err(error) = world.try_add_entity(golem) {
+    if let Err(error) = world.try_add_entity(Arc::clone(&golem)) {
         log::debug!("world rejected a built golem: {error}");
     }
+    trigger_summoned_entity_nearby(world, golem.as_ref(), GOLEM_SUMMON_TRIGGER_RANGE);
     found.update_blocks(world);
 }
 

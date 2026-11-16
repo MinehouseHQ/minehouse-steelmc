@@ -11,7 +11,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
-use steel_registry::{vanilla_blocks, vanilla_entities};
+use steel_registry::{vanilla_blocks, vanilla_custom_stats, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
@@ -22,7 +22,8 @@ use crate::behavior::InteractionResult;
 use crate::entity::ai::path::PathType;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, EntitySpawnReason, Mob, MobBase, SharedEntity, next_entity_id,
+    AgeableMob, AgeableMobBase, EntityEventSource, EntitySpawnReason, Mob, MobBase, SharedEntity,
+    next_entity_id,
 };
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -127,6 +128,32 @@ pub trait Animal: AgeableMob {
     /// Sets the UUID of the player who caused this animal to fall in love.
     fn set_love_cause_uuid(&self, love_cause: Option<Uuid>) {
         self.animal_base().set_love_cause_uuid(love_cause);
+    }
+
+    /// Vanilla `Animal.getLoveCause`: the player who caused the love, while
+    /// they are in this world.
+    fn love_cause(&self, world: &World) -> Option<Arc<Player>> {
+        self.love_cause_uuid()
+            .and_then(|uuid| world.players.get_by_uuid(&uuid))
+    }
+
+    /// Vanilla's bred-animals award: the first online love cause of the pair
+    /// counts the stat and fires `bred_animals`.
+    fn award_bred_animals(
+        &self,
+        world: &World,
+        partner: &dyn Animal,
+        offspring: Option<&dyn Animal>,
+    ) {
+        let Some(cause) = self.love_cause(world).or_else(|| partner.love_cause(world)) else {
+            return;
+        };
+        cause.award_custom_stat(&vanilla_custom_stats::ANIMALS_BRED);
+        cause.trigger_bred_animals(
+            self.as_entity_event_source(),
+            partner.as_entity_event_source(),
+            offspring.map(EntityEventSource::as_entity_event_source),
+        );
     }
 
     /// Returns whether this animal is currently in love.
@@ -303,13 +330,7 @@ pub trait Animal: AgeableMob {
         if let Some(offspring) = offspring {
             self.on_bred_offspring(world, partner, offspring);
         }
-        if self
-            .love_cause_uuid()
-            .or_else(|| partner.love_cause_uuid())
-            .is_some()
-        {
-            // TODO: Award the animals-bred stat and advancement once those foundations exist.
-        }
+        self.award_bred_animals(world, partner, offspring);
 
         self.set_age(PARENT_AGE_AFTER_BREEDING);
         partner.set_age(PARENT_AGE_AFTER_BREEDING);

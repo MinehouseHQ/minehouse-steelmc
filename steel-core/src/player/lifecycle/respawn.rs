@@ -667,6 +667,14 @@ impl Player {
             ));
         }
 
+        if kind == RespawnRequestKind::EndCredits {
+            // Vanilla `handleClientCommand(PERFORM_RESPAWN)` after the credits.
+            replacement.trigger_changed_dimension(
+                &Identifier::vanilla_static("the_end"),
+                &Identifier::vanilla_static("overworld"),
+            );
+        }
+
         RespawnFinish::Completed
     }
 

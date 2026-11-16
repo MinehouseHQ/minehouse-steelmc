@@ -7,6 +7,7 @@ use steel_registry::{
 };
 use steel_utils::types::{SignTextSlot, UpdateFlags};
 
+use crate::player::advancement::criteria::ITEM_USED_ON_BLOCK;
 use crate::{
     behavior::{
         InteractionResult, ItemBehavior, SignApplicator, UseOnContext,
@@ -34,8 +35,11 @@ impl ItemBehavior for HoneycombItem {
         // Try block waxing first
         let old_block_state = context.world.get_block_state(pos);
         if let Some(waxed_block) = get_waxed_from_normal_variant(old_block_state.get_block()) {
+            let tool = context.inv.with_item(|item| item.clone());
+            context
+                .player
+                .trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &tool);
             context.inv.with_item(ItemStack::shrink_one);
-            // TODO: trigger CriteriaTriggers.ITEM_USED_ON_BLOCK advancement
             let waxed_state = REGISTRY
                 .blocks
                 .copy_matching_properties(old_block_state, waxed_block);

@@ -358,8 +358,7 @@ impl TurtleEntity {
     /// Vanilla `Turtle.TurtleBreedGoal.breed`: the mother carries an egg home
     /// instead of a baby appearing.
     fn mate(&self, world: &Arc<World>, partner: &dyn Animal) {
-        // TODO(advancement-triggers): award `Stats.ANIMALS_BRED` and trigger
-        // `CriteriaTriggers.BRED_ANIMALS` for the love cause.
+        self.award_bred_animals(world, partner, None);
         self.set_has_egg(true);
         self.set_age(PARENT_AGE_AFTER_MATING);
         partner.set_age(PARENT_AGE_AFTER_MATING);

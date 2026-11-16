@@ -509,9 +509,11 @@ impl ItemBehavior for CrossbowItem {
                 infinite,
             );
             let item = weapon.item();
+            if fired {
+                context.player.trigger_shot_crossbow(&weapon);
+            }
             context.inv.with_item(|stack| *stack = weapon);
             if fired {
-                // TODO: `CriteriaTriggers.SHOT_CROSSBOW` once advancement triggers exist.
                 context
                     .player
                     .award_stat(&vanilla_stat_types::ITEM_USED, item);

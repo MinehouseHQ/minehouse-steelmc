@@ -596,6 +596,9 @@ fn apply_block_effect_segment(
                 let is_precise = moved_far || aabb.intersects_block(pos);
                 effect_collector.advance_step(iteration);
                 behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
+                if let Some(player) = entity.as_player() {
+                    player.trigger_enter_block(state);
+                }
                 if entity.is_removed() {
                     return false;
                 }

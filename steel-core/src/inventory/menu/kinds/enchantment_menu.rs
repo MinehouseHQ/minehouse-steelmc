@@ -331,15 +331,18 @@ impl MenuKind for EnchantmentKind {
         let Some(container) = guard.get_mut(container_id) else {
             return false;
         };
+        let enchanted_copy = enchanted.clone();
         container.set_item(ITEM_SLOT, enchanted);
         container.set_item(LAPIS_SLOT, currency);
         container.set_changed();
 
         player.award_custom_stat(&vanilla_custom_stats::ENCHANT_ITEM);
-        // TODO: Trigger CriteriaTriggers.ENCHANTED_ITEM once Steel has shared advancement foundations.
 
         self.update_offers(behavior, &mut guard);
         drop(guard);
+        // Fired once the table's lock is released: an advancement reward may
+        // touch other containers.
+        player.trigger_enchanted_item(&enchanted_copy, enchantment_cost);
 
         self.world.play_sound(
             &sound_events::BLOCK_ENCHANTMENT_TABLE_USE,

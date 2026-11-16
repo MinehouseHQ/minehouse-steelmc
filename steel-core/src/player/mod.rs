@@ -36,6 +36,7 @@ mod title;
 pub mod warden_spawn_tracker;
 
 use crate::player::advancement::criteria;
+use crate::player::advancement::criteria::{ENTITY_KILLED_PLAYER, PLAYER_KILLED_ENTITY};
 use crate::player::player_inventory::Prediction;
 use crate::scoreboard::{CriteriaUpdate, CustomCriteria, ObjectiveCriteria, ScoreHolder};
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
@@ -2030,9 +2031,11 @@ impl Entity for Player {
         true
     }
 
-    fn award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
+    fn award_kill_score(&self, victim: &dyn Entity, killing_blow: &DamageSource) {
         if self.id() != victim.id() {
-            // TODO: Trigger advancement criteria.
+            if let Some(victim_player) = victim.as_player() {
+                victim_player.trigger_killed(&ENTITY_KILLED_PLAYER, self, killing_blow);
+            }
             self.update_scores_for_criteria(
                 &ObjectiveCriteria::Custom(CustomCriteria::TotalKillCount),
                 CriteriaUpdate::Increment,
@@ -2047,9 +2050,10 @@ impl Entity for Player {
                 self.award_custom_stat(&vanilla_custom_stats::MOB_KILLS);
             }
             let own = ScoreHolder::new(self.scoreboard_name());
-            let victim = ScoreHolder::new(victim.scoreboard_name());
-            self.handle_team_kill(&own, &victim, CustomCriteria::TeamKill);
-            self.handle_team_kill(&victim, &own, CustomCriteria::KilledByTeam);
+            let victim_holder = ScoreHolder::new(victim.scoreboard_name());
+            self.handle_team_kill(&own, &victim_holder, CustomCriteria::TeamKill);
+            self.handle_team_kill(&victim_holder, &own, CustomCriteria::KilledByTeam);
+            self.trigger_killed(&PLAYER_KILLED_ENTITY, victim, killing_blow);
         }
     }
 }

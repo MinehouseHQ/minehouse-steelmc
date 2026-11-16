@@ -16,6 +16,7 @@ use super::portal::place_feature;
 use super::{EnderDragonFight, crystals_in, spike_top_box, spikes};
 use crate::entity::entities::EndCrystalEntity;
 use crate::entity::{RemovalReason, SharedEntity};
+use crate::player::advancement::criteria::SUMMONED_ENTITY;
 use crate::world::World;
 use crate::world::explosion::{ExplosionInteraction, ExplosionOptions};
 
@@ -229,9 +230,11 @@ impl EnderDragonFight {
             fight.respawn_stage = None;
             fight.dragon_killed = false;
         }
-        // TODO(advancement-triggers): vanilla fires `SUMMONED_ENTITY` for
-        // every boss bar player once the new dragon spawns.
-        self.create_new_dragon(world);
+        if let Some(dragon) = self.create_new_dragon(world) {
+            for player in self.dragon_event.players() {
+                player.trigger_entity_criteria(&SUMMONED_ENTITY, dragon.as_ref());
+            }
+        }
     }
 
     /// Vanilla `tryRespawn`: starts the ritual when the dragon is dead and

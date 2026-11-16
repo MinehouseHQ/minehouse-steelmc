@@ -11,6 +11,7 @@ use crate::entity::{
 };
 use crate::fluid::{fluid_state_to_block, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
+use crate::player::advancement::criteria::PLACED_BLOCK;
 use crate::world::{RaytraceAction, World};
 use simdnbt::owned::NbtCompound;
 use std::sync::Arc;
@@ -300,8 +301,9 @@ fn use_filled_bucket(
     if let Some(mob_bucket) = mob_bucket {
         mob_bucket.check_extra_content(context.world, player, &held, primary_pos);
     }
-    // TODO(advancements): vanilla fires `CriteriaTriggers.PLACED_BLOCK` here for buckets
-    // holding a fluid.
+    context
+        .player
+        .trigger_item_used_on_location(&PLACED_BLOCK, primary_pos, &held);
     context
         .player
         .award_stat(&vanilla_stat_types::ITEM_USED, held.item());

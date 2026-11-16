@@ -7,6 +7,7 @@ use crate::behavior::projectile_item::{DispenseConfig, ProjectileItem, charge_di
 use crate::entity::entities::{Fireball as _, SmallFireballEntity};
 use crate::entity::projectile::normalize_or_zero;
 use crate::entity::{AbstractHurtingProjectile as _, SharedEntity, next_entity_id};
+use crate::player::advancement::criteria::PLACED_BLOCK;
 use crate::world::World;
 use glam::DVec3;
 use std::sync::Arc;
@@ -75,6 +76,10 @@ impl ItemBehavior for FlintAndSteelItem {
             &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
+        let tool = context.inv.with_item(|item| item.clone());
+        context
+            .player
+            .trigger_item_used_on_location(&PLACED_BLOCK, fire_pos, &tool);
         let has_infinite_materials = context.player.has_infinite_materials();
         context
             .inv

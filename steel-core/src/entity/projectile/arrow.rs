@@ -6,6 +6,7 @@
 //! `super.tick()`).
 
 use rustc_hash::FxHashSet;
+use std::slice;
 use std::str::FromStr as _;
 use std::sync::Arc;
 
@@ -114,6 +115,8 @@ struct ArrowState {
     base_damage: f64,
     sound_event: SoundEventRef,
     piercing_ignore_entity_ids: Option<FxHashSet<i32>>,
+    /// Vanilla `piercedAndKilledEntities`, for the `killed_by_arrow` trigger.
+    pierced_and_killed_entities: Option<Vec<SharedEntity>>,
     pickup_item_stack: ItemStack,
     fired_from_weapon: Option<ItemStack>,
 }
@@ -138,6 +141,7 @@ impl ArrowBase {
                 base_damage: ARROW_BASE_DAMAGE,
                 sound_event: &sound_events::ENTITY_ARROW_HIT,
                 piercing_ignore_entity_ids: None,
+                pierced_and_killed_entities: None,
                 pickup_item_stack: default_pickup_item,
                 fired_from_weapon: None,
             }),
@@ -636,6 +640,9 @@ pub trait AbstractArrow: Projectile {
         let pierce_level = self.pierce_level();
         if pierce_level > 0 {
             let mut state = self.arrow_base().state.lock();
+            state
+                .pierced_and_killed_entities
+                .get_or_insert_with(|| Vec::with_capacity(5));
             let ids = state.piercing_ignore_entity_ids.get_or_insert_with(|| {
                 FxHashSet::with_capacity_and_hasher(5, rustc_hash::FxBuildHasher)
             });
@@ -690,8 +697,7 @@ pub trait AbstractArrow: Projectile {
                         data: 0.0,
                     });
                 }
-                // TODO: vanilla triggers `CriteriaTriggers.KILLED_BY_ARROW`
-                // here; Steel has no advancement criteria yet.
+                self.trigger_killed_by_arrow(entity, current_owner.as_ref());
             }
 
             let sound = self.arrow_base().state.lock().sound_event;
@@ -771,6 +777,34 @@ pub trait AbstractArrow: Projectile {
         let mut state = self.arrow_base().state.lock();
         state.sound_event = &sound_events::ENTITY_ARROW_HIT;
         state.piercing_ignore_entity_ids = None;
+        if let Some(killed) = &mut state.pierced_and_killed_entities {
+            killed.clear();
+        }
+    }
+
+    /// Vanilla `onHitEntity`'s tail: remembers a mob this piercing arrow
+    /// killed, then reports the kills to the owning player.
+    fn trigger_killed_by_arrow(&self, mob: &SharedEntity, owner: Option<&SharedEntity>) {
+        let (killed, weapon) = {
+            let mut state = self.arrow_base().state.lock();
+            if !mob.is_alive()
+                && let Some(killed) = &mut state.pierced_and_killed_entities
+            {
+                killed.push(Arc::clone(mob));
+            }
+            (
+                state.pierced_and_killed_entities.clone(),
+                state.fired_from_weapon.clone(),
+            )
+        };
+        let Some(player) = owner.and_then(|owner| owner.as_player()) else {
+            return;
+        };
+        if let Some(killed) = killed {
+            player.trigger_killed_by_arrow(&killed, weapon.as_ref());
+        } else if !mob.is_alive() {
+            player.trigger_killed_by_arrow(slice::from_ref(mob), weapon.as_ref());
+        }
     }
 
     /// Vanilla `AbstractArrow.playerTouch`.

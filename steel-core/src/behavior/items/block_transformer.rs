@@ -19,6 +19,7 @@ use crate::block_state_provider::BlockStateProviderEvaluator;
 use crate::entity::{Entity as _, LivingEntity as _};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
+use crate::player::advancement::criteria::ITEM_USED_ON_BLOCK;
 use crate::world::game_event::GameEventContext;
 
 use super::copper_chest_events::emit_connected_chest_block_change;
@@ -64,7 +65,10 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
             new_state
         };
 
-        // TODO: Trigger ITEM_USED_ON_BLOCK advancements here
+        let tool = context.inv.with_item(|item| item.clone());
+        context
+            .player
+            .trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &tool);
         let old_state = context.world.get_block_state(pos);
         drop_loot(transform, context, old_state);
         let broken_item = context.inv.with_item(|item| {

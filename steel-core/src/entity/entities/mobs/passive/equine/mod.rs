@@ -62,6 +62,7 @@ use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
 use crate::inventory::slot_range::HORSE_INVENTORY_SLOT_OFFSET;
 use crate::player::Player;
+use crate::player::advancement::criteria::TAME_ANIMAL;
 use crate::world::World;
 
 pub use camel::{Camel, CamelBase, CamelEntity, CamelHuskEntity};
@@ -515,7 +516,9 @@ pub trait AbstractHorse: Animal + PathfinderMob {
     fn tame_with_name(&self, player: &SharedEntity) -> bool {
         self.set_owner(Some(player));
         self.set_tamed(true);
-        // TODO: Trigger the tame_animal advancement once criteria triggers exist.
+        if let Some(player) = player.as_player() {
+            player.trigger_entity_criteria(&TAME_ANIMAL, self.as_entity_event_source());
+        }
         self.broadcast_entity_event(EntityStatus::TamingSucceeded);
         true
     }

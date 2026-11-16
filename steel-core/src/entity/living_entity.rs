@@ -16,6 +16,7 @@ use crate::behavior::{
 use crate::entity::ai::brain::Memories;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+use crate::entity::get_kill_credit;
 use crate::entity::pushing::EntityPush;
 use crate::inventory::slot_access::SlotAccess;
 use crate::inventory::slot_range::{
@@ -965,9 +966,28 @@ pub trait LivingEntity: Entity {
                 (damage_blocked * 10.0).round() as i32,
             );
         }
-        // TODO(advancements): ENTITY_HURT_PLAYER and PLAYER_HURT_ENTITY get `blocked`.
+        self.trigger_hurt_criteria(source, damage, blocked);
 
         success
+    }
+
+    /// Vanilla `hurtServer`'s tail: `entity_hurt_player` for a hurt player
+    /// and `player_hurt_entity` for the player who caused the damage.
+    fn trigger_hurt_criteria(&self, source: &DamageSource, damage: f32, blocked: bool) {
+        if let Some(player) = self.as_player() {
+            player.trigger_entity_hurt_player(source, damage, blocked);
+        }
+        if let Some(source_player) = source
+            .causing_entity()
+            .and_then(|entity| entity.as_player())
+        {
+            source_player.trigger_player_hurt_entity(
+                self.as_entity_event_source(),
+                source,
+                damage,
+                blocked,
+            );
+        }
     }
 
     /// Hook before applying damage after vanilla reductions.
@@ -1447,6 +1467,12 @@ pub trait LivingEntity: Entity {
             return;
         }
 
+        if let Some(world) = self.level()
+            && let Some(killer) = get_kill_credit(self, &world)
+        {
+            killer.award_kill_score(self.as_entity_event_source(), source);
+        }
+
         self.handle_killing_blow();
 
         // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
@@ -1856,9 +1882,9 @@ pub trait LivingEntity: Entity {
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
-        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
-        // once the advancement-criteria foundation exists.
-        let _ = source;
+        if changed && let Some(player) = self.as_player() {
+            player.trigger_effects_changed(source);
+        }
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
@@ -1895,7 +1921,11 @@ pub trait LivingEntity: Entity {
 
     /// Removes active vanilla mob-effect state.
     fn remove_mob_effect(&self, effect: MobEffectRef) -> bool {
-        self.living_base().remove_mob_effect(effect)
+        let removed = self.living_base().remove_mob_effect(effect);
+        if removed && let Some(player) = self.as_player() {
+            player.trigger_effects_changed(None);
+        }
+        removed
     }
 
     /// Ticks vanilla server-side mob-effect behavior and durations.
@@ -1906,7 +1936,7 @@ pub trait LivingEntity: Entity {
             .expect("Self implements LivingEntity");
         for effect in self.active_mob_effects() {
             if !effect.has_remaining_duration() {
-                self.living_base().tick_mob_effect_duration(effect.effect());
+                self.tick_mob_effect_duration(effect.effect());
                 continue;
             }
 
@@ -1919,7 +1949,17 @@ pub trait LivingEntity: Entity {
                 continue;
             }
 
-            self.living_base().tick_mob_effect_duration(effect.effect());
+            self.tick_mob_effect_duration(effect.effect());
+        }
+    }
+
+    /// Ticks one effect's duration and reports a change the way vanilla's
+    /// `onEffectUpdated` / `onEffectsRemoved` do, with no source.
+    fn tick_mob_effect_duration(&self, effect: MobEffectRef) {
+        if self.living_base().tick_mob_effect_duration(effect)
+            && let Some(player) = self.as_player()
+        {
+            player.trigger_effects_changed(None);
         }
     }
 
