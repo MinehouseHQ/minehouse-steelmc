@@ -61,6 +61,40 @@ impl Default for EndConfig {
 struct TweaksConfig {
     end: EndConfig,
     cloud: CloudConfig,
+    minecarts: MinecartConfig,
+}
+
+/// The `[minecarts]` table of the config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MinecartConfig {
+    /// The top speed of a fast cart, blocks a second (the Fabric `minehouse:minecart_speed`).
+    pub max_speed: u32,
+}
+
+impl MinecartConfig {
+    /// The speed of a vanilla cart on powered rails, the least the top speed can be.
+    const VANILLA_SPEED: u32 = 8;
+    /// The highest top speed accepted.
+    const HIGHEST_SPEED: u32 = 100;
+}
+
+impl Default for MinecartConfig {
+    fn default() -> Self {
+        Self { max_speed: 80 }
+    }
+}
+
+/// The top speed of a fast cart, blocks a second. Read once.
+pub(super) fn minecart_top_speed() -> f64 {
+    static SPEED: OnceLock<u32> = OnceLock::new();
+    f64::from(*SPEED.get_or_init(|| {
+        config::load::<TweaksConfig>(&config::path(CONFIG))
+            .inspect_err(|error| log::error!("MineHouse tweaks: {error}, carts keep 80 blocks/s"))
+            .map_or_else(|_| MinecartConfig::default(), |tweaks| tweaks.minecarts)
+            .max_speed
+            .clamp(MinecartConfig::VANILLA_SPEED, MinecartConfig::HIGHEST_SPEED)
+    }))
 }
 
 /// The `[cloud]` table of the config.
