@@ -64,7 +64,7 @@ impl World {
 
 /// Vanilla `LevelReader.hasChunksAt(x0, z0, x1, z1)`: every chunk in the block
 /// rectangle is loaded.
-pub(super) fn has_chunks_at(world: &World, min_x: i32, min_z: i32, max_x: i32, max_z: i32) -> bool {
+pub(crate) fn has_chunks_at(world: &World, min_x: i32, min_z: i32, max_x: i32, max_z: i32) -> bool {
     let min = ChunkPos::from_block_pos(BlockPos::new(min_x, 0, min_z));
     let max = ChunkPos::from_block_pos(BlockPos::new(max_x, 0, max_z));
     (min.0.x..=max.0.x).all(|chunk_x| {

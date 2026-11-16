@@ -16,6 +16,9 @@ pub struct PanicGoal {
     speed_modifier: f64,
     is_running: bool,
     panic_causes: fn(&dyn PathfinderMob) -> Identifier,
+    /// Horizontal range of the water search run on every panic, as vanilla
+    /// `TurtlePanicGoal` does, instead of only while burning.
+    always_seek_water: Option<i32>,
 }
 
 fn default_panic_causes(_mob: &dyn PathfinderMob) -> Identifier {
@@ -30,6 +33,7 @@ impl PanicGoal {
             speed_modifier,
             is_running: false,
             panic_causes: default_panic_causes,
+            always_seek_water: None,
         }
     }
 
@@ -41,6 +45,14 @@ impl PanicGoal {
         panic_causes: fn(&dyn PathfinderMob) -> Identifier,
     ) -> Self {
         self.panic_causes = panic_causes;
+        self
+    }
+
+    /// Vanilla `TurtlePanicGoal`: every panic first heads for water within
+    /// `xz_dist` blocks.
+    #[must_use]
+    pub(crate) const fn with_water_seeking(mut self, xz_dist: i32) -> Self {
+        self.always_seek_water = Some(xz_dist);
         self
     }
 
@@ -79,7 +91,12 @@ impl Goal for PanicGoal {
             return false;
         }
 
-        if mob.is_on_fire()
+        if let Some(xz_dist) = self.always_seek_water {
+            if let Some(water_pos) = look_for_water(mob, xz_dist) {
+                self.wanted_position = Some(block_pos_corner(water_pos));
+                return true;
+            }
+        } else if mob.is_on_fire()
             && let Some(water_pos) = look_for_water(mob, 5)
         {
             self.wanted_position = Some(block_pos_corner(water_pos));

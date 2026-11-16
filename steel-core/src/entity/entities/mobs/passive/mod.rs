@@ -19,6 +19,7 @@ mod rabbit;
 mod sheep;
 mod sniffer;
 mod squid;
+pub mod turtle;
 
 pub use armadillo::ArmadilloEntity;
 pub use axolotl::AxolotlEntity;
@@ -46,6 +47,7 @@ pub use sniffer::SnifferEntity;
 pub use squid::{GlowSquidEntity, Squid, SquidEntity};
 mod strider;
 pub use strider::StriderEntity;
+pub use turtle::TurtleEntity;
 mod panda;
 pub use panda::{PandaEntity, PandaGene};
 mod fox;
