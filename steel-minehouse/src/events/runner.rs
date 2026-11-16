@@ -27,9 +27,9 @@ use uuid::Uuid;
 
 use super::{
     actor::{Actor, Pose},
-    camera_path::{look, wrap},
+    camera_path::{CameraPath, look, wrap},
     journal::{Journal, ViewerState},
-    script::{Action, Cue, Gather, ShowScript},
+    script::{Action, Cue, Gather, PathSource, ShowScript},
 };
 use crate::moderation::format::render;
 
@@ -75,6 +75,8 @@ pub struct Cx<'a> {
 /// A show that is playing.
 pub struct Runner {
     script: Arc<ShowScript>,
+    /// The recorded camera paths of the script, read when the show started.
+    paths: FxHashMap<String, CameraPath>,
     world: Arc<World>,
     origin: DVec3,
     mode: Mode,
@@ -99,10 +101,17 @@ pub struct Runner {
 impl Runner {
     /// A run of `script` in `world`, at the script's stage.
     #[must_use]
-    pub fn new(script: Arc<ShowScript>, world: Arc<World>, origin: DVec3, mode: Mode) -> Self {
+    pub fn new(
+        script: Arc<ShowScript>,
+        paths: FxHashMap<String, CameraPath>,
+        world: Arc<World>,
+        origin: DVec3,
+        mode: Mode,
+    ) -> Self {
         let actors = script.actors.iter().map(|_| None).collect();
         Self {
             script,
+            paths,
             world,
             origin,
             mode,
@@ -556,10 +565,25 @@ impl Runner {
     fn update_cue(&mut self, cue: &Cue, held: &Held, progress: f64, cx: &mut Cx<'_>) {
         match (&cue.action, held) {
             (Action::Path { actor, ease, path }, _) => {
-                let pose = path.sample(ease.apply(progress));
-                let pos = self.abs(pose.pos);
-                if let Some(actor) = self.actor_or_spawn(*actor) {
-                    actor.move_to(pos, pose.yaw, pose.pitch);
+                let at = ease.apply(progress);
+                let pose = match path {
+                    PathSource::Inline(path) => Some(path.sample(at)),
+                    PathSource::Recorded { name, look: target } => {
+                        self.paths.get(name).map(|path| {
+                            let mut pose = path.sample(at);
+                            if let Some(target) = target {
+                                (pose.yaw, pose.pitch) = look(pose.pos, *target);
+                            }
+                            pose
+                        })
+                    }
+                };
+                // A recorded path that is missing was refused when the show started.
+                if let Some(pose) = pose {
+                    let pos = self.abs(pose.pos);
+                    if let Some(actor) = self.actor_or_spawn(*actor) {
+                        actor.move_to(pos, pose.yaw, pose.pitch);
+                    }
                 }
             }
             (Action::Shake { strength }, _) => {

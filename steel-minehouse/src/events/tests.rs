@@ -151,8 +151,8 @@ fn mistakes_name_the_place() {
             "https://",
         ),
         (
-            r#"{"actors": {"cam": {"type": "camera"}}, "cues": [{"do": "path", "path": "fly"}]}"#,
-            "записанные пути",
+            r#"{"actors": {"cam": {"type": "camera"}}, "cues": [{"do": "path", "path": "Fly Me"}]}"#,
+            "только a-z",
         ),
         (r#"{"logic": {"nodes": [{"type": "start"}]}}"#, "logic"),
         ("[]", "ожидаю объект"),

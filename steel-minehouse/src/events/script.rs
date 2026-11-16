@@ -146,7 +146,7 @@ pub enum Action {
     Path {
         actor: usize,
         ease: Ease,
-        path: CameraPath,
+        path: PathSource,
     },
     Shake {
         strength: f64,
@@ -286,6 +286,17 @@ struct TrackOrder {
 }
 
 impl ShowScript {
+    /// The recorded camera paths the cues fly, by name.
+    pub fn recorded_paths(&self) -> impl Iterator<Item = &str> {
+        self.cues.iter().filter_map(|cue| match &cue.action {
+            Action::Path {
+                path: PathSource::Recorded { name, .. },
+                ..
+            } => Some(name.as_str()),
+            _ => None,
+        })
+    }
+
     /// Reads the text of a show file. `stage` is the place set with `/show stage`, which
     /// wins over the one in the file.
     pub fn parse(id: &str, text: &str, stage: Option<Stage>) -> Result<Self, String> {
@@ -781,8 +792,8 @@ fn read_effect(kind: &str, object: &Object, actors: &[ActorDef]) -> Result<(u32,
     ))
 }
 
-/// The flight of a `path` cue: an orbit or points written in the cue.
-fn camera_path(object: &Object) -> Result<CameraPath, String> {
+/// The flight of a `path` cue: an orbit, points written in the cue, or a recorded path.
+fn camera_path(object: &Object) -> Result<PathSource, String> {
     let look = json::vec_opt(object, "look")?;
     let path = if let Some(orbit) = json::object(object, "orbit")? {
         CameraPath::orbit(
@@ -795,13 +806,39 @@ fn camera_path(object: &Object) -> Result<CameraPath, String> {
     } else if json::has(object, "points") {
         CameraPath::from_json(object)?
     } else {
-        json::string(object, "path")?;
-        return Err("записанные пути камеры (path) пока не перенесены в Steel".to_owned());
+        // A recorded path may not exist yet while the show is being made: it is read when the
+        // show starts.
+        let name = json::string(object, "path")?;
+        check_name(&name)?;
+        return Ok(PathSource::Recorded { name, look });
     };
-    Ok(match look {
+    Ok(PathSource::Inline(match look {
         Some(target) => path.looking_at(target),
         None => path,
-    })
+    }))
+}
+
+/// Where a `path` cue gets its flight.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PathSource {
+    /// Written in the cue: points or an orbit.
+    Inline(CameraPath),
+    /// Recorded with `/show cam` and kept beside the show; with `look` the camera keeps
+    /// looking at that place instead of where the admin looked.
+    Recorded { name: String, look: Option<DVec3> },
+}
+
+/// The name of something kept in a file of its own (a camera path): safe as a file name.
+pub fn check_name(name: &str) -> Result<(), String> {
+    let fine = !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        });
+    if fine {
+        Ok(())
+    } else {
+        Err(format!("имя \"{name}\": только a-z, 0-9, _ и -"))
+    }
 }
 
 /// Fields whose three numbers are a size or angles, not a place: they don't turn with the
