@@ -73,7 +73,8 @@ impl LightWorkWindowGate {
         })
     }
 
-    const fn windows_overlap(left: ChunkPos, right: ChunkPos) -> bool {
+    /// Whether the light cache windows centered on `left` and `right` share a chunk.
+    pub(crate) const fn windows_overlap(left: ChunkPos, right: ChunkPos) -> bool {
         let dx = left.0.x.abs_diff(right.0.x);
         let dz = left.0.y.abs_diff(right.0.y);
         dx <= LIGHT_WORK_CENTER_EXCLUSION_RADIUS as u32
