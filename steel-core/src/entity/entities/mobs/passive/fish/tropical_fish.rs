@@ -7,6 +7,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::entity_variant::TropicalFishPattern as RegistryTropicalFishPattern;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags::BiomeTag;
 use steel_registry::vanilla_entity_data::TropicalFishEntityData;
@@ -15,11 +16,13 @@ use steel_registry::{DyeColor, sound_events, vanilla_attributes, vanilla_blocks}
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
+use crate::behavior::InteractionResult;
 use crate::entity::SpawnRule;
 use crate::entity::ai::goal::FollowFlockLeaderGoal;
 use crate::entity::damage::DamageSource;
 use crate::entity::entity::EntityEventSource as _;
 use crate::entity::fish::check_surface_water_animal_spawn_rules;
+use crate::entity::save_default_data_to_bucket_tag;
 use crate::entity::{
     AbstractFish, AbstractSchoolingFish, DefaultEntityPush, Entity, EntityBase, EntityBaseLoad,
     EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
@@ -27,8 +30,16 @@ use crate::entity::{
     WATER_ANIMAL_AMBIENT_SOUND_INTERVAL, handle_water_animal_air_supply, init_abstract_fish,
     sync_dirty_mob_effects, water_animal_experience_reward, water_animal_spawn_unobstructed,
 };
+use crate::entity::{Bucketable, bucket_mob_pickup};
 use crate::physics::MoveResult;
+use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
+use steel_registry::data_components::vanilla_components::{
+    TROPICAL_FISH_BASE_COLOR, TROPICAL_FISH_PATTERN, TROPICAL_FISH_PATTERN_COLOR,
+};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
+use steel_utils::types::InteractionHand;
 
 /// Vanilla `TropicalFish.checkTropicalFishSpawnRules`: water below and a water
 /// block above, near the surface unless the biome lets them spawn at any height.
@@ -133,6 +144,11 @@ impl TropicalFishPattern {
     pub const fn packed_id(self) -> i32 {
         let (base, index) = self.base_and_index();
         base.id() | index << 8
+    }
+
+    /// The `tropical_fish/pattern` component value for this pattern.
+    pub(crate) const fn registry_pattern(self) -> RegistryTropicalFishPattern {
+        RegistryTropicalFishPattern::by_id(self.packed_id())
     }
 
     /// Vanilla `Pattern.byId`, a sparse map falling back to `KOB`.
@@ -365,6 +381,21 @@ impl Entity for TropicalFishEntity {
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
 
+    /// Vanilla `TropicalFish.applyImplicitComponents`.
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        let mut variant = self.variant();
+        if let Some(pattern) = item_stack.get(TROPICAL_FISH_PATTERN) {
+            variant.pattern = TropicalFishPattern::by_id(pattern.id());
+        }
+        if let Some(color) = item_stack.get(TROPICAL_FISH_BASE_COLOR) {
+            variant.base_color = *color;
+        }
+        if let Some(color) = item_stack.get(TROPICAL_FISH_PATTERN_COLOR) {
+            variant.pattern_color = *color;
+        }
+        self.set_packed_variant(variant.packed_id());
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_fish(nbt);
         nbt.insert("Variant", self.packed_variant());
@@ -433,6 +464,11 @@ impl LivingEntity for TropicalFishEntity {
 }
 
 impl Mob for TropicalFishEntity {
+    /// Vanilla `AbstractFish.mobInteract`.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        bucket_mob_pickup(player, hand, self).unwrap_or(InteractionResult::Pass)
+    }
+
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -520,6 +556,30 @@ impl Mob for TropicalFishEntity {
 }
 
 impl PathfinderMob for TropicalFishEntity {}
+
+impl Bucketable for TropicalFishEntity {
+    fn set_from_bucket_flag(&self, from_bucket: bool) {
+        AbstractFish::set_from_bucket(self, from_bucket);
+    }
+
+    /// Vanilla `TropicalFish.saveToBucketTag`.
+    fn save_to_bucket_tag(&self, bucket: &mut ItemStack) {
+        save_default_data_to_bucket_tag(self, bucket);
+        let variant = self.variant();
+        bucket.set(TROPICAL_FISH_PATTERN, variant.pattern.registry_pattern());
+        bucket.set(TROPICAL_FISH_BASE_COLOR, variant.base_color);
+        bucket.set(TROPICAL_FISH_PATTERN_COLOR, variant.pattern_color);
+    }
+
+    fn bucket_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::TROPICAL_FISH_BUCKET)
+    }
+
+    /// Vanilla `AbstractFish.getPickupSound`.
+    fn bucket_pickup_sound(&self) -> SoundEventRef {
+        &sound_events::ITEM_BUCKET_FILL_FISH
+    }
+}
 
 impl AbstractFish for TropicalFishEntity {
     fn is_from_bucket(&self) -> bool {

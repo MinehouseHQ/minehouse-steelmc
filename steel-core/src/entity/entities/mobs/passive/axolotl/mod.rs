@@ -31,7 +31,10 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::behavior::ITEM_BEHAVIORS;
-use crate::entity::ai::brain::memory_types::{ATTACK_TARGET, PLAY_DEAD_TICKS};
+use crate::behavior::InteractionResult;
+use crate::entity::ai::brain::memory_types::{
+    ATTACK_TARGET, HAS_HUNTING_COOLDOWN, PLAY_DEAD_TICKS,
+};
 use crate::entity::ai::brain::{Brain, Memories};
 use crate::entity::ai::navigation::PathNavigation;
 use crate::entity::ai::smooth_swimming::{
@@ -46,6 +49,10 @@ use crate::entity::{
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
     LivingEntityBase, Mob, MobBase, MobEffectInstance, PathfinderMob, SharedEntity, SpawnGroupData,
     SpawnRule, sync_dirty_mob_effects,
+};
+use crate::entity::{
+    Bucketable, bucket_mob_pickup, load_default_data_from_bucket_tag,
+    save_default_data_to_bucket_tag, update_bucket_entity_data,
 };
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
@@ -498,6 +505,12 @@ impl Animal for AxolotlEntity {
 }
 
 impl Mob for AxolotlEntity {
+    /// Vanilla `Axolotl.mobInteract`.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        bucket_mob_pickup(player, hand, self)
+            .unwrap_or_else(|| Animal::mob_interact_animal(self, player, hand))
+    }
+
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -657,6 +670,52 @@ impl Mob for AxolotlEntity {
 
     fn set_mob_flags(&self, flags: i8) {
         self.entity_data.lock().mob_mut().mob_flags.set(flags);
+    }
+}
+
+impl Bucketable for AxolotlEntity {
+    fn set_from_bucket_flag(&self, from_bucket: bool) {
+        self.set_from_bucket(from_bucket);
+    }
+
+    /// Vanilla `Axolotl.saveToBucketTag`.
+    fn save_to_bucket_tag(&self, bucket: &mut ItemStack) {
+        save_default_data_to_bucket_tag(self, bucket);
+        bucket.set(AXOLOTL_VARIANT, self.variant());
+        let hunting_cooldown = {
+            let memories = self.brain_memories_lock();
+            memories
+                .has_value(&HAS_HUNTING_COOLDOWN)
+                .then(|| memories.time_until_expiry(&HAS_HUNTING_COOLDOWN))
+                .flatten()
+        };
+        update_bucket_entity_data(bucket, |tag| {
+            tag.insert("Age", self.get_age());
+            tag.insert("AgeLocked", i8::from(self.is_age_locked()));
+            if let Some(cooldown) = hunting_cooldown {
+                tag.insert("HuntingCooldown", cooldown);
+            }
+        });
+    }
+
+    /// Vanilla `Axolotl.loadFromBucketTag`.
+    fn load_from_bucket_tag(&self, tag: &NbtCompound) {
+        load_default_data_from_bucket_tag(self, tag);
+        self.set_age(tag.int("Age").unwrap_or(0));
+        self.set_age_locked(tag.byte("AgeLocked").is_some_and(|value| value != 0));
+        let mut memories = self.brain_memories_lock();
+        match tag.long("HuntingCooldown") {
+            Some(cooldown) => memories.set_with_expiry(&HAS_HUNTING_COOLDOWN, true, cooldown),
+            None => memories.set(&HAS_HUNTING_COOLDOWN, None),
+        }
+    }
+
+    fn bucket_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::AXOLOTL_BUCKET)
+    }
+
+    fn bucket_pickup_sound(&self) -> SoundEventRef {
+        &sound_events::ITEM_BUCKET_FILL_AXOLOTL
     }
 }
 

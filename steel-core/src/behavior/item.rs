@@ -24,7 +24,7 @@ use steel_utils::types::{InteractionHand, SignTextSlot};
 use text_components::{Modifier as _, TextComponent};
 
 use crate::behavior::items::{
-    BannerItem, BlockItem, DefaultItemBehavior, SpawnEggItem, block_transformer,
+    BannerItem, BlockItem, DefaultItemBehavior, MobBucketItem, SpawnEggItem, block_transformer,
 };
 use crate::behavior::projectile_item::ProjectileItem;
 use crate::behavior::{
@@ -298,6 +298,11 @@ pub trait ItemBehavior: Send + Sync {
     #[must_use]
     fn can_fit_inside_container_items(&self) -> bool {
         true
+    }
+
+    /// Returns this item behavior as a `MobBucketItem`.
+    fn as_mob_bucket(&self) -> Option<&MobBucketItem> {
+        None
     }
 
     /// Returns this item behavior as a `SpawnEggItem`.

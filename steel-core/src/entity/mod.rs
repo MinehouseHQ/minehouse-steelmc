@@ -794,6 +794,7 @@ pub mod attribute;
 mod base;
 pub(crate) mod block_attached_entity;
 pub(crate) mod block_effects;
+mod bucketable;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;
@@ -862,6 +863,10 @@ pub use base::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
     EntityMovementProgress, EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
     PendingWorldChangeToken,
+};
+pub use bucketable::{
+    Bucketable, bucket_mob_pickup, load_default_data_from_bucket_tag,
+    save_default_data_to_bucket_tag, update_bucket_entity_data,
 };
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,

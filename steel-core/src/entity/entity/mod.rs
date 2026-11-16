@@ -12,7 +12,7 @@ use crate::entity::entities::objects::vehicles::{
 };
 use crate::entity::entities::{Guardian, LightningBoltEntity, Squid};
 use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
-use crate::entity::{leash::Leashable, pushing::EntityPush};
+use crate::entity::{Bucketable, leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
 use crate::scoreboard::{PlayerTeam, TeamRules};
@@ -1824,6 +1824,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.
     fn as_leashable(&self) -> Option<&dyn Leashable> {
         try_as_dyn::<Self, dyn Leashable>(self)
+    }
+
+    /// Returns this entity as a [`Bucketable`] when a water bucket scoops it up.
+    fn as_bucketable(&self) -> Option<&dyn Bucketable> {
+        try_as_dyn::<Self, dyn Bucketable>(self)
     }
 
     /// Returns this entity as a `Shearable` when shears can be used on it.

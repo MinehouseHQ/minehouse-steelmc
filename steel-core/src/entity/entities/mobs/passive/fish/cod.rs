@@ -11,6 +11,7 @@ use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
+use crate::behavior::InteractionResult;
 use crate::entity::SpawnRule;
 use crate::entity::ai::goal::FollowFlockLeaderGoal;
 use crate::entity::damage::DamageSource;
@@ -23,8 +24,13 @@ use crate::entity::{
     handle_water_animal_air_supply, init_abstract_fish, sync_dirty_mob_effects,
     water_animal_experience_reward, water_animal_spawn_unobstructed,
 };
+use crate::entity::{Bucketable, bucket_mob_pickup};
 use crate::physics::MoveResult;
+use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
+use steel_utils::types::InteractionHand;
 
 /// Vanilla cod: a schooling fish.
 #[entity_behavior(class = "Cod", spawn_rule)]
@@ -208,6 +214,11 @@ impl LivingEntity for CodEntity {
 }
 
 impl Mob for CodEntity {
+    /// Vanilla `AbstractFish.mobInteract`.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        bucket_mob_pickup(player, hand, self).unwrap_or(InteractionResult::Pass)
+    }
+
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -267,6 +278,21 @@ impl Mob for CodEntity {
 }
 
 impl PathfinderMob for CodEntity {}
+
+impl Bucketable for CodEntity {
+    fn set_from_bucket_flag(&self, from_bucket: bool) {
+        AbstractFish::set_from_bucket(self, from_bucket);
+    }
+
+    fn bucket_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::COD_BUCKET)
+    }
+
+    /// Vanilla `AbstractFish.getPickupSound`.
+    fn bucket_pickup_sound(&self) -> SoundEventRef {
+        &sound_events::ITEM_BUCKET_FILL_FISH
+    }
+}
 
 impl AbstractFish for CodEntity {
     fn is_from_bucket(&self) -> bool {
