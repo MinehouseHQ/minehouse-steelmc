@@ -45,6 +45,7 @@ use crate::command::{
 #[cfg(any(test, feature = "test-framework"))]
 use crate::config::ResolvedDomainConfig;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
+use crate::datapack::PackRepositories;
 use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
@@ -281,6 +282,7 @@ pub async fn test_server_with_worlds_and_config(
         scheduled_events,
         stopwatches,
         functions: ServerFunctions::default(),
+        pack_repositories: PackRepositories::default(),
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
@@ -566,6 +568,8 @@ pub struct Server {
     pub(crate) stopwatches: DomainStopwatches,
     /// Data pack functions isolated by Steel domain.
     pub(crate) functions: ServerFunctions,
+    /// Each Steel domain's data packs and its selection of them.
+    pub(crate) pack_repositories: PackRepositories,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -935,6 +939,7 @@ impl Server {
             scheduled_events,
             stopwatches,
             functions: ServerFunctions::default(),
+            pack_repositories: PackRepositories::default(),
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),

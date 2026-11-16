@@ -31,13 +31,14 @@ impl FunctionLibrary {
     ///
     /// A function that fails to compile and a tag file that fails to parse are
     /// logged and left out, as vanilla does.
-    pub(crate) fn load(
-        packs: &[DataPack],
+    pub(crate) fn load<'pack>(
+        packs: impl IntoIterator<Item = &'pack DataPack>,
         dispatcher: &CommandDispatcher,
         compilation_source: &CommandSource,
     ) -> Self {
+        let packs = packs.into_iter().collect::<Vec<_>>();
         let mut files = BTreeMap::new();
-        for pack in packs {
+        for pack in &packs {
             for resource in pack.list_resources("function", ".mcfunction") {
                 files.insert(resource.id, resource.contents);
             }
@@ -54,7 +55,7 @@ impl FunctionLibrary {
             }
         }
 
-        let tags = build_tags(&load_tag_files(packs), &functions);
+        let tags = build_tags(&load_tag_files(&packs), &functions);
         Self { functions, tags }
     }
 
@@ -175,7 +176,7 @@ struct TagEntry {
 
 /// Vanilla `TagLoader.load`: each tag's entries across every pack, in pack
 /// order, a `"replace": true` file dropping the entries before it.
-fn load_tag_files(packs: &[DataPack]) -> BTreeMap<Identifier, Vec<TagEntry>> {
+fn load_tag_files(packs: &[&DataPack]) -> BTreeMap<Identifier, Vec<TagEntry>> {
     let mut tags: BTreeMap<Identifier, Vec<TagEntry>> = BTreeMap::new();
     for pack in packs {
         for resource in pack.list_resources("tags/function", ".json") {
