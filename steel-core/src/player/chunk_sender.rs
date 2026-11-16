@@ -446,12 +446,6 @@ impl ChunkSender {
         self.sent_chunks.contains(&pos)
     }
 
-    /// Returns a snapshot of all sent chunks for this player.
-    #[must_use]
-    pub fn sent_chunks_snapshot(&self) -> FxHashSet<ChunkPos> {
-        self.sent_chunks.clone()
-    }
-
     #[cfg(test)]
     pub(crate) fn mark_chunk_sent_for_test(&mut self, pos: ChunkPos) {
         self.pending_chunks.remove(&pos);

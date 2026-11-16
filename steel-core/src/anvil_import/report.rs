@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use simdnbt::owned::NbtCompound;
 use steel_utils::ChunkPos;
 
 /// What an import converted, skipped and replaced.
@@ -32,6 +33,10 @@ pub struct ImportReport {
     pub unknown_biomes: BTreeMap<String, usize>,
     /// Block entities dropped because Steel does not know their type.
     pub unknown_block_entities: BTreeMap<String, usize>,
+    /// The dropped block entities themselves, as they were saved (with `id`, `x`, `y`, `z`),
+    /// for an extension that keeps their data another way. No more than
+    /// [`Self::KEPT_BLOCK_ENTITIES`] are kept.
+    pub dropped_block_entities: Vec<NbtCompound>,
     /// Entities dropped because Steel does not know their type, passengers included.
     pub unknown_entities: BTreeMap<String, usize>,
     /// Structure starts that were not converted, by structure id.
@@ -39,11 +44,16 @@ pub struct ImportReport {
     /// Records that were malformed and dropped (ticks, block entities, entities outside the
     /// chunk or with missing fields), by kind.
     pub dropped_records: BTreeMap<&'static str, usize>,
+    /// What the POI records that could not be read look like: their fields and types.
+    pub malformed_poi_shapes: BTreeMap<String, usize>,
     /// Full chunks whose light was not marked correct by vanilla (`isLightOn` false).
     pub chunks_without_light: usize,
 }
 
 impl ImportReport {
+    /// How many dropped block entities a report keeps the data of.
+    pub const KEPT_BLOCK_ENTITIES: usize = 100_000;
+
     /// Adds another report's counts to this one.
     pub fn merge(&mut self, other: Self) {
         self.regions += other.regions;
@@ -60,12 +70,16 @@ impl ImportReport {
             &mut self.unknown_block_entities,
             other.unknown_block_entities,
         );
+        let room = Self::KEPT_BLOCK_ENTITIES.saturating_sub(self.dropped_block_entities.len());
+        self.dropped_block_entities
+            .extend(other.dropped_block_entities.into_iter().take(room));
         merge_counts(&mut self.unknown_entities, other.unknown_entities);
         merge_counts(
             &mut self.structure_starts_dropped,
             other.structure_starts_dropped,
         );
         merge_counts(&mut self.dropped_records, other.dropped_records);
+        merge_counts(&mut self.malformed_poi_shapes, other.malformed_poi_shapes);
         self.chunks_without_light += other.chunks_without_light;
     }
 
@@ -130,6 +144,11 @@ impl fmt::Display for ImportReport {
             &self.structure_starts_dropped,
         )?;
         write_counts(f, "Malformed records dropped", &self.dropped_records)?;
+        write_counts(
+            f,
+            "POI records that could not be read, by their fields",
+            &self.malformed_poi_shapes,
+        )?;
         if self.chunks_without_light > 0 {
             writeln!(
                 f,

@@ -49,7 +49,7 @@ use crate::chunk::status::ChunkStatus;
 use crate::chunk_saver::{PersistentChunk, PreparedChunkSave, RegionManager};
 
 pub use chunk::{ChunkConversion, ChunkDimension, convert_chunk};
-pub use level::{LevelReport, import_level_data};
+pub use level::{LevelReport, import_level_data, read_gzip_root};
 pub use players::{PlayerReport, import_players};
 pub use region::AnvilRegion;
 pub use report::ImportReport;

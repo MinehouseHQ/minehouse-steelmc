@@ -86,11 +86,13 @@ impl ChunkMap {
 
         // Entity visibility also depends on exact player position, not only
         // chunk-view changes. Vanilla refreshes tracked entities for accepted
-        // movement within the same chunk as well.
-        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
+        // movement within the same chunk as well. The sent-chunk check locks the sender
+        // per candidate instead of cloning every sent chunk on each move packet.
         world
             .entity_tracker()
-            .update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
+            .update_player(player, &new_view, |chunk| {
+                player.chunk_sender().lock().is_chunk_sent(chunk)
+            });
     }
 
     /// Removes a player from the chunk map.
