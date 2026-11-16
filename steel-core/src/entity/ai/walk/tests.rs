@@ -638,3 +638,25 @@ fn neighbor_positions(
         .filter_map(|hash| evaluator.node(hash).map(|node| (node.x, node.y, node.z)))
         .collect()
 }
+
+#[test]
+fn cached_path_tags_match_block_tags_for_every_block() {
+    use super::path_evaluator::path_tags;
+    use steel_registry::vanilla_block_tags::BlockTag;
+
+    init_vanilla_registry();
+    for (_, block) in REGISTRY.blocks.iter() {
+        assert_eq!(
+            path_tags::of(block),
+            path_tags::compute(block),
+            "{:?}",
+            block.key
+        );
+    }
+    assert_ne!(
+        path_tags::of(&vanilla_blocks::OAK_FENCE) & path_tags::FENCES,
+        0
+    );
+    assert!(vanilla_blocks::OAK_FENCE.has_tag(&BlockTag::FENCES));
+    assert_eq!(path_tags::of(&vanilla_blocks::STONE), 0);
+}

@@ -733,11 +733,10 @@ impl World {
     ) -> Option<Arc<Player>> {
         let max_distance_sqr = max_distance * max_distance;
         let mut nearest: Option<(Arc<Player>, f64)> = None;
+        let positions = self.player_positions_in_tick();
         self.players.iter_players(|_, player| {
             if predicate(player) {
-                let distance_sqr = self
-                    .player_position_in_tick(player)
-                    .distance_squared(position);
+                let distance_sqr = positions.position(player).distance_squared(position);
                 if nearest_player_distance_in_range(distance_sqr, max_distance, max_distance_sqr)
                     && nearest
                         .as_ref()
@@ -755,13 +754,12 @@ impl World {
     #[must_use]
     pub fn nearest_player_distance_sqr(&self, position: DVec3) -> Option<f64> {
         let mut nearest = None;
+        let positions = self.player_positions_in_tick();
         self.players.iter_players(|_, player| {
             if player.is_spectator() {
                 return true;
             }
-            let distance_sqr = self
-                .player_position_in_tick(player)
-                .distance_squared(position);
+            let distance_sqr = positions.position(player).distance_squared(position);
             if nearest.is_none_or(|current| distance_sqr < current) {
                 nearest = Some(distance_sqr);
             }
