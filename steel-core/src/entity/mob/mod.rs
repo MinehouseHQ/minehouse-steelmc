@@ -55,8 +55,8 @@ use crate::entity::conversion::{AfterConversion, convert_to as convert_mob};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
-    SharedEntity, SpawnGroupData, WeakEntity, level_contains_any_liquid,
+    ConversionParams, Entity, EntitySpawnReason, KnockbackCause, LivingEntity, LivingTravelInput,
+    RemovalReason, SharedEntity, SpawnGroupData, WeakEntity, level_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -1493,6 +1493,7 @@ pub trait Mob: LivingEntity + Leashable {
                 target.as_ref(),
                 self.get_attack_knockback(target.as_ref(), &weapon_item, &damage_source),
                 old_movement,
+                &KnockbackCause::new(&damage_source, damage, true),
             );
             self.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
                 if stack.is_empty() {
@@ -1577,6 +1578,7 @@ pub trait Mob: LivingEntity + Leashable {
         target: &dyn Entity,
         knockback_amount: f64,
         _old_movement: DVec3,
+        cause: &KnockbackCause<'_>,
     ) {
         if knockback_amount <= 0.0 {
             return;
@@ -1588,7 +1590,7 @@ pub trait Mob: LivingEntity + Leashable {
         let yaw_radians = self.rotation().0.to_radians();
         let yaw_sin = f64::from(trig::sin(yaw_radians));
         let yaw_cos = f64::from(trig::cos(yaw_radians));
-        living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
+        living_target.knockback_with_source(knockback_amount, yaw_sin, -yaw_cos, cause);
 
         let velocity = self.velocity();
         self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));

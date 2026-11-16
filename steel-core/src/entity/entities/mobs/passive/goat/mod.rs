@@ -61,7 +61,7 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
-    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, KnockbackCause, LivingEntity,
     LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
     sync_dirty_mob_effects,
 };
@@ -674,10 +674,11 @@ impl RamTarget {
         // ever blocked here.
         let blocking_factor = 1.0_f32;
         if let Some(target) = target.as_living_entity() {
-            target.knockback(
+            target.knockback_with_source(
                 f64::from(blocking_factor * speed_factor) * Self::knockback_force(goat),
                 self.ram_direction.x,
                 self.ram_direction.z,
+                &KnockbackCause::new(&damage_source, damage, false),
             );
         }
         Self::finish_ram(goat);

@@ -40,7 +40,7 @@ impl TntBlock {
         Self { block }
     }
 
-    fn primed_entity(
+    pub(crate) fn primed_entity(
         world: &Arc<World>,
         pos: BlockPos,
         owner: Option<&dyn Entity>,

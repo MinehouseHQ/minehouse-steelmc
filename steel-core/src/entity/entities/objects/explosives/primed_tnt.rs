@@ -128,6 +128,13 @@ impl ImmutableExplosionBlockCalculator for NetherPortalPreservingExplosionDamage
 static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalculator =
     NetherPortalPreservingExplosionDamageCalculator;
 
+/// Vanilla `PrimedTnt.USED_PORTAL_DAMAGE_CALCULATOR`: an explosion from
+/// something that just used a portal leaves nether portal blocks intact.
+pub(crate) fn use_portal_damage_calculator(options: &mut ExplosionOptions<'_>) {
+    options.damage_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
+    options.immutable_block_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
+}
+
 /// Vanilla primed TNT entity.
 #[entity_behavior(class = "PrimedTnt")]
 pub struct PrimedTntEntity {
@@ -260,8 +267,7 @@ impl PrimedTntEntity {
         let mut options = ExplosionOptions::new(center, explosion_power, ExplosionInteraction::Tnt);
         options.source = Some(Arc::clone(self) as SharedEntity);
         if used_portal {
-            options.damage_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
-            options.immutable_block_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
+            use_portal_damage_calculator(&mut options);
         } else {
             options.immutable_block_calculator = Some(&DefaultExplosionDamageCalculator);
         }

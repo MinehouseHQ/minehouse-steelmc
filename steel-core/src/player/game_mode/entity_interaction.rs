@@ -12,7 +12,7 @@ use super::{
 
 use crate::entity::entities::EnderDragonPartEntity;
 use crate::entity::entities::objects::vehicles::minecart_observer;
-use crate::entity::{EntityReference, ProjectileDeflection};
+use crate::entity::{EntityReference, KnockbackCause, ProjectileDeflection};
 use crate::player::food_data::food_constants;
 use crate::player::input_observer::player_input_observer;
 use steel_math::trig;
@@ -147,13 +147,14 @@ impl Player {
         entity: &dyn Entity,
         knockback_amount: f64,
         old_movement: DVec3,
+        cause: &KnockbackCause<'_>,
     ) {
         if knockback_amount > 0.0 {
             let yaw_radians = self.rotation().0.to_radians();
             let yaw_sin = f64::from(trig::sin(yaw_radians));
             let yaw_cos = f64::from(trig::cos(yaw_radians));
             if let Some(living_target) = entity.as_living_entity() {
-                living_target.knockback(knockback_amount, yaw_sin, -yaw_cos);
+                living_target.knockback_with_source(knockback_amount, yaw_sin, -yaw_cos, cause);
             } else {
                 entity.push_impulse(DVec3::new(
                     -yaw_sin * knockback_amount,
@@ -388,11 +389,17 @@ impl Player {
                 .level()
                 .is_some_and(|world| entity.hurt(&world, &damage_source, total_damage));
         if deals_knockback {
-            self.cause_extra_knockback(entity, 0.4, old_movement);
+            self.cause_extra_knockback(
+                entity,
+                0.4,
+                old_movement,
+                &KnockbackCause::new(&damage_source, total_damage, false),
+            );
             self.cause_extra_knockback(
                 entity,
                 Self::get_knockback(0.0, &attacking_item, &enchantment_context),
                 old_movement,
+                &KnockbackCause::new(&damage_source, total_damage, true),
             );
         }
         let mut dismounted = false;
@@ -559,6 +566,7 @@ impl Player {
                     Self::get_knockback(attack_knockback, &attacking_item, &enchantment_context)
                         + sprint_knockback,
                     old_movement,
+                    &KnockbackCause::new(&damage_source, total_damage, true),
                 );
                 if sweep_attack {
                     self.do_sweep_attack(
@@ -687,7 +695,12 @@ impl Player {
                 enchantment_helper::modify_damage(attacking_item, &context, sweep_damage)
                     * attack_strength_scale;
             if nearby.hurt(world, damage_source, enchanted_damage) {
-                living.knockback(0.4, yaw_sin, -yaw_cos);
+                living.knockback_with_source(
+                    0.4,
+                    yaw_sin,
+                    -yaw_cos,
+                    &KnockbackCause::new(damage_source, enchanted_damage, false),
+                );
                 let post_attack_context = EnchantmentPostAttackContext::new(&nearby, damage_source);
                 enchantment_helper::do_post_attack_effects_with_item_source(
                     world,
