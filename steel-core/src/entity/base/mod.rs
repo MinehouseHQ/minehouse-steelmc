@@ -909,15 +909,20 @@ impl EntityBase {
 
         passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
         let passenger_ref = Arc::downgrade(passenger);
-        let mut vehicle_relationships = vehicle.base().relationships.lock();
-        let first_passenger_is_player = vehicle_relationships
-            .first_passenger()
-            .is_some_and(|first| first.entity_type() == &vanilla_entities::PLAYER);
-        if passenger.entity_type() == &vanilla_entities::PLAYER && !first_passenger_is_player {
-            vehicle_relationships.passengers.insert(0, passenger_ref);
-        } else {
-            vehicle_relationships.passengers.push(passenger_ref);
-        }
+        let was_vehicle = {
+            let mut vehicle_relationships = vehicle.base().relationships.lock();
+            let was_vehicle = vehicle_relationships.first_passenger().is_some();
+            let first_passenger_is_player = vehicle_relationships
+                .first_passenger()
+                .is_some_and(|first| first.entity_type() == &vanilla_entities::PLAYER);
+            if passenger.entity_type() == &vanilla_entities::PLAYER && !first_passenger_is_player {
+                vehicle_relationships.passengers.insert(0, passenger_ref);
+            } else {
+                vehicle_relationships.passengers.push(passenger_ref);
+            }
+            was_vehicle
+        };
+        vehicle.on_passenger_added(was_vehicle);
     }
 
     /// Sets the vanilla boarding cooldown in ticks.
@@ -1072,24 +1077,28 @@ impl EntityBase {
         };
 
         if let Some(vehicle) = vehicle {
-            vehicle.base().remove_passenger_id(self.id);
+            if vehicle.base().remove_passenger_id(self.id) {
+                vehicle.on_passenger_removed();
+            }
             self.set_boarding_cooldown(BOARDING_COOLDOWN);
         }
     }
 
+    /// Vanilla `ejectPassengers`: each passenger gets off in turn, so the
+    /// vehicle hears every removal.
     fn eject_passenger_relationships(&self) {
-        let passengers = {
-            let mut relationships = self.relationships.lock();
-            let passengers = relationships.passengers();
-            relationships.passengers.clear();
-            passengers
-        };
-
+        let passengers = self.relationships.lock().passengers();
         for passenger in passengers {
+            let vehicle = passenger.vehicle();
+            self.remove_passenger_id(passenger.id());
             if passenger.base().clear_vehicle_if(self.id) {
                 passenger.base().set_boarding_cooldown(BOARDING_COOLDOWN);
             }
+            if let Some(vehicle) = vehicle.filter(|vehicle| vehicle.id() == self.id) {
+                vehicle.on_passenger_removed();
+            }
         }
+        self.relationships.lock().passengers.clear();
     }
 
     fn clear_vehicle_if(&self, vehicle_id: i32) -> bool {

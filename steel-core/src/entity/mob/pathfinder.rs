@@ -51,6 +51,7 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
             NavigationKind::Flying => mob.position(),
         };
         let clip_fluid = match kind {
+            NavigationKind::Flying if navigation.flies_through_fluids() => ClipFluid::None,
             NavigationKind::Flying => ClipFluid::Any,
             NavigationKind::Ground
             | NavigationKind::WaterBound { .. }

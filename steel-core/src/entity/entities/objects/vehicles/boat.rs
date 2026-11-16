@@ -425,6 +425,11 @@ macro_rules! boat_entity {
             fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
                 self.boat.leash_data()
             }
+
+            /// Vanilla `AbstractBoat.supportQuadLeash`.
+            fn supports_quad_leash(&self) -> bool {
+                true
+            }
         }
     };
     (@entity_methods) => {

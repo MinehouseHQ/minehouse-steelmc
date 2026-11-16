@@ -468,7 +468,9 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
     )
 }
 
-fn collided_with_fluid(
+/// Vanilla `Entity.collidedWithFluid`: whether the entity's box sweeping
+/// from `from` to `to` touches the fluid at `block_pos`.
+pub(crate) fn collided_with_fluid(
     world: &Arc<World>,
     fluid_state: FluidState,
     block_pos: BlockPos,

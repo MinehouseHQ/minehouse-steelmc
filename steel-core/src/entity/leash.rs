@@ -23,6 +23,16 @@ pub const LEASH_TORSIONAL_ELASTICITY: f64 = 10.0;
 pub const LEASH_STIFFNESS: f64 = 0.11;
 pub const ENTITY_LEASH_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.5);
 pub const LEASHER_ATTACHMENT_POINT: DVec3 = DVec3::new(0.0, 0.5, 0.0);
+/// Vanilla `SHARED_QUAD_ATTACHMENT_POINTS`: the four corners a quad leash
+/// ties to, on both ends.
+pub const SHARED_QUAD_ATTACHMENT_POINTS: [DVec3; 4] = [
+    DVec3::new(-0.5, 0.5, 0.5),
+    DVec3::new(-0.5, 0.5, -0.5),
+    DVec3::new(0.5, 0.5, -0.5),
+    DVec3::new(0.5, 0.5, 0.5),
+];
+/// Vanilla's quad connection averages its four wrenches.
+const QUAD_WRENCH_SCALE: f64 = 0.25;
 pub const DELAYED_LEASH_DROP_TICKS: i32 = 100;
 pub const BASE_HORIZONTAL_FRICTION: f64 = 0.91;
 /// Angular leash friction in water or lava.
@@ -91,6 +101,12 @@ pub trait Leashable: Entity {
         LEASH_ELASTIC_DISTANCE
     }
 
+    /// Vanilla `supportQuadLeash`: whether a holder that supports quad
+    /// leashes ties this entity by its four corners.
+    fn supports_quad_leash(&self) -> bool {
+        false
+    }
+
     /// Called when this entity is leashed to `holder`.
     fn when_leashed_to(&self, holder: &dyn Entity) {
         holder.notify_leash_holder(self.as_entity_event_source());
@@ -115,13 +131,31 @@ pub trait Leashable: Entity {
     /// Performs the calculations to pull this entity towards its leash holder and applies
     /// velocity to it.
     fn check_elastic_interactions(&self, holder: &dyn Entity) -> bool {
-        let Some(wrench) = compute_elastic_interaction(
+        let quad_connection = holder.supports_quad_leash_as_holder() && self.supports_quad_leash();
+        let (entity_points, holder_points): (&[DVec3], &[DVec3]) = if quad_connection {
+            (
+                &SHARED_QUAD_ATTACHMENT_POINTS,
+                &SHARED_QUAD_ATTACHMENT_POINTS,
+            )
+        } else {
+            (
+                &[ENTITY_LEASH_ATTACHMENT_POINT],
+                &[LEASHER_ATTACHMENT_POINT],
+            )
+        };
+        let Some(mut wrench) = compute_elastic_interaction(
             self.as_entity_event_source(),
             holder,
             self.leash_elastic_distance(),
+            entity_points,
+            holder_points,
         ) else {
             return false;
         };
+        if quad_connection {
+            wrench.force *= QUAD_WRENCH_SCALE;
+            wrench.torque *= QUAD_WRENCH_SCALE;
+        }
 
         {
             let mut leash_data = self.leash_data().lock();
@@ -491,32 +525,40 @@ pub(super) fn axis_specific_leash_elasticity(force: DVec3) -> DVec3 {
     force * LEASH_AXIS_SPECIFIC_ELASTICITY
 }
 
+/// Vanilla `computeElasticInteraction`: one spring per attachment point
+/// pair, summed like `Wrench.accumulate`; `None` when every spring is slack.
 pub(super) fn compute_elastic_interaction(
     entity: &dyn Entity,
     holder: &dyn Entity,
     slack_distance: f64,
+    entity_points: &[DVec3],
+    holder_points: &[DVec3],
 ) -> Option<LeashWrench> {
+    let current_movement = leash_holder_movement(entity);
     let entity_y_rot = entity.rotation().0 * DEG_TO_RAD;
-    let entity_attach_vector = y_rot(
-        ENTITY_LEASH_ATTACHMENT_POINT * leash_dimensions(entity),
-        -entity_y_rot,
-    );
-    let entity_attach_pos = entity.position() + entity_attach_vector;
-
+    let entity_dimensions = leash_dimensions(entity);
     let holder_y_rot = holder.rotation().0 * DEG_TO_RAD;
-    let holder_attach_vector = y_rot(
-        LEASHER_ATTACHMENT_POINT * leash_dimensions(holder),
-        -holder_y_rot,
-    );
-    let holder_attach_pos = holder.position() + holder_attach_vector;
-
-    compute_dampened_spring_interaction(
-        holder_attach_pos,
-        entity_attach_pos,
-        slack_distance,
-        leash_holder_movement(entity),
-        entity_attach_vector,
-    )
+    let holder_dimensions = leash_dimensions(holder);
+    let mut total: Option<LeashWrench> = None;
+    for (entity_point, holder_point) in entity_points.iter().zip(holder_points) {
+        let entity_attach_vector = y_rot(*entity_point * entity_dimensions, -entity_y_rot);
+        let entity_attach_pos = entity.position() + entity_attach_vector;
+        let holder_attach_vector = y_rot(*holder_point * holder_dimensions, -holder_y_rot);
+        let holder_attach_pos = holder.position() + holder_attach_vector;
+        if let Some(wrench) = compute_dampened_spring_interaction(
+            holder_attach_pos,
+            entity_attach_pos,
+            slack_distance,
+            current_movement,
+            entity_attach_vector,
+        ) {
+            total = Some(match total {
+                Some(sum) => LeashWrench::new(sum.force + wrench.force, sum.torque + wrench.torque),
+                None => wrench,
+            });
+        }
+    }
+    total
 }
 
 pub(super) fn compute_dampened_spring_interaction(

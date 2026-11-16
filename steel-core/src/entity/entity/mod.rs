@@ -1503,6 +1503,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called by leashables while this entity is their live leash holder.
     fn notify_leash_holder(&self, _leashable: &dyn Entity) {}
 
+    /// Vanilla `supportQuadLeashAsHolder`: whether this holder ties the
+    /// entities that support it by their four corners.
+    fn supports_quad_leash_as_holder(&self) -> bool {
+        false
+    }
+
+    /// Vanilla `addPassenger` overrides: runs once a passenger got on.
+    /// `was_vehicle` tells whether it already carried someone before.
+    fn on_passenger_added(&self, _was_vehicle: bool) {}
+
+    /// Vanilla `removePassenger` overrides: runs once a passenger got off.
+    fn on_passenger_removed(&self) {}
+
     /// Called when a leashable stops using this entity as its live leash holder.
     fn notify_leashee_removed(&self, _leashable: &dyn Entity) {}
 
@@ -2136,6 +2149,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_fall_flying(fall_flying);
         }
+    }
+
+    /// Vanilla `isInClouds`: whether the entity overlaps the 4-block band of
+    /// clouds above the dimension's cloud height.
+    fn is_in_clouds(&self) -> bool {
+        let Some(cloud_bottom) = self.level().and_then(|world| world.cloud_bottom()) else {
+            return false;
+        };
+        let y = self.position().y;
+        let height = f64::from(self.base().dimensions().height);
+        y + height >= f64::from(cloud_bottom) && y <= f64::from(cloud_bottom + 4.0)
     }
 
     /// Returns whether vanilla excludes this vehicle from floating kicks.

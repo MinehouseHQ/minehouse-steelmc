@@ -39,6 +39,21 @@ pub fn wrap_degrees(mut degrees: f32) -> f32 {
     degrees
 }
 
+/// Wraps an angle in degrees to the nearest right angle's `[-45, 45)`
+/// offset (vanilla `Mth.wrapDegrees90`).
+#[must_use]
+pub fn wrap_degrees_90(degrees: f32) -> f32 {
+    let half_right_angle = DEGREE_90 / 2.0;
+    let mut normalized = degrees % DEGREE_90;
+    if normalized >= half_right_angle {
+        normalized -= DEGREE_90;
+    }
+    if normalized < -half_right_angle {
+        normalized += DEGREE_90;
+    }
+    normalized
+}
+
 /// Converts an angle in degrees to vanilla's 16-segment rotation value.
 #[must_use]
 pub fn convert_to_rotation_segment(degrees: f32) -> u8 {
@@ -47,7 +62,7 @@ pub fn convert_to_rotation_segment(degrees: f32) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{convert_to_rotation_segment, wrap_degrees};
+    use super::{convert_to_rotation_segment, wrap_degrees, wrap_degrees_90};
 
     #[test]
     fn wrap_degrees_matches_vanilla_range() {
@@ -55,6 +70,14 @@ mod tests {
         assert_eq!(wrap_degrees(-181.0).to_bits(), 179.0_f32.to_bits());
         assert_eq!(wrap_degrees(90.0).to_bits(), 90.0_f32.to_bits());
         assert_eq!(wrap_degrees(540.0).to_bits(), (-180.0_f32).to_bits());
+    }
+
+    #[test]
+    fn wrap_degrees_90_snaps_to_the_nearest_right_angle() {
+        assert_eq!(wrap_degrees_90(100.0).to_bits(), 10.0_f32.to_bits());
+        assert_eq!(wrap_degrees_90(45.0).to_bits(), (-45.0_f32).to_bits());
+        assert_eq!(wrap_degrees_90(-50.0).to_bits(), 40.0_f32.to_bits());
+        assert_eq!(wrap_degrees_90(-135.0).to_bits(), (-45.0_f32).to_bits());
     }
 
     #[test]

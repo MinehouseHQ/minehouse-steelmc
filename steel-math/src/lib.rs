@@ -13,7 +13,7 @@ pub mod vector;
 
 pub use crate::angle::{
     DEG_TO_RAD, DEG_TO_RAD_F64, DEGREE_90, DEGREE_180, DEGREE_270, DEGREE_360, RAD_TO_DEG,
-    RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
+    RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees, wrap_degrees_90,
 };
 pub use crate::noise_math::*;
 pub use crate::rounding::round_f32;
