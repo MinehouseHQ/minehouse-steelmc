@@ -19,7 +19,6 @@ use steel_core::{
 };
 use text_components::TextComponent;
 
-pub mod anti_xray;
 pub mod auth;
 pub mod bank;
 pub mod blocklog;
@@ -101,7 +100,6 @@ impl Minehouse {
     /// Starts every enabled module. Call once the server is ready for players.
     #[must_use]
     pub fn start(server: &Arc<Server>, setup: Setup) -> Self {
-        anti_xray::start();
         content::start();
         content::start_jobs(server);
         if let Some(moderation) = &setup.moderation {

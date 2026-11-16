@@ -1115,15 +1115,6 @@ impl ChunkSection {
     /// # Panics
     /// - If the writer fails to write.
     pub fn write(&self, writer: &mut Cursor<Vec<u8>>) {
-        self.write_showing(&self.states, writer);
-    }
-
-    /// Writes the chunk section with `states` in place of its own blocks, for anti-xray.
-    /// `states` must hold as many non-air blocks and fluids as the section does.
-    ///
-    /// # Panics
-    /// - If the writer fails to write.
-    pub fn write_showing(&self, states: &BlockPalette, writer: &mut Cursor<Vec<u8>>) {
         self.non_empty_block_count
             .write(writer)
             .expect("Failed to write block count");
@@ -1131,7 +1122,9 @@ impl ChunkSection {
             .write(writer)
             .expect("Failed to write fluid count");
 
-        states.write(writer).expect("Failed to write block states");
+        self.states
+            .write(writer)
+            .expect("Failed to write block states");
         self.biomes.write(writer).expect("Failed to write biomes");
     }
 }

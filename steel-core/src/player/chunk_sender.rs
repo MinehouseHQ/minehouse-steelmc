@@ -22,7 +22,6 @@ use steel_utils::{ChunkPos, PackedChunkPos};
 
 use crate::{
     chunk::{
-        anti_xray,
         chunk_holder::{ChunkHolder, TickingReadinessSnapshot},
         status::ChunkStatus,
     },
@@ -131,8 +130,6 @@ pub struct PreparedChunk {
     pub holder: Arc<ChunkHolder>,
     /// Exact readiness generation observed while selecting the holder.
     readiness: TickingReadinessSnapshot,
-    /// What anti-xray hides in this chunk, when it is on in the chunk's world.
-    hiding: Option<Box<anti_xray::ChunkHiding>>,
 }
 
 /// Data collected during the prepare phase, used to encode and then commit.
@@ -284,8 +281,7 @@ impl ChunkSender {
                         CLevelChunkWithLight {
                             x: pos.0.x,
                             z: pos.0.y,
-                            chunk_data: chunk
-                                .extract_chunk_data_hiding(pos, prepared.hiding.as_deref()),
+                            chunk_data: chunk.extract_chunk_data(),
                             light_data: chunk.extract_light_data(batch.has_skylight),
                         },
                         compression,
@@ -408,13 +404,6 @@ impl ChunkSender {
         candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
-        let hidden = anti_xray::for_world(&world.key);
-        let holder_at = |pos: ChunkPos| {
-            world
-                .chunk_map
-                .chunks
-                .read_sync(&pos, |_, chunk| Arc::clone(chunk))
-        };
 
         for pos in candidates {
             if chunks_to_send.len() >= max_batch_size {
@@ -429,25 +418,10 @@ impl ChunkSender {
             {
                 let readiness = holder.ticking_readiness_snapshot();
                 if readiness.is_block_ticking() {
-                    let hiding = hidden.as_ref().map(|hidden| {
-                        let (x, z) = (pos.0.x, pos.0.y);
-                        Box::new(anti_xray::ChunkHiding {
-                            hidden: Arc::clone(hidden),
-                            neighbours: anti_xray::Neighbours {
-                                holders: [
-                                    holder_at(ChunkPos::new(x - 1, z)),
-                                    holder_at(ChunkPos::new(x + 1, z)),
-                                    holder_at(ChunkPos::new(x, z - 1)),
-                                    holder_at(ChunkPos::new(x, z + 1)),
-                                ],
-                            },
-                        })
-                    });
                     chunks_to_send.push(PreparedChunk {
                         pos,
                         holder,
                         readiness,
-                        hiding,
                     });
                 }
             }
@@ -542,7 +516,6 @@ pub mod benchmark_support {
             pos,
             holder,
             readiness,
-            hiding: None,
         }
     }
 

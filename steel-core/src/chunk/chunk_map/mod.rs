@@ -32,7 +32,6 @@ use tracing::instrument;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::block_entity::{BlockEntityLifecycleExt as _, ClearedBlockEntities, SharedBlockEntity};
-use crate::chunk::anti_xray;
 use crate::chunk::chunk_holder::{
     ChunkHolder, ChunkSaveDependency, PostProcessGenerationError, TickingReadiness,
 };
@@ -726,9 +725,6 @@ impl ChunkMap {
         };
 
         let mut world = None;
-        // Hidden ores next to changed blocks, shown as they really are once the loop is done.
-        let mut hidden = None;
-        let mut revealed = FxHashSet::default();
 
         for holder in holders {
             let chunk_pos = holder.get_pos();
@@ -793,24 +789,6 @@ impl ChunkMap {
 
             if changes_by_section.is_empty() {
                 continue;
-            }
-
-            if let Some(hidden) = hidden
-                .get_or_insert_with(|| anti_xray::for_world(&world.key))
-                .as_deref()
-            {
-                for (section_index, changed_positions) in &changes_by_section {
-                    let section_y = min_y / 16 + *section_index as i32;
-                    let section_pos = SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y);
-                    for &packed in changed_positions {
-                        anti_xray::revealed_by(
-                            hidden,
-                            section_pos.relative_to_block_pos(packed),
-                            |pos| world.get_block_state(pos),
-                            &mut revealed,
-                        );
-                    }
-                }
             }
 
             // Get players whose client already has the base chunk packet.
@@ -902,26 +880,6 @@ impl ChunkMap {
                     for &packed in &changed_positions {
                         let block_pos = section_pos.relative_to_block_pos(packed);
                         world.broadcast_block_entity_if_needed(block_pos);
-                    }
-                }
-            }
-        }
-
-        if let Some(world) = world {
-            for pos in revealed {
-                let packet = CBlockUpdate {
-                    pos,
-                    block_state: world.get_block_state(pos),
-                };
-                let Ok(encoded) =
-                    EncodedPacket::from_bare(packet, world.compression, ConnectionProtocol::Play)
-                else {
-                    log::warn!("Failed to encode block update packet");
-                    continue;
-                };
-                for entity_id in world.get_packet_tracking_players(ChunkPos::from_block_pos(pos)) {
-                    if let Some(player) = world.players.get_by_entity_id(entity_id) {
-                        player.connection.send_encoded(encoded.clone());
                     }
                 }
             }
