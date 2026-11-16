@@ -236,6 +236,14 @@ impl EntityTracker {
 
         self.entities.iter_sync(|entity_id, tracked| {
             let entity_id = *entity_id;
+            // Most tracked entities are outside this player's view. Such an entity is not
+            // visible, so the only possible change is a despawn when the player still sees
+            // it; skip the rest without touching the entity.
+            let in_view = view.contains(tracked.registered_chunk);
+            if !in_view && !tracked.seen_by.read().contains(&player_id) {
+                return true;
+            }
+
             let Some(entity) = tracked.entity.upgrade() else {
                 dead_entities.push(entity_id);
                 return true;
@@ -243,7 +251,7 @@ impl EntityTracker {
 
             let visible = !entity.is_removed()
                 && entity_id != player_id
-                && view.contains(tracked.registered_chunk)
+                && in_view
                 && is_chunk_sent(tracked.registered_chunk)
                 && entity.broadcast_to_player(player)
                 && is_within_tracking_distance(
@@ -252,6 +260,12 @@ impl EntityTracker {
                     effective_tracking_range(entity.as_ref(), tracked.tracking_range),
                     player_view_distance,
                 );
+
+            // Players move every tick, so membership rarely changes: check under the read
+            // lock and only take the write lock to change it.
+            if tracked.seen_by.read().contains(&player_id) == visible {
+                return true;
+            }
 
             let mut despawn = false;
             {
