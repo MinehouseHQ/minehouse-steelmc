@@ -721,6 +721,7 @@ impl World {
 
         {
             let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
+            let start = Instant::now();
             let framed_map_syncs = self.entity_tracker.send_changes(
                 |chunk| self.get_packet_tracking_players(chunk),
                 |player_id| self.players.get_by_entity_id(player_id),
@@ -806,6 +807,7 @@ impl World {
                     frame.sync_framed_map(self);
                 }
             }
+            chunk_map_timings.entity_tracker = start.elapsed();
         }
 
         chunk_map_timings

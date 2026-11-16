@@ -27,6 +27,7 @@ pub mod config;
 pub mod console;
 pub mod content;
 pub mod downtime;
+pub mod events;
 pub mod guides;
 pub mod moderation;
 pub mod roles;
@@ -114,6 +115,7 @@ impl Minehouse {
         }
         tab::Tab::start(server);
         villagers::start();
+        events::start(server, setup.downtime.clone());
         if let Some(blocklog) = &setup.blocklog {
             blocklog.start(server);
         }

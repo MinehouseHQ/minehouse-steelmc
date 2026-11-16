@@ -187,6 +187,46 @@ leaves out what is switched off. The core part is `TradeRules`
 Different from Fabric: unlimited trades are a config option read at startup, not the
 gamerule `minehouse:infinite_trades`.
 
+## Shows and cutscenes
+
+`src/events/`: the start of our mod MineHouse Events. A show is a script in
+`config/minehouse/events/shows/<id>.json`, in the same format as on the Fabric server: a
+timeline of cues in `tracks` (or `cues`), named `actors`, `markers`, `audience`. Coordinates
+are counted from the stage, the place an admin sets with `/show stage <id>`; with
+`"stageFacing": true` the script also turns with the way the admin faced.
+
+`/show` (permission `minehouse.command.show`, `optout` is for every player):
+
+- `list`, `reload`, `status`, `stop`
+- `stage <show>`: the stage is where you stand
+- `start <show> [in]`: now, or after a countdown on a boss bar (`10m`, `90s`, `1:30`)
+- `rehearse <show> [marker]`: for you alone, from a marker
+- `optout`: skip shows, or watch them again
+
+What works now:
+
+- actors `camera`, `block`, `item` (with `model`), `text`, with `scale`, `glow`,
+  `billboard`, `bright`, `viewRange`
+- cues `cinematic`, `cut`, `path` (`points` or `orbit`), `shake`, `spawn`, `move`,
+  `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
+  `chat`
+- viewers: gathered in a ring around the stage (`audience`), in adventure mode and
+  unhurt during the show; where they stood and their game mode are in a journal on disk
+  (`events/journal.json` in the data directory), so they are put back at the end, on
+  `/show stop`, or when they next join after the server died mid-show
+
+A script that uses anything else (blocks placed by a show, `model`, `train`, `rig`,
+`player` and `mob` actors, `meteors`, `rift`, `rockets`, `shockwave`, `lightning`,
+`explosion`, `follow`, puppet cues, `logic`, recorded camera paths) does not load, and
+`/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
+ported yet either.
+
+Different from Fabric: actors are display entities that exist only in the packets sent to
+the viewers. Nothing enters the world, so nobody else sees a show and nothing is left
+behind after a crash. Where shows are staged is kept in `events/stages.json` of the data
+directory, not next to the scripts. A `weather` cue without `over` changes the weather at
+once (on Fabric it did nothing).
+
 ## Voice chat
 
 Proximity voice for clients with the [Plasmo Voice](https://github.com/plasmoapp/plasmo-voice)

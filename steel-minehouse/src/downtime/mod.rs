@@ -146,6 +146,12 @@ impl Downtime {
 
     // --- Maintenance -------------------------------------------------------------------
 
+    /// Whether the server is closed for maintenance.
+    #[must_use]
+    pub fn in_maintenance(&self) -> bool {
+        self.maintenance.lock().enabled
+    }
+
     fn maintenance(&self) -> MaintenanceState {
         self.maintenance.lock().clone()
     }

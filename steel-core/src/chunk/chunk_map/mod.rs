@@ -87,6 +87,7 @@ mod persistence;
 pub(crate) use persistence::AutosaveChunk;
 mod player_tracking;
 mod regions;
+pub use regions::IslandPhaseStats;
 mod scheduled_ticks;
 
 #[cfg(test)]
@@ -115,6 +116,14 @@ pub struct ChunkMapGameTickTimings {
     pub tick_chunks: Duration,
     /// Time spent ticking block entities.
     pub tick_block_entities: Duration,
+    /// Time spent on scheduled block and fluid ticks (part of `tick_chunks`).
+    pub scheduled_ticks: Duration,
+    /// Time spent in the island phase (part of `tick_chunks`).
+    pub islands: Duration,
+    /// Details of the island phase.
+    pub island_stats: IslandPhaseStats,
+    /// Time spent sending entity tracker changes.
+    pub entity_tracker: Duration,
     /// Number of block-ticking chunks.
     pub tickable_count: usize,
     /// Total number of loaded chunks.
@@ -878,6 +887,10 @@ impl ChunkMap {
     /// * `world` - The world reference (needed for executing scheduled tick callbacks)
     /// Game tick: scheduled ticks, the unified chunk-source phase, random ticks,
     /// broadcasts, and unload handoff. Generation and persistence work remain async.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the chunk map tick keeps Vanilla subsystem order explicit"
+    )]
     #[instrument(level = "trace", skip(self, world), name = "chunk_map_game_tick")]
     pub fn tick_game(
         self: &Arc<Self>,
@@ -921,7 +934,8 @@ impl ChunkMap {
                 let ready_fluid_ticks =
                     Self::collect_scheduled_fluid_ticks(world, &tickable_chunks, current_tick);
                 Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
-                timings.tick_chunks += start.elapsed();
+                timings.scheduled_ticks = start.elapsed();
+                timings.tick_chunks += timings.scheduled_ticks;
             }
             timings.lookup_cache.merge(lookup_cache_scope.finish());
         }
@@ -945,8 +959,10 @@ impl ChunkMap {
             if regions::regionized_ticking_enabled() {
                 // Spawning, random ticks, block events and entities run per island.
                 let start = Instant::now();
-                self.tick_islands(world, &tickable_chunks, random_tick_speed, runs_normally);
-                timings.tick_chunks += start.elapsed();
+                timings.island_stats =
+                    self.tick_islands(world, &tickable_chunks, random_tick_speed, runs_normally);
+                timings.islands = start.elapsed();
+                timings.tick_chunks += timings.islands;
             } else if runs_normally {
                 let start = Instant::now();
                 self.tick_spawning_chunks(world, &tickable_chunks);
