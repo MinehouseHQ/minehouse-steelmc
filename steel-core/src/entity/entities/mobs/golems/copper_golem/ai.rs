@@ -105,7 +105,7 @@ fn idle_activity() -> ActivityData<CopperGolemEntity> {
                     TRANSPORT_ITEM_HORIZONTAL_SEARCH_RADIUS,
                     TRANSPORT_ITEM_VERTICAL_SEARCH_RADIUS,
                     on_target_reached,
-                    on_travelling,
+                    on_traveling,
                     should_queue_for_target,
                 ))),
             ),
@@ -234,8 +234,8 @@ fn on_target_reached(
     }
 }
 
-/// Vanilla `onTravelling`.
-fn on_travelling(body: &CopperGolemEntity) {
+/// Vanilla `onTraveling`.
+fn on_traveling(body: &CopperGolemEntity) {
     body.set_opened_chest_pos(None);
     body.set_state(CopperGolemState::Idle);
 }

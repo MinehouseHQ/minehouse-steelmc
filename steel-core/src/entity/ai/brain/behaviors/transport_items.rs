@@ -86,7 +86,7 @@ pub enum ContainerInteractionState {
 /// Vanilla `TransportItemState`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TransportItemState {
-    Travelling,
+    Traveling,
     Queuing,
     Interacting,
 }
@@ -153,7 +153,7 @@ pub struct TransportItemsBetweenContainers<E: ?Sized> {
     source_block_type: fn(BlockStateId) -> bool,
     destination_block_type: fn(BlockStateId) -> bool,
     should_queue_for_target: fn(&World, &TransportItemTarget) -> bool,
-    on_start_travelling: fn(&E),
+    on_start_traveling: fn(&E),
     on_target_interaction: OnTargetReached<E>,
     target: Option<TransportItemTarget>,
     state: TransportItemState,
@@ -173,7 +173,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
         horizontal_search_distance: i32,
         vertical_search_distance: i32,
         on_target_interaction: OnTargetReached<E>,
-        on_start_travelling: fn(&E),
+        on_start_traveling: fn(&E),
         should_queue_for_target: fn(&World, &TransportItemTarget) -> bool,
     ) -> Self {
         Self {
@@ -183,10 +183,10 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
             source_block_type,
             destination_block_type,
             should_queue_for_target,
-            on_start_travelling,
+            on_start_traveling,
             on_target_interaction,
             target: None,
-            state: TransportItemState::Travelling,
+            state: TransportItemState::Traveling,
             interaction_state: None,
             ticks_since_reaching_target: 0,
         }
@@ -202,7 +202,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
         if let Some(target) = self.transport_target(world, body) {
             let pos = target.pos;
             self.target = Some(target);
-            self.on_start_travelling(body);
+            self.on_start_traveling(body);
             self.set_visited_block_pos(body, world, pos);
         } else {
             self.enter_cooldown_after_no_matching_target_found(body);
@@ -213,7 +213,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
     /// Vanilla `onQueuingForTarget`.
     fn on_queuing_for_target(&mut self, target: &TransportItemTarget, world: &World, body: &E) {
         if !self.is_another_mob_interacting_with_target(target, world) {
-            self.resume_travelling(body);
+            self.resume_traveling(body);
         }
     }
 
@@ -239,7 +239,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
             body,
             center_pos(body),
         ) {
-            self.on_start_travelling(body);
+            self.on_start_traveling(body);
             return;
         }
         self.ticks_since_reaching_target += 1;
@@ -257,7 +257,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
             } else {
                 self.stop_targeting_current_target(body);
             }
-            self.on_start_travelling(body);
+            self.on_start_traveling(body);
         }
     }
 
@@ -267,9 +267,9 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
         self.state = TransportItemState::Queuing;
     }
 
-    /// Vanilla `resumeTravelling`.
-    fn resume_travelling(&mut self, body: &E) {
-        self.state = TransportItemState::Travelling;
+    /// Vanilla `resumeTraveling`.
+    fn resume_traveling(&mut self, body: &E) {
+        self.state = TransportItemState::Traveling;
         self.walk_towards_target(body);
     }
 
@@ -303,10 +303,10 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
         self.state = TransportItemState::Interacting;
     }
 
-    /// Vanilla `onStartTravelling`.
-    fn on_start_travelling(&mut self, body: &E) {
-        (self.on_start_travelling)(body);
-        self.state = TransportItemState::Travelling;
+    /// Vanilla `onStartTraveling`.
+    fn on_start_traveling(&mut self, body: &E) {
+        (self.on_start_traveling)(body);
+        self.state = TransportItemState::Traveling;
         self.interaction_state = None;
         self.ticks_since_reaching_target = 0;
     }
@@ -403,8 +403,8 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
         if !of_valid_type || is_chest_blocked_at(world, target.pos) {
             return false;
         }
-        if self.state != TransportItemState::Travelling
-            || has_valid_travelling_path(world, target, body)
+        if self.state != TransportItemState::Traveling
+            || has_valid_traveling_path(world, target, body)
         {
             return true;
         }
@@ -557,7 +557,7 @@ impl<E: PathfinderMob + ?Sized> TransportItemsBetweenContainers<E> {
 
     /// Vanilla `stop`, also run from `tick` once no target is left.
     fn stop_behavior(&mut self, body: &E) {
-        self.on_start_travelling(body);
+        self.on_start_traveling(body);
         set_can_path_to_targets_below_surface(body, false);
     }
 }
@@ -599,7 +599,7 @@ impl<E: PathfinderMob + ?Sized> Behavior<E> for TransportItemsBetweenContainers<
         if self.state == TransportItemState::Queuing {
             self.on_queuing_for_target(&target, world, body);
         }
-        if self.state == TransportItemState::Travelling {
+        if self.state == TransportItemState::Traveling {
             self.on_travel_to_target(&target, world, body);
         }
         if self.state == TransportItemState::Interacting {
@@ -708,8 +708,8 @@ fn center_pos<E: PathfinderMob + ?Sized>(body: &E) -> DVec3 {
     middle_y(body, body.position())
 }
 
-/// Vanilla `hasValidTravellingPath`.
-fn has_valid_travelling_path<E: PathfinderMob + ?Sized>(
+/// Vanilla `hasValidTravelingPath`.
+fn has_valid_traveling_path<E: PathfinderMob + ?Sized>(
     world: &World,
     target: &TransportItemTarget,
     body: &E,
