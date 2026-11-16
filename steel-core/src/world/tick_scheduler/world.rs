@@ -192,7 +192,8 @@ impl World {
         (dx, dy, dz): (i32, i32, i32),
     ) {
         let mut ticks: Vec<super::BlockTick> = source
-            .scheduled_block_ticks_this_tick
+            .region_queues
+            .block_ticks_this_tick
             .lock()
             .as_ref()
             .map_or_else(Vec::new, |batch| {
@@ -249,21 +250,13 @@ impl World {
     /// [`Self::has_scheduled_block_tick`], because selected ticks have already
     /// been removed from their owning chunk queue.
     pub fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
-        let batch = self
-            .scheduled_block_ticks_this_tick
-            .lock()
-            .as_ref()
-            .cloned();
+        let batch = self.with_region_queues(|queues| queues.block_ticks_this_tick.lock().clone());
         batch.is_some_and(|batch| batch.contains(pos, block))
     }
 
     /// Returns whether a selected fluid tick at `(pos, fluid)` has not started yet.
     pub fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
-        let batch = self
-            .scheduled_fluid_ticks_this_tick
-            .lock()
-            .as_ref()
-            .cloned();
+        let batch = self.with_region_queues(|queues| queues.fluid_ticks_this_tick.lock().clone());
         batch.is_some_and(|batch| batch.contains(pos, fluid))
     }
 
@@ -272,12 +265,14 @@ impl World {
         ticks: Vec<super::BlockTick>,
     ) -> Arc<super::ScheduledTickRunBatch<BlockRef>> {
         let batch = Arc::new(super::ScheduledTickRunBatch::new(ticks));
-        let mut current = self.scheduled_block_ticks_this_tick.lock();
-        assert!(
-            current.is_none(),
-            "scheduled block-tick batch was already active"
-        );
-        *current = Some(Arc::clone(&batch));
+        self.with_region_queues(|queues| {
+            let mut current = queues.block_ticks_this_tick.lock();
+            assert!(
+                current.is_none(),
+                "scheduled block-tick batch was already active"
+            );
+            *current = Some(Arc::clone(&batch));
+        });
         batch
     }
 
@@ -285,8 +280,8 @@ impl World {
         &self,
         batch: &Arc<super::ScheduledTickRunBatch<BlockRef>>,
     ) {
-        let removed = {
-            let mut current = self.scheduled_block_ticks_this_tick.lock();
+        let removed = self.with_region_queues(|queues| {
+            let mut current = queues.block_ticks_this_tick.lock();
             assert!(
                 current
                     .as_ref()
@@ -294,7 +289,7 @@ impl World {
                 "scheduled block-tick batch identity changed during execution"
             );
             current.take()
-        };
+        });
         drop(removed);
     }
 
@@ -303,12 +298,14 @@ impl World {
         ticks: Vec<super::FluidTick>,
     ) -> Arc<super::ScheduledTickRunBatch<FluidRef>> {
         let batch = Arc::new(super::ScheduledTickRunBatch::new(ticks));
-        let mut current = self.scheduled_fluid_ticks_this_tick.lock();
-        assert!(
-            current.is_none(),
-            "scheduled fluid-tick batch was already active"
-        );
-        *current = Some(Arc::clone(&batch));
+        self.with_region_queues(|queues| {
+            let mut current = queues.fluid_ticks_this_tick.lock();
+            assert!(
+                current.is_none(),
+                "scheduled fluid-tick batch was already active"
+            );
+            *current = Some(Arc::clone(&batch));
+        });
         batch
     }
 
@@ -316,8 +313,8 @@ impl World {
         &self,
         batch: &Arc<super::ScheduledTickRunBatch<FluidRef>>,
     ) {
-        let removed = {
-            let mut current = self.scheduled_fluid_ticks_this_tick.lock();
+        let removed = self.with_region_queues(|queues| {
+            let mut current = queues.fluid_ticks_this_tick.lock();
             assert!(
                 current
                     .as_ref()
@@ -325,7 +322,7 @@ impl World {
                 "scheduled fluid-tick batch identity changed during execution"
             );
             current.take()
-        };
+        });
         drop(removed);
     }
 }

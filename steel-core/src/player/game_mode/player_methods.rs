@@ -212,7 +212,7 @@ impl Player {
     }
 
     /// Sends pending block change ack if any. Called once per tick.
-    pub(in crate::player) fn tick_ack_block_changes(&self) {
+    pub(crate) fn tick_ack_block_changes(&self) {
         let sequence = self.tick_state.lock().take_ack_block_changes_up_to();
         if sequence > -1 {
             self.send_packet(CBlockChangedAck { sequence });

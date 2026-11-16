@@ -193,6 +193,7 @@ use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
 use crate::world::World;
+use crate::world::region::regionized_ticking_enabled;
 
 /// A struct representing a player.
 pub struct Player {
@@ -2120,7 +2121,11 @@ impl LivingEntity for Player {
         }
         self.refresh_fluid_contact();
 
-        self.tick_ack_block_changes();
+        // With regionized ticking players tick before the chunk broadcast, so the
+        // world sends acks after it instead, keeping Vanilla's packet order.
+        if !regionized_ticking_enabled() {
+            self.tick_ack_block_changes();
+        }
 
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();

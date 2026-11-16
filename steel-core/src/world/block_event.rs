@@ -148,6 +148,32 @@ impl World {
         }
     }
 
+    /// Hands each event in the world queue to the island owning its position, in
+    /// queue order and ahead of the island's own events. Events outside every
+    /// island stay in the world queue.
+    pub(crate) fn route_block_events_to_islands(
+        &self,
+        islands: &[Arc<super::region::RegionQueues>],
+        island_of: impl Fn(ChunkPos) -> Option<usize>,
+    ) {
+        let mut queue = self.region_queues.block_events.lock();
+        if queue.events.is_empty() {
+            return;
+        }
+        let mut remaining = BlockEventQueue::default();
+        while let Some(event) = queue.pop_front() {
+            match island_of(ChunkPos::from_block_pos(event.pos)) {
+                Some(island) => {
+                    islands[island].block_events.lock().push(event);
+                }
+                None => {
+                    remaining.push(event);
+                }
+            }
+        }
+        *queue = remaining;
+    }
+
     /// Moves events an island deferred back to the world queue, in their order, so
     /// they retry on a later tick like Vanilla's deferred events.
     pub(crate) fn requeue_island_block_events(&self, island: &super::region::RegionQueues) {
@@ -250,6 +276,53 @@ mod tests {
         assert_eq!(popped_second.key(), second.key());
         assert_eq!(requeued_first.key(), first.key());
         assert!(queue.pop_front().is_none());
+    }
+
+    #[test]
+    fn world_events_go_to_the_island_owning_their_position_in_order() {
+        use crate::world::region::{RegionQueues, RegionScope};
+
+        init_vanilla_registry();
+        init_behaviors();
+        let world_fixture = fresh_test_world("island_block_event_routing");
+        let world = &world_fixture.world;
+        let islands = [
+            Arc::new(RegionQueues::default()),
+            Arc::new(RegionQueues::default()),
+        ];
+        let near = BlockPos::new(1, 64, 1);
+        let far = BlockPos::new(1_000, 64, 1);
+        let nowhere = BlockPos::new(-1_000, 64, 1);
+        world.block_event(near, &vanilla_blocks::STONE, 1, 0);
+        world.block_event(far, &vanilla_blocks::STONE, 2, 0);
+        world.block_event(nowhere, &vanilla_blocks::STONE, 3, 0);
+        world.block_event(near, &vanilla_blocks::STONE, 4, 0);
+
+        world.route_block_events_to_islands(&islands, |chunk| match chunk.0.x {
+            0 => Some(0),
+            62 => Some(1),
+            _ => None,
+        });
+
+        let params = |island: &Arc<RegionQueues>| {
+            let _scope = RegionScope::enter(world, Arc::clone(island));
+            world
+                .queued_block_events()
+                .into_iter()
+                .map(|(_, _, param_a, _)| param_a)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(params(&islands[0]), [1, 4]);
+        assert_eq!(params(&islands[1]), [2]);
+        assert_eq!(
+            world
+                .queued_block_events()
+                .into_iter()
+                .map(|(pos, ..)| pos)
+                .collect::<Vec<_>>(),
+            [nowhere],
+            "events outside every island stay in the world queue"
+        );
     }
 
     #[test]
