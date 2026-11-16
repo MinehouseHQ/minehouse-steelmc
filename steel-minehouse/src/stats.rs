@@ -62,8 +62,12 @@ impl Default for StatsConfig {
 pub struct Stats {
     server: Arc<Server>,
     site: SiteClient,
+    known: Known,
     task: SyncMutex<Option<JoinHandle<()>>>,
 }
+
+/// What was last read of everyone online: sent as their last word when they leave.
+type Known = Arc<SyncMutex<FxHashMap<Uuid, Value>>>;
 
 impl Stats {
     /// Starts the upload, unless the config turns it off.
@@ -81,25 +85,38 @@ impl Stats {
             return None;
         }
         let every = Duration::from_secs(config.interval_seconds.max(30));
-        let task = tokio::spawn(run(Arc::clone(server), site.clone(), every));
+        let known = Known::default();
+        let task = tokio::spawn(run(
+            Arc::clone(server),
+            site.clone(),
+            every,
+            Arc::clone(&known),
+        ));
         Some(Self {
             server: Arc::clone(server),
             site,
+            known,
             task: SyncMutex::new(Some(task)),
         })
     }
 
-    /// Stops the upload and sends everyone online one last time, as offline.
+    /// Stops the upload and sends everyone one last time, as offline. The players may
+    /// already be gone from the server by now, so those are sent as they were last read.
     pub async fn stop(&self) {
         let task = self.task.lock().take();
         if let Some(task) = task {
             task.abort();
         }
-        let players: Vec<Value> = self
-            .server
-            .get_players()
-            .iter()
-            .map(|player| entry(player, false))
+        let mut last = mem::take(&mut *self.known.lock());
+        for player in &self.server.get_players() {
+            last.insert(player.gameprofile.id(), entry(player, false));
+        }
+        let players: Vec<Value> = last
+            .into_values()
+            .map(|mut player| {
+                player["online"] = Value::Bool(false);
+                player
+            })
             .collect();
         if timeout(LAST_UPLOAD, upload(&self.site, players))
             .await
@@ -110,15 +127,12 @@ impl Stats {
     }
 }
 
-async fn run(server: Arc<Server>, site: SiteClient, every: Duration) {
-    // What was last read of everyone online: sent as their last word when they leave.
-    let mut known: FxHashMap<Uuid, Value> = FxHashMap::default();
+async fn run(server: Arc<Server>, site: SiteClient, every: Duration, known: Known) {
     let mut last_full = Instant::now();
     let mut last_refresh = Instant::now();
 
     loop {
         sleep(JOIN_CHECK).await;
-        let online = server.get_players();
         let full = last_full.elapsed() >= every;
         let refresh = full || last_refresh.elapsed() >= REFRESH;
         if full {
@@ -128,36 +142,44 @@ async fn run(server: Arc<Server>, site: SiteClient, every: Duration) {
             last_refresh = Instant::now();
         }
 
-        let mut batch = Vec::new();
-        let here: Vec<Uuid> = online
-            .iter()
-            .map(|player| player.gameprofile.id())
-            .collect();
-        let left: Vec<Uuid> = known
-            .keys()
-            .filter(|id| !here.contains(id))
-            .copied()
-            .collect();
-        for id in left {
-            if let Some(mut last) = known.remove(&id) {
-                last["online"] = Value::Bool(false);
-                batch.push(last);
-            }
-        }
-        for player in &online {
-            let id = player.gameprofile.id();
-            let joined = !known.contains_key(&id);
-            if joined || refresh {
-                let entry = entry(player, true);
-                if joined || full {
-                    batch.push(entry.clone());
-                }
-                known.insert(id, entry);
-            }
-        }
-        drop(online);
+        let batch = changes(&server, &known, full, refresh);
         upload(&site, batch).await;
     }
+}
+
+/// Who to send now: players who left (as they were last read), players who joined, and
+/// everyone online when it is time for a full upload.
+fn changes(server: &Server, known: &Known, full: bool, refresh: bool) -> Vec<Value> {
+    let online = server.get_players();
+    let mut batch = Vec::new();
+    let mut known_now = known.lock();
+    let here: Vec<Uuid> = online
+        .iter()
+        .map(|player| player.gameprofile.id())
+        .collect();
+    let left: Vec<Uuid> = known_now
+        .keys()
+        .filter(|id| !here.contains(id))
+        .copied()
+        .collect();
+    for id in left {
+        if let Some(mut last) = known_now.remove(&id) {
+            last["online"] = Value::Bool(false);
+            batch.push(last);
+        }
+    }
+    for player in &online {
+        let id = player.gameprofile.id();
+        let joined = !known_now.contains_key(&id);
+        if joined || refresh {
+            let entry = entry(player, true);
+            if joined || full {
+                batch.push(entry.clone());
+            }
+            known_now.insert(id, entry);
+        }
+    }
+    batch
 }
 
 /// Sends the players in as many requests as the site's limits ask for.
