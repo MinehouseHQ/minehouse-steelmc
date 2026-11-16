@@ -15,7 +15,10 @@ use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _, vanilla_custom_stats, vanilla_damage_types,
+    vanilla_game_events,
 };
+
+use crate::behavior::ITEM_BEHAVIORS;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
@@ -775,9 +778,17 @@ impl Entity for ItemEntity {
             state.health = (state.health as f32 - amount) as i32;
             state.health
         };
+        self.game_event_with_source_entity(
+            &vanilla_game_events::ENTITY_DAMAGE,
+            source.causing_entity().map(AsRef::as_ref),
+        );
         if new_health <= 0 {
-            // TODO: Call item.onDestroyed() when implemented
-            self.set_removed(RemovalReason::Killed);
+            if let Some(world) = self.level() {
+                ITEM_BEHAVIORS
+                    .get_behavior(self.get_item().item())
+                    .on_destroyed(self, &world);
+            }
+            self.set_removed(RemovalReason::Discarded);
         }
         true
     }

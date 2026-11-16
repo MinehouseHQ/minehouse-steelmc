@@ -22,8 +22,8 @@ use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
     CContainerClose, CMountScreenOpen, COpenScreen, CPlaceGhostRecipe, CSetPlayerInventory,
     ClickType, SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
-    SPlaceRecipe, SRenameItem, SSeenAdvancement, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCreativeModeSlot, SoundSource,
+    SPlaceRecipe, SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon,
+    SSetCarriedItem, SSetCreativeModeSlot, SoundSource,
 };
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::item_stack::ItemStack;
@@ -553,6 +553,25 @@ impl Player {
             menu.set_crafter_slot_state(slot, packet.new_state);
         }
         self.finish_open_menu_callback(menu);
+    }
+
+    /// Vanilla `handleBundleItemSelectedPacket`: `containerMenu.setSelectedBundleItemIndex`.
+    pub fn handle_select_bundle_item(&self, packet: SSelectBundleItem) {
+        let Ok(slot) = usize::try_from(packet.slot_id) else {
+            return;
+        };
+        match self.take_open_menu_for_callback(None) {
+            Ok(mut menu) => {
+                menu.set_selected_bundle_item_index(slot, packet.selected_item_index);
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                self.inventory_menu
+                    .lock()
+                    .set_selected_bundle_item_index(slot, packet.selected_item_index);
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
     }
 
     /// Handles a creative mode slot set packet.

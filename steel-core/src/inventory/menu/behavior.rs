@@ -17,6 +17,7 @@ use steel_registry::{
     item_stack::ItemStack, menu_type::MenuTypeRef,
 };
 
+use crate::behavior::ITEM_BEHAVIORS;
 use crate::{
     inventory::{
         click::{DragKind, MouseButton, QuickCraft, can_item_quick_replace},
@@ -26,6 +27,7 @@ use crate::{
     },
     player::{Player, PlayerConnection, connection::NetworkConnection},
 };
+use steel_registry::data_components::vanilla_components::BUNDLE_CONTENTS;
 use steel_utils::{BlockPos, Downcast as _};
 
 /// Shared behavior and state for all menu types.
@@ -802,7 +804,19 @@ impl MenuBehavior {
         let slot = &self.slots[slot_index];
 
         let slot_item = slot.get_item(&guard).clone();
-        let carried = mem::take(&mut self.carried);
+        let mut carried = mem::take(&mut self.carried);
+
+        if try_item_click_behavior_override(slot.as_ref(), &mut guard, &mut carried, button, player)
+        {
+            self.carried = carried;
+            slot.set_changed(&mut guard);
+            return;
+        }
+        let slot_item = if slot_item.has(BUNDLE_CONTENTS) {
+            slot.get_item(&guard).clone()
+        } else {
+            slot_item
+        };
 
         if slot_item.is_empty() {
             // Empty slot: place carried items if allowed.
@@ -1102,6 +1116,33 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
     }
 
     true
+}
+
+/// Vanilla `AbstractContainerMenu.tryItemClickBehaviourOverride`: lets the
+/// carried item, then the clicked one, take over a pickup click (bundles).
+fn try_item_click_behavior_override(
+    slot: &dyn Slot,
+    guard: &mut ContainerLockGuard,
+    carried: &mut ItemStack,
+    button: MouseButton,
+    player: &Player,
+) -> bool {
+    if ITEM_BEHAVIORS
+        .get_behavior(carried.item())
+        .override_stacked_on_other(carried, slot, guard, button, player)
+    {
+        return true;
+    }
+    let mut clicked = slot.get_item(guard).clone();
+    let behavior = ITEM_BEHAVIORS.get_behavior(clicked.item());
+    let consumed =
+        behavior.override_other_stacked_on_me(&mut clicked, carried, slot, guard, button, player);
+    // Vanilla edits the clicked stack in place, even when the click falls
+    // through (a bundle drops its selection).
+    if clicked.has(BUNDLE_CONTENTS) {
+        *slot.get_item_mut(guard) = clicked;
+    }
+    consumed
 }
 
 #[cfg(test)]
