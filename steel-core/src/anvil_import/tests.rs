@@ -1116,3 +1116,70 @@ async fn imported_structure_starts_load_in_steel() {
         .expect("region should release");
     let _ = fs::remove_dir_all(&target);
 }
+
+#[test]
+fn extension_items_become_vanilla_items_with_components() {
+    use simdnbt::owned::NbtTag;
+    use steel_registry::data_components::vanilla_components::MAX_STACK_SIZE;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::vanilla_items;
+
+    init_globals();
+    let stack_of = |id: &str| {
+        (id == "mod:lens").then(|| {
+            let mut stack = ItemStack::with_count(&vanilla_items::PAPER, 1);
+            stack.set(MAX_STACK_SIZE, 1);
+            stack
+        })
+    };
+    let item = |id: &str, count: i32| {
+        let mut item = NbtCompound::new();
+        item.insert("id", id);
+        item.insert("count", count);
+        item
+    };
+
+    // In a chest of a chunk: an item of the mod with a component of its own, an item of
+    // another mod, and a vanilla one.
+    let mut named = item("mod:lens", 3);
+    let mut components = NbtCompound::new();
+    components.insert("minecraft:rarity", "epic");
+    named.insert("components", components);
+    named.insert("Slot", 4_i8);
+    let mut chest = NbtCompound::new();
+    chest.insert("id", "minecraft:chest");
+    chest.insert(
+        "Items",
+        NbtList::Compound(vec![
+            named,
+            item("other:thing", 1),
+            item("minecraft:stone", 64),
+        ]),
+    );
+    let mut root = NbtCompound::new();
+    root.insert("block_entities", NbtList::Compound(vec![chest]));
+
+    nbt::upgrade_extension_items(&mut root, &stack_of);
+
+    let items = root
+        .list("block_entities")
+        .and_then(NbtList::compounds)
+        .and_then(|chests| chests[0].list("Items"))
+        .and_then(NbtList::compounds)
+        .expect("the chest keeps its items");
+    let lens = &items[0];
+    assert_eq!(nbt::string(lens, "id").as_deref(), Some("minecraft:paper"));
+    assert_eq!(lens.int("count"), Some(3));
+    assert_eq!(lens.byte("Slot"), Some(4));
+    let components = lens.compound("components").expect("components");
+    assert_eq!(components.int("minecraft:max_stack_size"), Some(1));
+    assert!(matches!(
+        components.get("minecraft:rarity"),
+        Some(NbtTag::String(_))
+    ));
+    assert_eq!(nbt::string(&items[1], "id").as_deref(), Some("other:thing"));
+    assert_eq!(
+        nbt::string(&items[2], "id").as_deref(),
+        Some("minecraft:stone")
+    );
+}
