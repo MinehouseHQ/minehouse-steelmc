@@ -363,6 +363,11 @@ impl World {
     }
 
     pub(crate) fn biome_at(&self, pos: BlockPos) -> Option<BiomeRef> {
+        REGISTRY.biomes.by_id(usize::from(self.biome_id_at(pos)?))
+    }
+
+    /// The registry id of [`Self::biome_at`]'s biome.
+    pub(crate) fn biome_id_at(&self, pos: BlockPos) -> Option<u16> {
         let biome_zoom_seed = self.biome_zoom_seed;
         let mut missing_chunk = false;
         let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
@@ -377,7 +382,7 @@ impl World {
             return None;
         }
 
-        REGISTRY.biomes.by_id(usize::from(biome_id))
+        Some(biome_id)
     }
 
     /// The `minecraft:gameplay/snow_golem_melts` environment attribute at `pos`: the
