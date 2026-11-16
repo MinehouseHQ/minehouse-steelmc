@@ -207,6 +207,9 @@ impl EntityTracker {
                         player.send_packet(packet);
                     }
                     player.send_packet(CRemoveEntities::single(entity_id));
+                    if let Some(entity) = &entity {
+                        entity.stop_seen_by_player(&player);
+                    }
                 }
             }
         }
@@ -265,17 +268,18 @@ impl EntityTracker {
             if despawn {
                 let vehicle_packet =
                     self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id);
-                entities_to_despawn.push((entity_id, vehicle_packet));
+                entities_to_despawn.push((entity, vehicle_packet));
             }
 
             true
         });
 
-        for (entity_id, vehicle_packet) in entities_to_despawn {
+        for (entity, vehicle_packet) in entities_to_despawn {
             if let Some(packet) = vehicle_packet {
                 player.send_packet(packet);
             }
-            player.send_packet(CRemoveEntities::single(entity_id));
+            player.send_packet(CRemoveEntities::single(entity.id()));
+            entity.stop_seen_by_player(player);
         }
 
         for entity in entities_to_spawn {
@@ -535,7 +539,7 @@ impl EntityTracker {
 
         self.entities.iter_sync(|entity_id, tracked| {
             if tracked.seen_by.write().remove(&player_id) {
-                entities_to_despawn.push(*entity_id);
+                entities_to_despawn.push((*entity_id, tracked.entity.upgrade()));
             }
             if tracked.entity.strong_count() == 0 {
                 dead_entities.push(*entity_id);
@@ -543,8 +547,11 @@ impl EntityTracker {
             true
         });
 
-        for entity_id in entities_to_despawn {
+        for (entity_id, entity) in entities_to_despawn {
             player.send_packet(CRemoveEntities::single(entity_id));
+            if let Some(entity) = entity {
+                entity.stop_seen_by_player(player);
+            }
         }
 
         for entity_id in dead_entities {
@@ -605,6 +612,7 @@ impl EntityTracker {
                     player.send_packet(packet);
                 }
                 player.send_packet(CRemoveEntities::single(entity_id));
+                entity.stop_seen_by_player(&player);
             }
         }
 
@@ -658,6 +666,7 @@ impl EntityTracker {
                     player.send_packet(packet);
                 }
                 player.send_packet(CRemoveEntities::single(entity_id));
+                entity.stop_seen_by_player(&player);
             }
         }
 
@@ -733,6 +742,7 @@ impl EntityTracker {
         let entity_id = entity.id();
         self.spawn_pairing(entity, player.id())
             .send_to(entity_id, player);
+        entity.start_seen_by_player(player);
     }
 
     fn spawn_pairing(&self, entity: &SharedEntity, player_id: i32) -> EntitySpawnPairing {

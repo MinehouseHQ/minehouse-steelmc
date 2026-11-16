@@ -191,6 +191,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         true
     }
 
+    /// Vanilla `Entity.startSeenByPlayer`: `player` has just been sent this
+    /// entity's spawn packets.
+    fn start_seen_by_player(&self, _player: &Player) {}
+
+    /// Vanilla `Entity.stopSeenByPlayer`: `player` is no longer sent this
+    /// entity.
+    fn stop_seen_by_player(&self, _player: &Player) {}
+
     /// Gets the entity's unique network ID (session-local).
     fn id(&self) -> i32 {
         self.base().id()

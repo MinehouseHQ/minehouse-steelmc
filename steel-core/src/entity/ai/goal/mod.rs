@@ -120,7 +120,7 @@ pub(crate) use vex_goals::{VexChargeAttackGoal, VexCopyOwnerTargetGoal, VexRando
 pub(crate) use vindicator_goals::{
     JohnnyFlag, VindicatorBreakDoorGoal, VindicatorJohnnyAttackGoal,
 };
-pub(crate) use water_avoiding_random_flying::random_flying_pos;
+pub(crate) use water_avoiding_random_flying::{WaterAvoidingRandomFlyingGoal, random_flying_pos};
 pub(crate) use water_avoiding_random_stroll::WaterAvoidingRandomStrollGoal;
 pub(crate) use witch_targets::{
     CanAttackFlag, HealCooldown, NearestAttackableWitchTargetGoal, NearestHealableRaiderTargetGoal,
