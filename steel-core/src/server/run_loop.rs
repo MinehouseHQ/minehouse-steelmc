@@ -699,6 +699,8 @@ impl Server {
                 island_count = cm.island_stats.count,
                 islands_parallel = ?cm.island_stats.parallel,
                 slowest_island = ?cm.island_stats.slowest,
+                slowest_island_entities = cm.island_stats.slowest_size.entities,
+                slowest_island_chunks = cm.island_stats.slowest_size.random_chunks,
                 islands_busy = ?cm.island_stats.busy,
                 entity_tracker = ?cm.entity_tracker,
                 tickable_count = cm.tickable_count,
