@@ -16,8 +16,9 @@
 //! A show can also put blocks: ghost ones only its viewers see, temporary ones that are put
 //! back when it ends, and permanent ones that stay.
 //!
-//! Not ported yet, and refused when a script uses them: models, trains, rigs, mannequins and mobs as actors, meteors, rifts and rockets, node logic,
-//! private cutscenes and the in-game editor.
+//! Not ported yet, and refused when a script uses them: trains, rigs, mannequins and mobs
+//! as actors, meteors, rifts and rockets, node logic, private cutscenes and the in-game
+//! editor.
 
 mod actor;
 mod blocks;

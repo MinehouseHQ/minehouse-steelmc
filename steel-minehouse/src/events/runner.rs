@@ -232,7 +232,7 @@ impl Runner {
     fn actor_or_spawn(&mut self, index: usize) -> Option<&mut Actor> {
         if self.actor(index).is_none() {
             let def = self.script.actors.get(index)?;
-            let actor = Actor::spawn(def, self.origin, 0.0, None);
+            let actor = Actor::spawn(def, &self.sets, self.origin, 0.0, None);
             *self.actors.get_mut(index)? = Some(actor);
         }
         self.actors.get_mut(index).and_then(Option::as_mut)
@@ -250,7 +250,7 @@ impl Runner {
         let Some(def) = self.script.actors.get(index) else {
             return;
         };
-        let actor = Actor::spawn(def, pos, yaw, scale);
+        let actor = Actor::spawn(def, &self.sets, pos, yaw, scale);
         if let Some(slot) = self.actors.get_mut(index) {
             *slot = Some(actor);
         }
