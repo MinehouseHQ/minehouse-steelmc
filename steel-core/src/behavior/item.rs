@@ -496,10 +496,9 @@ pub(crate) fn finish_consuming_stack(
     user.game_event(event);
     if let Some(player) = user.as_player() {
         player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+        player.trigger_consume_item(stack);
     }
     // TODO: Spawn item-crumb particles when `has_consume_particles()` is set.
-    // TODO: Trigger CriteriaTriggers.CONSUME_ITEM once the advancement-criteria
-    // foundation exists.
 
     let mut used_stack = stack.copy_with_count(stack.count());
     if !user.has_infinite_materials() {

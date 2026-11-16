@@ -84,6 +84,11 @@ impl Player {
             }
             // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
             self.send_inventory_to_remote();
+            // Vanilla `ServerPlayer.triggerDimensionChangeTriggers`.
+            self.trigger_changed_dimension(
+                &current_world.key,
+                &teleport_transition.target_world.key,
+            );
         }
         self.apply_post_teleport_transition(&teleport_transition.post_transition);
         true

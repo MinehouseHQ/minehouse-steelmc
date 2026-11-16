@@ -4,6 +4,7 @@ use super::{
     wrap_degrees,
 };
 use crate::behavior::use_behavior_of;
+use crate::player::advancement::criteria::ITEM_USED_ON_BLOCK;
 use crate::player::input_observer::player_input_observer;
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
@@ -44,10 +45,22 @@ pub fn use_block(
     hand: InteractionHand,
     hit_result: &BlockHitResult,
 ) -> InteractionResult {
+    use_block_with_item_flag(player, world, hand, hit_result).0
+}
+
+/// [`use_block`], also telling whether the block's `use_item_on` (rather
+/// than `use_without_item`) took the action: only that use counts as the
+/// item used on the block.
+fn use_block_with_item_flag(
+    player: &Player,
+    world: &Arc<World>,
+    hand: InteractionHand,
+    hit_result: &BlockHitResult,
+) -> (InteractionResult, bool) {
     let pos = hit_result.block_pos;
     let state = world.get_block_state(pos);
     let Some(block) = REGISTRY.blocks.by_state_id(state) else {
-        return InteractionResult::Pass;
+        return (InteractionResult::Pass, false);
     };
     let behavior = BLOCK_BEHAVIORS.get_behavior(block);
 
@@ -64,7 +77,7 @@ pub fn use_block(
     );
 
     if block_result.consumes_action() {
-        return block_result;
+        return (block_result, true);
     }
 
     if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
@@ -74,10 +87,10 @@ pub fn use_block(
             behavior.use_without_item(state, world, pos, player, hit_result, &mut inventory_access);
 
         if empty_result.consumes_action() {
-            return empty_result;
+            return (empty_result, false);
         }
     }
-    InteractionResult::Pass
+    (InteractionResult::Pass, false)
 }
 
 /// Handles using an item on a block.
@@ -121,9 +134,13 @@ pub fn use_item_on(
 
     // Try block interaction first (if not suppressed).
     // No inventory lock held — block behaviors may need inventory access (e.g. opening chests).
+    let used_stack = player.inventory.lock().get_item_in_hand(hand).clone();
     if !suppress_block_use {
-        let block_result = use_block(player, world, hand, hit_result);
+        let (block_result, item_used) = use_block_with_item_flag(player, world, hand, hit_result);
         if block_result.consumes_action() {
+            if item_used {
+                player.trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &used_stack);
+            }
             return block_result;
         }
     }
@@ -178,6 +195,9 @@ pub fn use_item_on(
             context.inv.with_item(|item| item.count = original_count);
         }
 
+        if result.consumes_action() {
+            player.trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &used_stack);
+        }
         return result;
     }
 

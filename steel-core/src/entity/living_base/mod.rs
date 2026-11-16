@@ -1321,11 +1321,14 @@ impl LivingEntityBase {
     }
 
     /// Ticks one active mob-effect duration after its server behavior has run.
-    pub(super) fn tick_mob_effect_duration(&self, effect_key: MobEffectRef) {
+    ///
+    /// Returns whether vanilla would report the change through
+    /// `onEffectUpdated` or `onEffectsRemoved`.
+    pub(super) fn tick_mob_effect_duration(&self, effect_key: MobEffectRef) -> bool {
         let (updated, removed) = {
             let mut effects = self.active_mob_effects.lock();
             let Some(effect) = effects.get_mut(&effect_key) else {
-                return;
+                return false;
             };
             match effect.tick_duration() {
                 MobEffectTickResult::Active { downgraded } => {
@@ -1337,6 +1340,7 @@ impl LivingEntityBase {
             }
         };
 
+        let changed = updated.is_some() || removed.is_some();
         if let Some(effect) = updated {
             self.refresh_effect_attribute_modifiers(&effect);
             self.mark_effects_dirty();
@@ -1353,6 +1357,7 @@ impl LivingEntityBase {
                 effect: effect.effect,
             });
         }
+        changed
     }
 
     /// Drains pending mob-effect packet changes.

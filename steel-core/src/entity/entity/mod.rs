@@ -16,6 +16,7 @@ use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
 use crate::entity::{Bucketable, leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
+use crate::player::advancement::criteria::ENTITY_KILLED_PLAYER;
 use crate::scoreboard::{PlayerTeam, TeamRules};
 use crate::world::game_event::DynamicListenerAction;
 use crate::world::game_event::vibrations::VibrationSystem;
@@ -4583,8 +4584,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Runs when this entity kills another entity.
-    fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
-        // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
+    fn award_kill_score(&self, victim: &dyn Entity, killing_blow: &DamageSource) {
+        if let Some(player) = victim.as_player() {
+            player.trigger_killed(
+                &ENTITY_KILLED_PLAYER,
+                self.as_entity_event_source(),
+                killing_blow,
+            );
+        }
     }
 }
 

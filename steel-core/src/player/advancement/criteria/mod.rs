@@ -14,7 +14,9 @@
 pub(crate) mod predicates;
 pub(crate) mod triggers;
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
+
+use glam::DVec3;
 
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
@@ -22,8 +24,10 @@ use steel_registry::REGISTRY;
 use steel_registry::advancement::registry::AdvancementRef;
 use steel_utils::Identifier;
 
-use crate::entity::Entity as _;
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity as _, SharedEntity};
 use crate::player::Player;
+use crate::world::World;
 use predicates::{
     ConditionContext, ContextPredicate, DistancePredicate, Doubles, EntityPredicate, IdSet, Ints,
     ItemCondition, LocationPredicate, MobEffectsPredicate, StateCondition,
@@ -74,6 +78,76 @@ pub(crate) struct DamagePredicate {
     pub(crate) blocked: Option<bool>,
     #[serde(rename = "type")]
     pub(crate) damage_type: Option<DamageSourcePredicate>,
+}
+
+impl DamageSourcePredicate {
+    /// Vanilla `DamageSourcePredicate.matches(level, position, source)`.
+    pub(crate) fn matches(
+        &self,
+        world: &Arc<World>,
+        position: DVec3,
+        source: &DamageSource,
+    ) -> bool {
+        self.tags
+            .iter()
+            .all(|tag| source.is(&tag.id) == tag.expected)
+            && entity_matches(
+                self.direct_entity.as_ref(),
+                world,
+                position,
+                source.direct_entity(),
+            )
+            && entity_matches(
+                self.source_entity.as_ref(),
+                world,
+                position,
+                source.causing_entity(),
+            )
+            && self
+                .is_direct
+                .is_none_or(|is_direct| is_direct == source.is_direct())
+    }
+}
+
+impl DamagePredicate {
+    /// Vanilla `DamagePredicate.matches(player, source, originalDamage,
+    /// actualDamage, blocked)`.
+    pub(crate) fn matches(
+        &self,
+        world: &Arc<World>,
+        position: DVec3,
+        source: &DamageSource,
+        original_damage: f32,
+        actual_damage: f32,
+        blocked: bool,
+    ) -> bool {
+        self.dealt.matches(f64::from(original_damage))
+            && self.taken.matches(f64::from(actual_damage))
+            && entity_matches(
+                self.source_entity.as_ref(),
+                world,
+                position,
+                source.causing_entity(),
+            )
+            && self.blocked.is_none_or(|expected| expected == blocked)
+            && self
+                .damage_type
+                .as_ref()
+                .is_none_or(|predicate| predicate.matches(world, position, source))
+    }
+}
+
+/// An optional [`EntityPredicate`] on an optional entity: vanilla
+/// `EntityPredicate.matches` fails on a missing entity.
+fn entity_matches(
+    predicate: Option<&EntityPredicate>,
+    world: &Arc<World>,
+    position: DVec3,
+    entity: Option<&SharedEntity>,
+) -> bool {
+    predicate.is_none_or(|predicate| {
+        entity.is_some_and(|entity| predicate.matches(world, Some(position), entity.as_ref()))
+    })
 }
 
 /// Vanilla `PotionsPredicate`. No vanilla advancement narrows by `effects`,

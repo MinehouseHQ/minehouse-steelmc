@@ -8,6 +8,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::entities::WitherBossEntity;
 use crate::entity::{Entity as _, LivingEntity as _, next_entity_id};
+use crate::player::advancement::criteria::trigger_summoned_entity_nearby;
 use crate::world::LevelReader as _;
 use crate::world::World;
 use glam::DVec3;
@@ -55,6 +56,9 @@ static WITHER_PATTERN_BASE: LazyLock<BlockPattern> = LazyLock::new(|| {
     )
 });
 
+/// How far from a built wither players get the `summoned_entity` trigger.
+const WITHER_SUMMON_TRIGGER_RANGE: f64 = 50.0;
+
 /// Behavior for wither skull blocks.
 #[block_behavior]
 pub struct WitherSkullBlock {
@@ -71,8 +75,6 @@ impl WitherSkullBlock {
 
     /// Vanilla `WitherSkullBlock.checkSpawn`: builds a wither when the skull
     /// at `pos` completes the pattern.
-    // TODO(advancement-triggers): Trigger `CriteriaTriggers.SUMMONED_ENTITY` for
-    // players within 50 blocks of the wither once Steel has advancement triggers.
     pub fn check_spawn(world: &Arc<World>, pos: BlockPos) {
         if !is_wither_skull(world.get_block_state(pos))
             || pos.y() < world.min_y()
@@ -104,6 +106,7 @@ impl WitherSkullBlock {
         wither.base().set_old_rotation_to_current();
         wither.set_y_body_rot(yaw);
         wither.make_invulnerable();
+        trigger_summoned_entity_nearby(world, &wither, WITHER_SUMMON_TRIGGER_RANGE);
         if let Err(error) = world.try_add_entity(Arc::new(wither)) {
             log::debug!("world rejected a built wither: {error}");
         }

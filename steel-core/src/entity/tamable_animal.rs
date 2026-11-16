@@ -28,6 +28,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{Animal, Entity, EntityReference, LivingEntity, SharedEntity};
 use crate::physics::{WorldCollisionProvider, has_collision};
 use crate::player::Player;
+use crate::player::advancement::criteria::TAME_ANIMAL;
 
 const TAG_OWNER: &str = "Owner";
 const TAG_SITTING: &str = "Sitting";
@@ -151,6 +152,7 @@ pub trait TamableAnimal: Animal {
     fn tame(&self, player: &Player) {
         self.set_tame(true, true);
         self.set_owner_uuid(Some(player.uuid()));
+        player.trigger_entity_criteria(&TAME_ANIMAL, self.as_entity_event_source());
     }
 
     /// Vanilla `TamableAnimal.canAttack`, for `Mob::can_attack` overrides.

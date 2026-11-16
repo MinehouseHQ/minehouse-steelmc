@@ -13,6 +13,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
 use crate::entity::Entity;
 use crate::entity::entities::ItemEntity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::player::advancement::criteria::PLACED_BLOCK;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use crate::{
@@ -23,6 +24,7 @@ use std::sync::Arc;
 use steel_registry::ItemStackTemplate;
 use steel_registry::data_components::components::ItemContainerContents;
 use steel_registry::data_components::vanilla_components::CONTAINER;
+use steel_registry::item_stack::ItemStack;
 
 pub(super) enum SurvivalCheck {
     Required,
@@ -154,6 +156,10 @@ impl BlockItem {
             Self::update_block_entity_components(&context, place_pos);
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
+            if let Some(player) = context.player() {
+                let tool = context.with_item(ItemStack::clone);
+                player.trigger_item_used_on_location(&PLACED_BLOCK, place_pos, &tool);
+            }
         }
 
         // Play place sound (exclude the placing player, they hear it client-side)
