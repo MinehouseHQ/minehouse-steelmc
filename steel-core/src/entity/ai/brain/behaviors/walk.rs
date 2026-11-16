@@ -41,6 +41,32 @@ pub fn random_stroll<E: PathfinderMob + ?Sized>(
     speed_modifier: f32,
     may_stroll_from_water: bool,
 ) -> impl BehaviorControl<E> {
+    land_stroll(
+        speed_modifier,
+        MAX_XZ_DIST,
+        MAX_Y_DIST,
+        may_stroll_from_water,
+    )
+}
+
+/// Walks to a random land position at most `max_xz_dist` blocks away
+/// horizontally and `max_y_dist` vertically, also from water (vanilla
+/// `RandomStroll.stroll(speedModifier, maxHorizontalDistance,
+/// maxVerticalDistance)`).
+pub fn random_stroll_within<E: PathfinderMob + ?Sized>(
+    speed_modifier: f32,
+    max_xz_dist: i32,
+    max_y_dist: i32,
+) -> impl BehaviorControl<E> {
+    land_stroll(speed_modifier, max_xz_dist, max_y_dist, true)
+}
+
+fn land_stroll<E: PathfinderMob + ?Sized>(
+    speed_modifier: f32,
+    max_xz_dist: i32,
+    max_y_dist: i32,
+    may_stroll_from_water: bool,
+) -> impl BehaviorControl<E> {
     OneShot::new(
         vec![MemoryRequirement::new(
             &WALK_TARGET,
@@ -55,7 +81,7 @@ pub fn random_stroll<E: PathfinderMob + ?Sized>(
             {
                 return false;
             }
-            let target = land_random_pos(body, MAX_XZ_DIST, MAX_Y_DIST)
+            let target = land_random_pos(body, max_xz_dist, max_y_dist)
                 .map(|position| WalkTarget::to_point(position, speed_modifier, 0));
             memories.lock().set(&WALK_TARGET, target);
             true

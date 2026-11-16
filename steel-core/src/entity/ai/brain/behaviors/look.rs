@@ -133,14 +133,24 @@ impl<E: Mob + ?Sized> Behavior<E> for RandomLookAround {
     }
 }
 
-/// Vanilla `SetEntityLookTargetSometimes.Ticker`.
-struct Ticker {
+/// Vanilla `SetEntityLookTargetSometimes.Ticker`: fires once every
+/// `interval` ticks, starting one interval after the first check.
+pub struct Ticker {
     interval: UniformInt,
     ticks_until_next_start: i32,
 }
 
 impl Ticker {
-    fn tick_down_and_check(&mut self) -> bool {
+    #[must_use]
+    pub const fn new(interval: UniformInt) -> Self {
+        Self {
+            interval,
+            ticks_until_next_start: 0,
+        }
+    }
+
+    /// Counts down one tick and reports whether the interval just ran out.
+    pub fn tick_down_and_check(&mut self) -> bool {
         if self.ticks_until_next_start == 0 {
             self.ticks_until_next_start = self.interval.sample() - 1;
             false

@@ -10,6 +10,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, level_events, vanilla_blocks,
     vanilla_game_events,
@@ -22,6 +23,7 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::block_entity::BlockEntity;
+use crate::entity::entities::mobs::hostile::piglin::anger_nearby_piglins;
 use crate::entity::{ActiveMobEffect, Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
@@ -410,6 +412,7 @@ impl BlockBreakingManager {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
+        anger_piglins_if_guarded(world, player, state);
         world.game_event(
             &vanilla_game_events::BLOCK_DESTROY,
             pos,
@@ -539,6 +542,14 @@ pub enum BlockBreakAction {
     Stop,
     /// Player aborted breaking a block.
     Abort,
+}
+
+/// Vanilla `Block.playerWillDestroy`: breaking gold and bastion treasure
+/// blocks angers the piglins around the player.
+fn anger_piglins_if_guarded(world: &World, player: &Player, state: BlockStateId) {
+    if state.get_block().has_tag(&BlockTag::GUARDED_BY_PIGLINS) {
+        anger_nearby_piglins(world, player, false);
+    }
 }
 
 fn held_item_can_destroy_in_creative(player: &Player) -> bool {

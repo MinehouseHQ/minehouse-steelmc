@@ -51,7 +51,8 @@ pub use long_jump::{
     default_acceptable_landing_spot,
 };
 pub use look::{
-    LookAtTargetSink, RandomLookAround, set_entity_look_target, set_entity_look_target_sometimes,
+    LookAtTargetSink, RandomLookAround, Ticker, set_entity_look_target,
+    set_entity_look_target_sometimes,
 };
 pub use make_love::AnimalMakeLove;
 pub use memory_ops::{become_passive_if_memory_present, copy_memory_with_expiry};
@@ -71,8 +72,8 @@ pub use stroll::{
 pub use swim::Swim;
 pub use temptation::FollowTemptation;
 pub use walk::{
-    baby_follow_adult, go_to_target_location, random_fly, random_stroll, random_swim,
-    set_walk_target_away_from_pos, set_walk_target_from_look_target, try_find_liquid,
+    baby_follow_adult, go_to_target_location, random_fly, random_stroll, random_stroll_within,
+    random_swim, set_walk_target_away_from_pos, set_walk_target_from_look_target, try_find_liquid,
 };
 
 /// An inclusive tick range sampled uniformly (vanilla `UniformInt`).

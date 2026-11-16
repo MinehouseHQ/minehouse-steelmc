@@ -43,7 +43,7 @@ pub fn become_passive_if_memory_present<E: LivingEntity + ?Sized>(
 /// is empty, copies it into `target` for a duration drawn from
 /// `duration_of_copy`, as long as `copy_if_true` holds for the body.
 pub fn copy_memory_with_expiry<E: LivingEntity + ?Sized, T: MemoryValue>(
-    copy_if_true: fn(&E) -> bool,
+    mut copy_if_true: impl FnMut(&E) -> bool + Send + 'static,
     source: &'static MemoryModuleType<T>,
     target: &'static MemoryModuleType<T>,
     duration_of_copy: UniformInt,
