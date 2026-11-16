@@ -20,8 +20,11 @@
 //! The big effects (meteor showers at the show's spots, rifts, rockets, shockwaves) are
 //! display entities, particles and blocks sent to the viewers too.
 //!
-//! Not ported yet, and refused when a script uses them: trains, rigs, mannequins and mobs
-//! as actors, node logic, private cutscenes and the in-game editor.
+//! Characters are living entities sent the same way: a mannequin in a player's skin or any
+//! mob, which the show moves, poses and has swing its arm.
+//!
+//! Not ported yet, and refused when a script uses them: trains and rigs as actors, node
+//! logic, private cutscenes and the in-game editor.
 
 mod actor;
 mod blocks;
@@ -35,6 +38,7 @@ mod library;
 mod permanent;
 mod prop;
 mod runner;
+mod scatter;
 mod script;
 mod time;
 
