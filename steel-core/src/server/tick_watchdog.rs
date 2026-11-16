@@ -63,12 +63,35 @@ impl TickStep {
     }
 }
 
+/// Time the game loop spent in each [`TickStep`].
+pub(super) struct TickStepTimes([Duration; TickStep::ALL.len()]);
+
+impl TickStepTimes {
+    /// Time spent in `step`.
+    pub(super) const fn get(&self, step: TickStep) -> Duration {
+        self.0[step as usize]
+    }
+
+    /// Time spent in every step except sleeping.
+    pub(super) fn busy(&self) -> Duration {
+        TickStep::ALL
+            .iter()
+            .filter(|step| **step != TickStep::Sleeping)
+            .map(|step| self.get(*step))
+            .sum()
+    }
+}
+
 /// Shared between the game loop, which records its progress, and the watchdog thread.
 pub(super) struct TickWatchdog {
     started: Instant,
     step: AtomicU8,
     /// Milliseconds since `started` at which the current step began.
     step_since_ms: AtomicU64,
+    /// Nanoseconds since `started` at which the current step began.
+    step_since_ns: AtomicU64,
+    /// Time spent in each step since the last [`Self::take_step_times`].
+    step_ns: [AtomicU64; TickStep::ALL.len()],
     tick_count: AtomicU64,
 }
 
@@ -78,6 +101,8 @@ impl TickWatchdog {
             started: Instant::now(),
             step: AtomicU8::new(TickStep::Sleeping as u8),
             step_since_ms: AtomicU64::new(0),
+            step_since_ns: AtomicU64::new(0),
+            step_ns: [const { AtomicU64::new(0) }; TickStep::ALL.len()],
             tick_count: AtomicU64::new(0),
         })
     }
@@ -88,8 +113,22 @@ impl TickWatchdog {
 
     /// Records that the game loop entered `step`.
     pub(super) fn enter(&self, step: TickStep) {
+        let now_ns = u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let previous = self.step.load(Ordering::Acquire);
+        let since_ns = self.step_since_ns.swap(now_ns, Ordering::AcqRel);
+        self.step_ns[usize::from(previous)]
+            .fetch_add(now_ns.saturating_sub(since_ns), Ordering::Relaxed);
         self.step_since_ms.store(self.now_ms(), Ordering::Release);
         self.step.store(step as u8, Ordering::Release);
+    }
+
+    /// Takes the time spent in each step since the last call, for slow-tick reports.
+    pub(super) fn take_step_times(&self) -> TickStepTimes {
+        TickStepTimes(
+            self.step_ns
+                .each_ref()
+                .map(|nanos| Duration::from_nanos(nanos.swap(0, Ordering::Relaxed))),
+        )
     }
 
     /// Records that a new tick started.

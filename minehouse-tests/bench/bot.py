@@ -4,6 +4,10 @@
 Usage: bot.py HOST PORT COUNT [PREFIX]
 Bots log in, answer keep-alives/pings/teleports/chunk batches, and send a
 position packet every tick (like a real idle client).
+
+BOT_SPEED=<blocks per tick> makes each bot fly along +X at that speed once it has
+spawned, so the server keeps generating and sending new chunks (1.0 is about
+creative flight; 0 keeps them idle).
 """
 import asyncio, json, struct, sys, zlib, uuid, os, time
 
@@ -11,6 +15,7 @@ PK = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..
 SB = {st: {n: i for i, n in enumerate(v)} for st, v in PK["serverbound"].items()}
 CB = {st: {i: n for i, n in enumerate(v)} for st, v in PK["clientbound"].items()}
 PROTO = PK["version"]
+SPEED = float(os.environ.get("BOT_SPEED", "0"))
 
 
 def varint(v):
@@ -163,6 +168,8 @@ class Bot:
         while True:
             await asyncio.sleep(0.05)
             if self.pos:
+                if SPEED and self.stats.get("loaded_" + self.name):
+                    self.pos[0] += SPEED
                 self.send("move_player_pos", struct.pack(">dddB", *self.pos, 0))
             self.send("client_tick_end")
             try:

@@ -1,6 +1,6 @@
 use super::autosave::AutosaveSchedule;
 use super::tick_overload::TickOverloadGuard;
-use super::tick_watchdog::{TickStep, TickWatchdog};
+use super::tick_watchdog::{TickStep, TickStepTimes, TickWatchdog};
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_REQUESTS_PER_TICK,
@@ -338,6 +338,7 @@ impl Server {
                 self.packet_processor.wait_for_overload_progress().await;
             }
             watchdog.enter(TickStep::Sleeping);
+            log_slow_server_steps(tick_count, &watchdog.take_step_times());
         }
 
         self.jobs.cancel_all();
@@ -692,6 +693,13 @@ impl Server {
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
                 tick_block_entities = ?cm.tick_block_entities,
+                scheduled_ticks = ?cm.scheduled_ticks,
+                islands = ?cm.islands,
+                island_count = cm.island_stats.count,
+                islands_parallel = ?cm.island_stats.parallel,
+                slowest_island = ?cm.island_stats.slowest,
+                islands_busy = ?cm.island_stats.busy,
+                entity_tracker = ?cm.entity_tracker,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
                 lookup_cache_holder_hits = cm.lookup_cache.holder_hits,
@@ -718,6 +726,30 @@ impl Server {
             );
         }
     }
+}
+
+/// Logs where a slow tick spent its time outside the world ticks too.
+fn log_slow_server_steps(tick_count: u64, times: &TickStepTimes) {
+    let busy = times.busy();
+    if busy < SLOW_CHUNK_TICK_THRESHOLD {
+        return;
+    }
+    tracing::warn!(
+        tick_count,
+        busy = ?busy,
+        drain_packets = ?times.get(TickStep::DrainPackets),
+        commands = ?times.get(TickStep::Commands),
+        worlds = ?times.get(TickStep::Worlds),
+        connections = ?times.get(TickStep::Connections),
+        jobs = ?times.get(TickStep::Jobs),
+        player_joins = ?times.get(TickStep::PlayerJoins),
+        world_changes = ?times.get(TickStep::WorldChanges),
+        domain_switches = ?times.get(TickStep::DomainSwitches),
+        autosave = ?times.get(TickStep::Autosave),
+        tab_list = ?times.get(TickStep::TabList),
+        overload_packet_progress = ?times.get(TickStep::OverloadPacketProgress),
+        "Server tick slow"
+    );
 }
 
 #[cfg(test)]

@@ -12,6 +12,8 @@
 //! event queue (events queued by packets and commands between ticks) runs before
 //! the islands, and entities outside every island tick after them.
 
+use std::time::{Duration, Instant};
+
 use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -72,13 +74,17 @@ impl ChunkMap {
     /// Runs spawning, random ticks, block events and entities island by island.
     ///
     /// Marks the chunks entity ticks dirtied, as the sequential entity phase does.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the island phase keeps Vanilla's per-island step order in one place"
+    )]
     pub(super) fn tick_islands(
         &self,
         world: &Arc<World>,
         tickable_chunks: &TickingChunkSnapshot,
         random_tick_speed: u32,
         runs_normally: bool,
-    ) {
+    ) -> IslandPhaseStats {
         let _span = tracing::trace_span!("tick_islands").entered();
         let islands = Islands::build(tickable_chunks.block.iter().map(|chunk| chunk.pos));
 
@@ -121,68 +127,84 @@ impl ChunkMap {
         let players = player_snapshot(world);
 
         let island_count = islands.len();
-        let results: Vec<(FxHashSet<ChunkPos>, Vec<DeferredWork>)> = install_on_tick_pool(|| {
-            work.into_par_iter()
-                .zip(island_entities)
-                .enumerate()
-                .with_max_len(1)
-                .map(|(island, (work, entities))| {
-                    let queues = islands.queues(island, &players);
-                    let _region = RegionScope::enter(world, Arc::clone(&queues));
-                    let _ticking = TickingWorldScope::enter(world);
-                    let lookup_cache = GameplayChunkLookupCacheScope::enter(self);
+        let parallel_start = Instant::now();
+        let results: Vec<(FxHashSet<ChunkPos>, Vec<DeferredWork>, Duration)> =
+            install_on_tick_pool(|| {
+                work.into_par_iter()
+                    .zip(island_entities)
+                    .enumerate()
+                    .with_max_len(1)
+                    .map(|(island, (work, entities))| {
+                        let island_start = Instant::now();
+                        let queues = islands.queues(island, &players);
+                        let _region = RegionScope::enter(world, Arc::clone(&queues));
+                        let _ticking = TickingWorldScope::enter(world);
+                        let lookup_cache = GameplayChunkLookupCacheScope::enter(self);
 
-                    queues.set_handling_tick(true);
-                    if runs_normally {
-                        let mut spawning_chunks = work.spawning_chunks;
-                        let mut island_spawning = spawning.clone();
-                        world.run_spawning_chunks(
-                            &mut spawning_chunks,
-                            island_spawning.as_mut(),
-                            |pos| {
-                                if let Some(chunk) =
-                                    holders.get(&pos).and_then(|holder| holder.try_full_chunk())
-                                {
-                                    chunk.common().increment_inhabited_time();
-                                }
-                                if entity_ticking.contains(&pos) {
-                                    world.tick_thunder(pos);
-                                }
-                            },
-                        );
+                        queues.set_handling_tick(true);
+                        if runs_normally {
+                            let mut spawning_chunks = work.spawning_chunks;
+                            let mut island_spawning = spawning.clone();
+                            world.run_spawning_chunks(
+                                &mut spawning_chunks,
+                                island_spawning.as_mut(),
+                                |pos| {
+                                    if let Some(chunk) =
+                                        holders.get(&pos).and_then(|holder| holder.try_full_chunk())
+                                    {
+                                        chunk.common().increment_inhabited_time();
+                                    }
+                                    if entity_ticking.contains(&pos) {
+                                        world.tick_thunder(pos);
+                                    }
+                                },
+                            );
 
-                        if random_tick_speed > 0 {
-                            // As in the sequential pass, positions come from Vanilla's
-                            // coordinate LCG seeded per tick from runtime RNG.
-                            let mut random_positions =
-                                BlockRandomPositionGenerator::from_runtime_rng();
-                            for index in work.random_chunks {
-                                let tickable_chunk = &tickable_chunks.block[index];
-                                if tickable_chunk.randomly_ticking_sections.is_empty() {
-                                    continue;
-                                }
-                                if let Some(chunk) = tickable_chunk.holder.try_full_chunk() {
-                                    chunk.tick_random_blocks(
-                                        world,
-                                        random_tick_speed,
-                                        &mut random_positions,
-                                    );
+                            if random_tick_speed > 0 {
+                                // As in the sequential pass, positions come from Vanilla's
+                                // coordinate LCG seeded per tick from runtime RNG.
+                                let mut random_positions =
+                                    BlockRandomPositionGenerator::from_runtime_rng();
+                                for index in work.random_chunks {
+                                    let tickable_chunk = &tickable_chunks.block[index];
+                                    if tickable_chunk.randomly_ticking_sections.is_empty() {
+                                        continue;
+                                    }
+                                    if let Some(chunk) = tickable_chunk.holder.try_full_chunk() {
+                                        chunk.tick_random_blocks(
+                                            world,
+                                            random_tick_speed,
+                                            &mut random_positions,
+                                        );
+                                    }
                                 }
                             }
+
+                            world.run_block_events();
                         }
+                        // Vanilla clears this before ticking entities and block entities.
+                        queues.set_handling_tick(false);
 
-                        world.run_block_events();
-                    }
-                    // Vanilla clears this before ticking entities and block entities.
-                    queues.set_handling_tick(false);
-
-                    let dirty = entity_manager.tick_entity_list(entities, runs_normally);
-                    let _ = lookup_cache.finish();
-                    world.requeue_island_block_events(&queues);
-                    (dirty, queues.take_deferred())
-                })
-                .collect()
-        });
+                        let dirty = entity_manager.tick_entity_list(entities, runs_normally);
+                        let _ = lookup_cache.finish();
+                        world.requeue_island_block_events(&queues);
+                        (dirty, queues.take_deferred(), island_start.elapsed())
+                    })
+                    .collect()
+            });
+        let mut stats = IslandPhaseStats {
+            count: island_count,
+            parallel: parallel_start.elapsed(),
+            ..IslandPhaseStats::default()
+        };
+        let results = results
+            .into_iter()
+            .map(|(dirty, deferred, elapsed)| {
+                stats.slowest = stats.slowest.max(elapsed);
+                stats.busy += elapsed;
+                (dirty, deferred)
+            })
+            .collect();
 
         let mut dirty_chunks = entity_manager.tick_entity_list(remainder, runs_normally);
         finish_islands(&mut dirty_chunks, results);
@@ -190,5 +212,19 @@ impl ChunkMap {
         for chunk in dirty_chunks {
             world.mark_chunk_dirty(chunk);
         }
+        stats
     }
+}
+
+/// How one island phase went, for slow-tick reports.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IslandPhaseStats {
+    /// Number of islands.
+    pub count: usize,
+    /// Wall time of the parallel part.
+    pub parallel: Duration,
+    /// Time of the slowest island.
+    pub slowest: Duration,
+    /// Sum of all island times (CPU time spent in islands).
+    pub busy: Duration,
 }
