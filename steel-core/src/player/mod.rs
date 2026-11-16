@@ -107,8 +107,8 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::items::synchronize_map_updates;
 use crate::behavior::{
-    BlockStateBehaviorExt as _, InteractionResult, InventoryTickContext, ItemBehavior,
-    apply_use_remainder, use_behavior_of,
+    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
+    ItemBehavior, apply_use_remainder, use_behavior_of,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;

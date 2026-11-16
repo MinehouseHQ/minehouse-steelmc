@@ -122,7 +122,7 @@ fn disconnect_while_riding_removes_the_vehicle_like_vanilla() {
 
     let player = TestPlayerBuilder::new(Arc::clone(world), "Rider", next_entity_id()).build();
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
-    assert!(player.start_riding(&vehicle));
+    assert!(player.start_riding(&vehicle, false));
     assert_eq!(
         player.root_vehicle().map(|root| root.id()),
         Some(vehicle.id())
