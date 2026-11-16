@@ -73,6 +73,8 @@ pub(crate) enum DispenseBehavior {
     Default,
     /// Pours a water or lava bucket.
     FilledBucket(FluidRef),
+    /// Pours a mob bucket and releases its mob.
+    MobBucket,
     /// Fills an empty bucket from the fluid in front.
     EmptyBucket,
     /// Lights fire, campfires, candles or TNT.
@@ -93,7 +95,7 @@ pub(crate) enum DispenseBehavior {
 
 impl DispenseBehavior {
     /// The behavior Vanilla registers for `item` in `DispenserBlock.DISPENSER_REGISTRY`.
-    // TODO: Armor, boats, minecarts, spawn eggs, fish and powder snow buckets and the other
+    // TODO: Armor, boats, minecarts, spawn eggs, powder snow buckets and the other
     // `DispenseItemBehavior.bootStrap` entries still use the default drop.
     pub(crate) fn for_item(item: &ItemStack) -> Self {
         if item.is(&vanilla_items::WATER_BUCKET) {
@@ -102,6 +104,12 @@ impl DispenseBehavior {
             Self::FilledBucket(&vanilla_fluids::LAVA)
         } else if item.is(&vanilla_items::BUCKET) {
             Self::EmptyBucket
+        } else if ITEM_BEHAVIORS
+            .get_behavior(item.item)
+            .as_mob_bucket()
+            .is_some()
+        {
+            Self::MobBucket
         } else if item.is(&vanilla_items::FLINT_AND_STEEL) {
             Self::FlintAndSteel
         } else if item.is(&vanilla_items::BONE_MEAL) {
@@ -146,6 +154,11 @@ impl DispenseBehavior {
             }
             Self::FilledBucket(fluid) => {
                 let result = filled_bucket(source, stack, fluid);
+                play_default_sound_and_animation(source);
+                result
+            }
+            Self::MobBucket => {
+                let result = mob_bucket(source, stack);
                 play_default_sound_and_animation(source);
                 result
             }
@@ -315,6 +328,18 @@ fn consume_with_remainder(
 
 fn filled_bucket(source: &BlockSource<'_>, stack: ItemStack, fluid: FluidRef) -> ItemStack {
     if empty_contents(source.world, fluid, source.target(), None, true) {
+        return consume_with_remainder(source, stack, ItemStack::new(&vanilla_items::BUCKET));
+    }
+    default_dispense(source, stack)
+}
+
+fn mob_bucket(source: &BlockSource<'_>, stack: ItemStack) -> ItemStack {
+    let Some(mob_bucket) = ITEM_BEHAVIORS.get_behavior(stack.item).as_mob_bucket() else {
+        return default_dispense(source, stack);
+    };
+    let target = source.target();
+    if mob_bucket.empty_contents(source.world, target, None, true) {
+        mob_bucket.check_extra_content(source.world, None, &stack, target);
         return consume_with_remainder(source, stack, ItemStack::new(&vanilla_items::BUCKET));
     }
     default_dispense(source, stack)

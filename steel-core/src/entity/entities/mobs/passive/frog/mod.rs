@@ -34,6 +34,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identif
 
 pub use tadpole::TadpoleEntity;
 
+use crate::behavior::InteractionResult;
 use crate::entity::EntityEventSource as _;
 use crate::entity::ai::brain::memory_types::{
     ATTACK_TARGET, IS_PREGNANT, LONG_JUMP_COOLDOWN_TICKS,
@@ -49,7 +50,9 @@ use crate::entity::{
     MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::{MoveResult, MoverType};
+use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
+use steel_utils::types::InteractionHand;
 
 /// Vanilla `Frog.FROG_FALL_DAMAGE_REDUCTION`.
 const FROG_FALL_DAMAGE_REDUCTION: i32 = 5;
@@ -414,6 +417,11 @@ impl Animal for FrogEntity {
 }
 
 impl Mob for FrogEntity {
+    /// Vanilla `Animal.mobInteract`; `Frog` does not override it.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        Animal::mob_interact_animal(self, player, hand)
+    }
+
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }

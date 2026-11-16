@@ -21,6 +21,8 @@ pub(crate) const RAID_WIN: Identifier = Identifier::vanilla_static("hero_of_the_
 pub(crate) const RAID_OMEN: Identifier = Identifier::vanilla_static("voluntary_exile");
 /// `minecraft:brewed_potion`
 pub(crate) const BREWED_POTION: Identifier = Identifier::vanilla_static("brewed_potion");
+/// `minecraft:filled_bucket`
+pub(crate) const FILLED_BUCKET: Identifier = Identifier::vanilla_static("filled_bucket");
 /// `minecraft:inventory_changed`
 pub(crate) const INVENTORY_CHANGED: Identifier = Identifier::vanilla_static("inventory_changed");
 /// `minecraft:recipe_unlocked`
@@ -50,6 +52,16 @@ impl Player {
                     })
                 })
             })
+        });
+    }
+
+    /// Vanilla `FilledBucketTrigger.trigger(player, stack)`.
+    pub(crate) fn trigger_filled_bucket(&self, stack: &ItemStack) {
+        trigger(self, &FILLED_BUCKET, |conditions| {
+            conditions
+                .item
+                .as_ref()
+                .is_none_or(|predicate| predicate.test(stack))
         });
     }
 

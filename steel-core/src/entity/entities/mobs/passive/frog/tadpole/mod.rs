@@ -41,6 +41,10 @@ use crate::entity::{
     WATER_ANIMAL_AMBIENT_SOUND_INTERVAL, handle_water_animal_air_supply, init_abstract_fish,
     sync_dirty_mob_effects, water_animal_experience_reward, water_animal_spawn_unobstructed,
 };
+use crate::entity::{
+    Bucketable, bucket_mob_pickup, load_default_data_from_bucket_tag,
+    save_default_data_to_bucket_tag, update_bucket_entity_data,
+};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
@@ -453,8 +457,7 @@ impl Mob for TadpoleEntity {
         WATER_ANIMAL_AMBIENT_SOUND_INTERVAL
     }
 
-    /// Vanilla `Tadpole.mobInteract`. Bucket pickup comes with the shared
-    /// `Bucketable` layer (see [`AbstractFish`]).
+    /// Vanilla `Tadpole.mobInteract`.
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
         let (is_food, is_golden_dandelion) = {
             let inventory = player.inventory.lock();
@@ -472,7 +475,7 @@ impl Mob for TadpoleEntity {
             self.toggle_age_lock(player, hand);
             return InteractionResult::Success;
         }
-        InteractionResult::Pass
+        bucket_mob_pickup(player, hand, self).unwrap_or(InteractionResult::Pass)
     }
 
     fn remove_when_far_away(&self, _dist_sqr: f64) -> bool {
@@ -493,6 +496,37 @@ impl Mob for TadpoleEntity {
 }
 
 impl PathfinderMob for TadpoleEntity {}
+
+impl Bucketable for TadpoleEntity {
+    /// Vanilla `Tadpole.setFromBucket` ignores the flag.
+    fn set_from_bucket_flag(&self, _from_bucket: bool) {}
+
+    /// Vanilla `Tadpole.saveToBucketTag`.
+    fn save_to_bucket_tag(&self, bucket: &mut ItemStack) {
+        save_default_data_to_bucket_tag(self, bucket);
+        update_bucket_entity_data(bucket, |tag| {
+            tag.insert("Age", self.age());
+            tag.insert("AgeLocked", i8::from(self.is_age_locked()));
+        });
+    }
+
+    /// Vanilla `Tadpole.loadFromBucketTag`.
+    fn load_from_bucket_tag(&self, tag: &NbtCompound) {
+        load_default_data_from_bucket_tag(self, tag);
+        if let Some(age) = tag.int("Age") {
+            self.set_age(age);
+        }
+        self.set_age_locked(tag.byte("AgeLocked").is_some_and(|value| value != 0));
+    }
+
+    fn bucket_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::TADPOLE_BUCKET)
+    }
+
+    fn bucket_pickup_sound(&self) -> SoundEventRef {
+        &sound_events::ITEM_BUCKET_FILL_TADPOLE
+    }
+}
 
 impl AbstractFish for TadpoleEntity {
     /// Vanilla `Tadpole.fromBucket`: always, so tadpoles never despawn.

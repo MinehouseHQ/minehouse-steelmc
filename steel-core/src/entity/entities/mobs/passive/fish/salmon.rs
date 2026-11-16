@@ -5,17 +5,20 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::entity_variant::SalmonVariant as RegistrySalmonVariant;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::SalmonEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
+use crate::behavior::InteractionResult;
 use crate::entity::SpawnRule;
 use crate::entity::ai::goal::FollowFlockLeaderGoal;
 use crate::entity::damage::DamageSource;
 use crate::entity::entity::EntityEventSource as _;
 use crate::entity::fish::check_surface_water_animal_spawn_rules;
+use crate::entity::save_default_data_to_bucket_tag;
 use crate::entity::{
     AbstractFish, AbstractSchoolingFish, DefaultEntityPush, Entity, EntityBase, EntityBaseLoad,
     EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
@@ -23,8 +26,14 @@ use crate::entity::{
     handle_water_animal_air_supply, init_abstract_fish, sync_dirty_mob_effects,
     water_animal_experience_reward, water_animal_spawn_unobstructed,
 };
+use crate::entity::{Bucketable, bucket_mob_pickup};
 use crate::physics::MoveResult;
+use crate::player::Player;
 use crate::world::{ServerLevelAccessor, World};
+use steel_registry::data_components::vanilla_components::SALMON_SIZE;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
+use steel_utils::types::InteractionHand;
 
 /// Vanilla salmon: a schooling fish in three sizes.
 #[entity_behavior(class = "Salmon", spawn_rule)]
@@ -89,6 +98,11 @@ impl SalmonVariant {
             Self::Medium => 1.0,
             Self::Large => 1.5,
         }
+    }
+
+    /// The `salmon/size` component value for this size.
+    pub(crate) const fn registry_variant(self) -> RegistrySalmonVariant {
+        RegistrySalmonVariant::by_id(self.id())
     }
 
     /// The weighted spawn roll from `Salmon.finalizeSpawn`: 30 / 50 / 15.
@@ -229,6 +243,13 @@ impl Entity for SalmonEntity {
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {}
 
+    /// Vanilla `Salmon.applyImplicitComponents`.
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(size) = item_stack.get(SALMON_SIZE) {
+            self.set_variant(SalmonVariant::by_id(size.id()));
+        }
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_fish(nbt);
         nbt.insert("type", self.variant().serialized_name());
@@ -295,6 +316,11 @@ impl LivingEntity for SalmonEntity {
 }
 
 impl Mob for SalmonEntity {
+    /// Vanilla `AbstractFish.mobInteract`.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        bucket_mob_pickup(player, hand, self).unwrap_or(InteractionResult::Pass)
+    }
+
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -355,6 +381,27 @@ impl Mob for SalmonEntity {
 }
 
 impl PathfinderMob for SalmonEntity {}
+
+impl Bucketable for SalmonEntity {
+    fn set_from_bucket_flag(&self, from_bucket: bool) {
+        AbstractFish::set_from_bucket(self, from_bucket);
+    }
+
+    /// Vanilla `Salmon.saveToBucketTag`.
+    fn save_to_bucket_tag(&self, bucket: &mut ItemStack) {
+        save_default_data_to_bucket_tag(self, bucket);
+        bucket.set(SALMON_SIZE, self.variant().registry_variant());
+    }
+
+    fn bucket_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::SALMON_BUCKET)
+    }
+
+    /// Vanilla `AbstractFish.getPickupSound`.
+    fn bucket_pickup_sound(&self) -> SoundEventRef {
+        &sound_events::ITEM_BUCKET_FILL_FISH
+    }
+}
 
 impl AbstractFish for SalmonEntity {
     fn is_from_bucket(&self) -> bool {
