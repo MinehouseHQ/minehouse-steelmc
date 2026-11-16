@@ -41,6 +41,7 @@ use uuid::Uuid;
 
 use super::trading::{
     MerchantOffer, MerchantOffers, TradeContext, add_offers_from_trade_set, profession_trade_set,
+    trade_rules,
 };
 use super::villager_data::{
     MIN_VILLAGER_LEVEL, can_level_up, max_xp_per_level, read_villager_data, villager_type_at,
@@ -855,9 +856,21 @@ impl VillagerEntity {
     /// discounts for `player`, then the trading player's screen is refreshed.
     fn update_special_prices(&self, player: &Player) {
         self.reset_special_prices();
-        let reputation = self.player_reputation(player.uuid());
+        // Vanilla sums all gossip and Hero of the Village into one special price, so a cured
+        // villager's discount would eat the markup for hitting it. With discounts off only
+        // the gossip that counts against the player is left.
+        let no_discounts = trade_rules().no_discounts;
+        let reputation = if no_discounts {
+            let state = self.state.lock();
+            state
+                .gossips
+                .reputation(player.uuid(), |kind| kind.weight() < 0)
+        } else {
+            self.player_reputation(player.uuid())
+        };
         let hero_modifier = player
             .mob_effect(vanilla_mob_effects::HERO_OF_THE_VILLAGE)
+            .filter(|_| !no_discounts)
             .map_or(0.0, |hero| {
                 f64::from(0.3_f32 + 0.0625_f32 * hero.amplifier() as f32)
             });

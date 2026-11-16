@@ -11,6 +11,8 @@ use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::Identifier;
 use steel_utils::nbt::NbtNumeric as _;
 
+use super::rules::trade_rules;
+
 const TAG_RECIPES: &str = "Recipes";
 /// Vanilla `MerchantOffer` defaults, omitted from NBT when equal.
 const DEFAULT_MAX_USES: i32 = 4;
@@ -113,6 +115,10 @@ pub struct MerchantOffer {
     demand: i32,
     price_multiplier: f32,
     xp: i32,
+    /// Not vanilla and not saved: the offer keeps its trade limit under
+    /// [`TradeRules::infinite_trades`](super::TradeRules::infinite_trades). Set on a
+    /// wandering trader's offers whenever they are read.
+    keeps_limit: bool,
 }
 
 impl MerchantOffer {
@@ -137,6 +143,7 @@ impl MerchantOffer {
             demand: 0,
             price_multiplier,
             xp,
+            keeps_limit: false,
         }
     }
 
@@ -156,13 +163,13 @@ impl MerchantOffer {
 
     /// Vanilla `getModifiedCostCount`.
     fn modified_cost_count(&self, cost: &ItemCost) -> i32 {
-        let base_price = cost.count();
-        // Vanilla `Mth.floor(float)`.
-        let demand_diff = (base_price.wrapping_mul(self.demand) as f32 * self.price_multiplier)
-            .floor()
-            .max(0.0) as i32;
-        (base_price + demand_diff + self.special_price_diff)
-            .clamp(1, cost.item_stack().max_stack_size())
+        trade_rules().cost(
+            cost.count(),
+            self.demand,
+            self.price_multiplier,
+            self.special_price_diff,
+            cost.item_stack().max_stack_size(),
+        )
     }
 
     /// Vanilla `getCostB`.
@@ -192,8 +199,13 @@ impl MerchantOffer {
     }
 
     /// Vanilla `updateDemand`.
-    pub const fn update_demand(&mut self) {
-        self.demand = self.demand + self.uses - (self.max_uses - self.uses);
+    pub fn update_demand(&mut self) {
+        self.demand = trade_rules().demand_after_restock(
+            self.demand,
+            self.uses,
+            self.max_uses,
+            self.keeps_limit,
+        );
     }
 
     /// Vanilla `assemble`.
@@ -265,8 +277,19 @@ impl MerchantOffer {
 
     /// Vanilla `isOutOfStock`.
     #[must_use]
-    pub const fn is_out_of_stock(&self) -> bool {
-        self.uses >= self.max_uses
+    pub fn is_out_of_stock(&self) -> bool {
+        !trade_rules().unlimited(self.keeps_limit) && self.uses >= self.max_uses
+    }
+
+    /// Whether the offer keeps its trade limit when trades are otherwise unlimited.
+    #[must_use]
+    pub const fn keeps_limit(&self) -> bool {
+        self.keeps_limit
+    }
+
+    /// Marks the offer as keeping its trade limit when trades are otherwise unlimited.
+    pub const fn set_keeps_limit(&mut self, value: bool) {
+        self.keeps_limit = value;
     }
 
     /// Vanilla `setToOutOfStock`.
@@ -378,6 +401,7 @@ impl MerchantOffer {
                 .and_then(|tag| tag.codec_f32())
                 .unwrap_or(0.0),
             xp: int("xp", DEFAULT_XP),
+            keeps_limit: false,
         })
     }
 }

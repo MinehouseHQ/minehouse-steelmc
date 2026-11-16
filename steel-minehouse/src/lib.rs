@@ -32,6 +32,7 @@ pub mod moderation;
 pub mod roles;
 pub mod site;
 pub mod tab;
+pub mod villagers;
 pub mod voice;
 
 use auth::{Auth, AuthSetup};
@@ -112,6 +113,7 @@ impl Minehouse {
             chat.start(server);
         }
         tab::Tab::start(server);
+        villagers::start();
         if let Some(blocklog) = &setup.blocklog {
             blocklog.start(server);
         }
