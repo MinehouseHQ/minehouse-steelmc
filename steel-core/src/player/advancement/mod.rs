@@ -58,6 +58,12 @@ impl Default for PlayerAdvancement {
 }
 
 impl PlayerAdvancement {
+    /// The progress of the player for each advancement they have started.
+    #[must_use]
+    pub const fn progress(&self) -> &AdvancementProgressMap {
+        &self.progress
+    }
+
     /// Award a criterion to a player. If this completes the advancement,
     /// grant the advancement, queue its rewards and display the corresponding chat message.
     ///

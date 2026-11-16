@@ -126,6 +126,26 @@ every other group of a player stays. A player who left the Discord server loses 
 when the site does not answer, nothing changes. A listed group that does not exist is skipped
 with a warning. The sync runs only while the login check is on.
 
+## Player statistics
+
+The site shows what a player has done on their profile (`/player/<nick>`) and in the list
+of players. The server sends it to `POST /api/mc/stats` with the same signature as the
+login check: a player when they join and when they leave, and everyone online every few
+minutes and when the server stops. Each player carries their nickname, skin, when they were
+last seen, every vanilla statistic above zero and the advancements they have finished with
+the time of each. Recipes and the roots of the tabs are not counted, like on the site.
+
+`config/minehouse/stats.toml`:
+
+```toml
+enabled = true
+# How often the players online are sent, seconds (30 at least).
+interval_seconds = 300
+```
+
+Nothing is sent when auth is off, because the address of the site and the secret come from
+its config. If the site is down a warning is logged and the data goes out the next time.
+
 ## Chat
 
 `src/chat/`: the Fabric mod `minehouse-chat`.
