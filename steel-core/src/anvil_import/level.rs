@@ -387,8 +387,8 @@ fn read_saved_data(path: &Path) -> Result<Option<NbtCompound>, AnvilImportError>
         .ok_or_else(|| invalid("missing data".to_owned()))
 }
 
-/// Reads a gzip-compressed NBT file.
-pub(super) fn read_gzip_root(path: &Path) -> Result<NbtCompound, AnvilImportError> {
+/// Reads a gzip-compressed NBT file, such as `level.dat` or the saved data of a dimension.
+pub fn read_gzip_root(path: &Path) -> Result<NbtCompound, AnvilImportError> {
     let invalid = |reason: String| AnvilImportError::InvalidFile {
         path: path.to_path_buf(),
         reason,

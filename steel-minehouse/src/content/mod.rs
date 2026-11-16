@@ -36,7 +36,7 @@ mod see;
 mod silent_tags;
 mod speed;
 mod station_menu;
-mod stations;
+pub(crate) mod stations;
 mod trains;
 mod transfers;
 mod waxed_frames;

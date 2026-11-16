@@ -3,6 +3,7 @@
 //! Steel rebuilds points of interest from block states when a chunk loads and persists only
 //! how many tickets each one has left, so only `free_tickets` is carried over.
 
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::ChunkPos;
 
 use super::chunk::check_data_version;
@@ -45,6 +46,7 @@ pub fn convert_poi_chunk(
                 record.int("free_tickets"),
             ) else {
                 ImportReport::count(&mut report.dropped_records, "malformed POI record");
+                ImportReport::count(&mut report.malformed_poi_shapes, shape(record));
                 continue;
             };
             let in_chunk = x.div_euclid(16) == pos.0.x
@@ -68,4 +70,29 @@ pub fn convert_poi_chunk(
         }
     }
     Ok(records)
+}
+
+/// The fields of a record with their types, to tell in the report what a record that could
+/// not be read looks like.
+fn shape(record: &NbtCompound) -> String {
+    let mut fields: Vec<String> = record
+        .iter()
+        .map(|(name, tag)| {
+            let kind = match tag {
+                NbtTag::Byte(_) => "byte",
+                NbtTag::Short(_) => "short",
+                NbtTag::Int(_) => "int",
+                NbtTag::Long(_) => "long",
+                NbtTag::String(_) => "string",
+                NbtTag::IntArray(array) if array.len() == 3 => "int[3]",
+                NbtTag::IntArray(_) => "int[]",
+                NbtTag::List(_) => "list",
+                NbtTag::Compound(_) => "compound",
+                _ => "other",
+            };
+            format!("{name}: {kind}")
+        })
+        .collect();
+    fields.sort();
+    fields.join(", ")
 }

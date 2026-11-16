@@ -29,6 +29,7 @@ pub mod content;
 pub mod downtime;
 pub mod events;
 pub mod guides;
+pub mod migrate;
 pub mod moderation;
 pub mod roles;
 pub mod site;
