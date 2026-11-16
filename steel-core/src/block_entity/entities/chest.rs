@@ -29,7 +29,7 @@ use crate::block_entity::container_openers::{
     ContainerOpenersCounter, ContainerOpenersHooks, container_sound_pitch,
 };
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::entity::Entity as _;
+use crate::entity::Entity;
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::player::Player;
@@ -121,6 +121,14 @@ impl ChestBlockEntity {
         TextComponent::from_nbt(tag)
     }
 
+    /// Vanilla `BaseContainerBlockEntity.isLocked`: a `lock` predicate is
+    /// stored. Steel keeps the tag but does not read it, so any stored lock
+    /// counts.
+    #[must_use]
+    pub fn is_locked(&self) -> bool {
+        self.preserved.lock().get("lock").is_some()
+    }
+
     /// The number of players viewing this half. Vanilla `getOpenCount`, a
     /// trapped chest's redstone power.
     #[must_use]
@@ -128,14 +136,60 @@ impl ChestBlockEntity {
         self.openers.opener_count()
     }
 
-    /// Whether a player near the chest still has it open, Vanilla
+    /// Whether a player or mob near the chest still has it open, Vanilla
     /// `!getEntitiesWithContainerOpen().isEmpty()`.
     #[must_use]
     pub fn has_viewers(&self, world: &World) -> bool {
         !self
             .openers
-            .players_with_container_open(self, world, self.base.pos())
+            .users_with_container_open(self, world, self.base.pos())
             .is_empty()
+    }
+
+    /// Whether the entity `entity_id` is among this half's viewers. Vanilla
+    /// `getEntitiesWithContainerOpen().contains(entity)`.
+    #[must_use]
+    pub fn is_open_by(&self, world: &World, entity_id: i32) -> bool {
+        self.openers
+            .entities_with_container_open(self, world, self.base.pos())
+            .iter()
+            .any(|(id, _)| *id == entity_id)
+    }
+
+    /// Vanilla `ChestBlockEntity.startOpen(ContainerUser)`: `user` counts as
+    /// a viewer reaching `interaction_range` blocks.
+    pub fn start_open_by(&self, user: &dyn Entity, interaction_range: f64) {
+        if self.base.is_removed() || user.is_spectator() {
+            return;
+        }
+        let Some(world) = self.get_level() else {
+            return;
+        };
+        self.openers.increment_openers(
+            self,
+            user,
+            &world,
+            self.base.pos(),
+            self.base.block_state(),
+            interaction_range,
+        );
+    }
+
+    /// Vanilla `ChestBlockEntity.stopOpen(ContainerUser)`.
+    pub fn stop_open_by(&self, user: &dyn Entity) {
+        if self.base.is_removed() || user.is_spectator() {
+            return;
+        }
+        let Some(world) = self.get_level() else {
+            return;
+        };
+        self.openers.decrement_openers(
+            self,
+            user,
+            &world,
+            self.base.pos(),
+            self.base.block_state(),
+        );
     }
 
     fn is_trapped(&self) -> bool {
@@ -292,36 +346,11 @@ impl BlockEntity for ChestBlockEntity {
     }
 
     fn start_open(&self, player: &Player) {
-        if self.base.is_removed() || player.is_spectator() {
-            return;
-        }
-        let Some(world) = self.get_level() else {
-            return;
-        };
-        self.openers.increment_openers(
-            self,
-            player,
-            &world,
-            self.base.pos(),
-            self.base.block_state(),
-            player.block_interaction_range(),
-        );
+        self.start_open_by(player, player.block_interaction_range());
     }
 
     fn stop_open(&self, player: &Player) {
-        if self.base.is_removed() || player.is_spectator() {
-            return;
-        }
-        let Some(world) = self.get_level() else {
-            return;
-        };
-        self.openers.decrement_openers(
-            self,
-            player,
-            &world,
-            self.base.pos(),
-            self.base.block_state(),
-        );
+        self.stop_open_by(player);
     }
 
     fn recheck_open(&self) {

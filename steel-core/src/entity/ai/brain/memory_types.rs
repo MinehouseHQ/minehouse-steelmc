@@ -302,6 +302,27 @@ const fn global_pos_list_codec() -> MemoryCodec<Vec<GlobalPos>> {
     }
 }
 
+/// Vanilla `GlobalPos.CODEC.listOf().xmap(Sets::newHashSet, Lists::newArrayList)`;
+/// entries that fail to decode are skipped.
+const fn global_pos_set_codec() -> MemoryCodec<FxHashSet<GlobalPos>> {
+    MemoryCodec {
+        save: |positions| {
+            NbtTag::List(NbtList::Compound(
+                positions.iter().map(global_pos_to_nbt).collect(),
+            ))
+        },
+        load: |tag| {
+            let compounds = tag.list()?.compounds()?;
+            Some(
+                compounds
+                    .into_iter()
+                    .filter_map(|compound| global_pos_from_nbt(&compound))
+                    .collect(),
+            )
+        },
+    }
+}
+
 const fn uuid_codec() -> MemoryCodec<Uuid> {
     MemoryCodec {
         save: |value| NbtTag::IntArray(value.to_int_array().to_vec()),
@@ -458,6 +479,15 @@ pub static SNIFF_COOLDOWN: MemoryModuleType<()> =
     MemoryModuleType::with_codec("sniff_cooldown", unit_codec());
 pub static DOORS_TO_CLOSE: MemoryModuleType<FxHashSet<GlobalPos>> =
     MemoryModuleType::new("doors_to_close");
+pub static VISITED_BLOCK_POSITIONS: MemoryModuleType<FxHashSet<GlobalPos>> =
+    MemoryModuleType::with_codec("visited_block_positions", global_pos_set_codec());
+pub static UNREACHABLE_TRANSPORT_BLOCK_POSITIONS: MemoryModuleType<FxHashSet<GlobalPos>> =
+    MemoryModuleType::with_codec(
+        "unreachable_transport_block_positions",
+        global_pos_set_codec(),
+    );
+pub static TRANSPORT_ITEMS_COOLDOWN_TICKS: MemoryModuleType<i32> =
+    MemoryModuleType::new("transport_items_cooldown_ticks");
 pub static HOME: MemoryModuleType<GlobalPos> =
     MemoryModuleType::with_codec("home", global_pos_codec());
 pub static JOB_SITE: MemoryModuleType<GlobalPos> =

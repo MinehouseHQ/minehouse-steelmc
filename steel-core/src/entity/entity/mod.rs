@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use crate::block_entity::container_openers::ContainerUser;
 use crate::enchantment_helper;
 use crate::entity::entities::mobs::hostile::cube_mob::AbstractCubeMob;
 use crate::entity::entities::mobs::hostile::piglin::AbstractPiglin;
@@ -1819,6 +1820,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a mob when it has mob behavior.
     fn as_mob(&self) -> Option<&dyn Mob> {
         try_as_dyn::<Self, dyn Mob>(self)
+    }
+
+    /// Returns this entity as a mob that opens containers itself, Vanilla
+    /// `ContainerUser` (players count through their menus instead).
+    fn as_container_user(&self) -> Option<&dyn ContainerUser> {
+        try_as_dyn::<Self, dyn ContainerUser>(self)
     }
 
     /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.
