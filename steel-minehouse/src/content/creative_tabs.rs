@@ -1,7 +1,7 @@
 //! Our creative tabs, the way the Fabric server shows them: through Polymer on the client.
 //!
 //! The pack has Polymer, and Polymer on the client draws the creative tabs a Polymer server
-//! defines (`MineHouse`, «Магические травы», «Банк», «Рай»). Steel has no Polymer, so it
+//! defines (`MineHouse`, «Банк», «Рай» with the magic herb). Steel has no Polymer, so it
 //! speaks the part of its protocol the tabs need, on plugin channels in the play state:
 //!
 //! 1. On join the server says `polymer:hello`; a client with Polymer answers with its
@@ -55,12 +55,6 @@ pub static TABS: &[Tab] = &[
         items: &[&STATION, &JUNCTION, &MAGNIFIER],
     },
     Tab {
-        id: "minehouse-herbs:items",
-        name: "Магические травы",
-        icon: &LEAF,
-        items: &[&SEEDS, &LEAF, &LEAF_BLOCK, &BROTH, &PAPIROSA],
-    },
-    Tab {
         id: "minehouse-bank:items",
         name: "Банк",
         icon: &ATM,
@@ -70,7 +64,8 @@ pub static TABS: &[Tab] = &[
         id: "minehouse-paradise:items",
         name: "Рай",
         icon: &CLOUD,
-        items: &[&CLOUD],
+        // The magic herb is part of Paradise since Paradise 0.32.0: no tab of its own.
+        items: &[&CLOUD, &SEEDS, &LEAF, &LEAF_BLOCK, &BROTH, &PAPIROSA],
     },
 ];
 

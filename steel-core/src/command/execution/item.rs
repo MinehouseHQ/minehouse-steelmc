@@ -44,6 +44,14 @@ pub fn set_extension_items(items: ExtensionItems) -> bool {
     EXTENSION_ITEMS.set(items).is_ok()
 }
 
+/// A stack of one of the extension item with this id, if an extension has one. The world
+/// import uses it: a modded server saved these items under their own ids.
+#[must_use]
+pub fn extension_item_stack(id: &str) -> Option<ItemStack> {
+    let items = EXTENSION_ITEMS.get()?;
+    (items.stack)(id)
+}
+
 /// A stack of one of the extension item `key`, if it is one.
 fn extension_stack(key: &Identifier) -> Option<ItemStack> {
     let items = EXTENSION_ITEMS.get()?;

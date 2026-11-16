@@ -1,16 +1,24 @@
-//! Regionized ticking: the parallel island phase of a world tick.
+//! Regionized ticking: the parallel island phases of a world tick.
 //!
-//! Runs only with [`regionized_ticking_enabled`]. After scheduled ticks and the
-//! chunk-source phase, the world's ticking chunks are split into
-//! [`Islands`]. Each island then runs, on the tick pool and in Vanilla order for
-//! its own chunks: natural spawning, random ticks, its block events and its
-//! entities. Islands are far enough apart that none can reach another within a
-//! tick, so only the interleaving between islands differs from the sequential
-//! tick, and that interleaving is not observable.
+//! Runs only with [`regionized_ticking_enabled`]. A world tick has two island
+//! phases, each splitting the world's ticking chunks into [`Islands`] that run
+//! on the tick pool, in Vanilla order for their own chunks:
 //!
-//! Work that is not local to an island stays sequential: the world's own block
-//! event queue (events queued by packets and commands between ticks) runs before
-//! the islands, and entities outside every island tick after them.
+//! 1. Scheduled ticks, before the chunk-source phase: the world selects this
+//!    tick's block ticks in Vanilla order, each island runs its share, then the
+//!    same for fluid ticks.
+//! 2. After the chunk-source phase: natural spawning, random ticks, block events
+//!    and entities.
+//!
+//! Islands are far enough apart that none can reach another within a tick, so
+//! only the interleaving between islands differs from the sequential tick, and
+//! that interleaving is not observable.
+//!
+//! Work that is not local to an island stays sequential. Block events wait in the
+//! world queue between the phases and are handed to the island that owns their
+//! position, ahead of its own events, as in Vanilla's single queue; events outside
+//! every island run before the islands. Entities outside every island tick after
+//! them.
 
 use std::time::{Duration, Instant};
 
@@ -23,8 +31,9 @@ use super::{
 };
 use crate::entity::Entity as _;
 use crate::world::World;
-use crate::world::region::{DeferredWork, Islands, RegionScope};
+use crate::world::region::{DeferredWork, Islands, RegionQueues, RegionScope};
 use crate::world::tick_pool::install_on_tick_pool;
+use crate::world::tick_scheduler::{ScheduledTick, TickKey};
 use crate::world::ticking_world::TickingWorldScope;
 
 pub(crate) use crate::world::region::regionized_ticking_enabled;
@@ -38,7 +47,6 @@ struct IslandWork {
     spawning_chunks: Vec<ChunkPos>,
 }
 
-/// `(entity id, position)` of every player, before any island moves them.
 /// Merges each island's dirty chunks and runs the work it deferred, island by island.
 fn finish_islands(
     dirty_chunks: &mut FxHashSet<ChunkPos>,
@@ -52,6 +60,7 @@ fn finish_islands(
     }
 }
 
+/// `(entity id, position)` of every player, before any island moves them.
 fn player_snapshot(world: &World) -> Vec<(i32, glam::DVec3)> {
     let mut players = Vec::new();
     world.players.iter_players(|_, player| {
@@ -70,7 +79,106 @@ fn entity_ticking_chunks(tickable_chunks: &TickingChunkSnapshot) -> FxHashSet<Ch
         .collect()
 }
 
+/// Splits `ticks` by island, keeping their order inside each island.
+///
+/// Returns the ticks of each island and the ticks outside every island.
+fn split_ticks_by_island<T: TickKey>(
+    islands: &Islands,
+    ticks: Vec<ScheduledTick<T>>,
+) -> (Vec<Vec<ScheduledTick<T>>>, Vec<ScheduledTick<T>>) {
+    let mut per_island: Vec<Vec<ScheduledTick<T>>> =
+        (0..islands.len()).map(|_| Vec::new()).collect();
+    let mut outside = Vec::new();
+    for tick in ticks {
+        match islands.island_of(ChunkPos::from_block_pos(tick.pos)) {
+            Some(island) => per_island[island].push(tick),
+            None => outside.push(tick),
+        }
+    }
+    (per_island, outside)
+}
+
 impl ChunkMap {
+    /// Runs `run` once per island on the tick pool, each with its island bound.
+    ///
+    /// Returns, island by island, what `run` returned and the work the island
+    /// deferred, plus each island's time.
+    fn run_on_islands<W: Send, R: Send>(
+        &self,
+        world: &Arc<World>,
+        queues: &[Arc<RegionQueues>],
+        work: Vec<W>,
+        run: impl Fn(&RegionQueues, W) -> R + Sync,
+    ) -> Vec<(R, Vec<DeferredWork>, Duration)> {
+        install_on_tick_pool(|| {
+            work.into_par_iter()
+                .enumerate()
+                .with_max_len(1)
+                .map(|(island, work)| {
+                    let island_start = Instant::now();
+                    let queues = &queues[island];
+                    let _region = RegionScope::enter(world, Arc::clone(queues));
+                    let _ticking = TickingWorldScope::enter(world);
+                    let lookup_cache = GameplayChunkLookupCacheScope::enter(self);
+                    let result = run(queues, work);
+                    let _ = lookup_cache.finish();
+                    (result, queues.take_deferred(), island_start.elapsed())
+                })
+                .collect()
+        })
+    }
+
+    /// Vanilla `LevelTicks.tick` for block ticks, then fluid ticks, island by island.
+    ///
+    /// The world selects each batch in Vanilla order with Vanilla's cap; islands
+    /// then run their share in that order. Block events they queue wait in the
+    /// world queue for the second island phase.
+    pub(super) fn tick_scheduled_ticks_in_islands(
+        &self,
+        world: &Arc<World>,
+        tickable_chunks: &TickingChunkSnapshot,
+        current_tick: i64,
+    ) {
+        let _span = tracing::trace_span!("scheduled_ticks_in_islands").entered();
+        let islands = Islands::build(tickable_chunks.block.iter().map(|chunk| chunk.pos));
+        let players = player_snapshot(world);
+        let queues: Vec<Arc<RegionQueues>> = (0..islands.len())
+            .map(|island| islands.queues(island, &players))
+            .collect();
+
+        let ready_block_ticks =
+            Self::collect_scheduled_block_ticks(world, tickable_chunks, current_tick);
+        let (per_island, outside) = split_ticks_by_island(&islands, ready_block_ticks);
+        let results = self.run_on_islands(world, &queues, per_island, |queues, ticks| {
+            queues.set_handling_tick(true);
+            Self::execute_scheduled_block_ticks(world, ticks);
+        });
+        Self::execute_scheduled_block_ticks(world, outside);
+        Self::finish_scheduled_islands(results);
+
+        let ready_fluid_ticks =
+            Self::collect_scheduled_fluid_ticks(world, tickable_chunks, current_tick);
+        let (per_island, outside) = split_ticks_by_island(&islands, ready_fluid_ticks);
+        let results = self.run_on_islands(world, &queues, per_island, |queues, ticks| {
+            Self::execute_scheduled_fluid_ticks(world, ticks);
+            queues.set_handling_tick(false);
+        });
+        Self::execute_scheduled_fluid_ticks(world, outside);
+        Self::finish_scheduled_islands(results);
+
+        for queues in &queues {
+            world.requeue_island_block_events(queues);
+        }
+    }
+
+    fn finish_scheduled_islands(results: Vec<((), Vec<DeferredWork>, Duration)>) {
+        for ((), deferred, _) in results {
+            for work in deferred {
+                work();
+            }
+        }
+    }
+
     /// Runs spawning, random ticks, block events and entities island by island.
     ///
     /// Marks the chunks entity ticks dirtied, as the sequential entity phase does.
@@ -88,9 +196,17 @@ impl ChunkMap {
         let _span = tracing::trace_span!("tick_islands").entered();
         let islands = Islands::build(tickable_chunks.block.iter().map(|chunk| chunk.pos));
 
-        // The world's own queue holds events queued outside any island (packets,
-        // commands). They run first, as they would at the start of Vanilla's pass.
+        let players = player_snapshot(world);
+        let island_queues: Vec<Arc<RegionQueues>> = (0..islands.len())
+            .map(|island| islands.queues(island, &players))
+            .collect();
+
+        // The world's queue holds events queued before this phase: by packets and
+        // commands, and by scheduled ticks. Each goes to the island owning its
+        // position, ahead of the island's own events, as in Vanilla's single queue.
+        // The rest run now.
         if runs_normally {
+            world.route_block_events_to_islands(&island_queues, |chunk| islands.island_of(chunk));
             world.run_block_events();
         }
 
@@ -124,8 +240,6 @@ impl ChunkMap {
         let (island_entities, remainder) = entity_manager
             .partition_ticking_entities(islands.len(), |chunk| islands.island_of(chunk));
 
-        let players = player_snapshot(world);
-
         let island_count = islands.len();
         let parallel_start = Instant::now();
         let results: Vec<(FxHashSet<ChunkPos>, Vec<DeferredWork>, Duration)> =
@@ -136,7 +250,7 @@ impl ChunkMap {
                     .with_max_len(1)
                     .map(|(island, (work, entities))| {
                         let island_start = Instant::now();
-                        let queues = islands.queues(island, &players);
+                        let queues = Arc::clone(&island_queues[island]);
                         let _region = RegionScope::enter(world, Arc::clone(&queues));
                         let _ticking = TickingWorldScope::enter(world);
                         let lookup_cache = GameplayChunkLookupCacheScope::enter(self);

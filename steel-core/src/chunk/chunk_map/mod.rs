@@ -932,13 +932,17 @@ impl ChunkMap {
                 // Block and fluid collection share the same post-`tick_time`
                 // timestamp even though block callbacks run between the phases.
                 let current_tick = world.game_time();
-                let ready_block_ticks =
-                    Self::collect_scheduled_block_ticks(world, &tickable_chunks, current_tick);
-                Self::execute_scheduled_block_ticks(world, ready_block_ticks);
+                if regions::regionized_ticking_enabled() {
+                    self.tick_scheduled_ticks_in_islands(world, &tickable_chunks, current_tick);
+                } else {
+                    let ready_block_ticks =
+                        Self::collect_scheduled_block_ticks(world, &tickable_chunks, current_tick);
+                    Self::execute_scheduled_block_ticks(world, ready_block_ticks);
 
-                let ready_fluid_ticks =
-                    Self::collect_scheduled_fluid_ticks(world, &tickable_chunks, current_tick);
-                Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
+                    let ready_fluid_ticks =
+                        Self::collect_scheduled_fluid_ticks(world, &tickable_chunks, current_tick);
+                    Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
+                }
                 timings.scheduled_ticks = start.elapsed();
                 timings.tick_chunks += timings.scheduled_ticks;
             }
@@ -1016,6 +1020,14 @@ impl ChunkMap {
             let _span = tracing::trace_span!("broadcast_changes").entered();
             let start = Instant::now();
             self.broadcast_changed_chunks();
+            if regions::regionized_ticking_enabled() {
+                // Players ticked in the islands, before this broadcast. Their block
+                // change acks go out after it, as in the sequential tick.
+                world.players.iter_players(|_, player| {
+                    player.tick_ack_block_changes();
+                    true
+                });
+            }
             timings.broadcast_changes = start.elapsed();
         }
 

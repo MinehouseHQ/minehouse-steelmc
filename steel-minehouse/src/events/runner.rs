@@ -14,20 +14,21 @@ use steel_core::{
     world::{LevelReader, World},
 };
 use steel_protocol::packets::game::{
-    BlockChange, CAddEntity, CBlockUpdate, CClearTitles, CGameEvent, CLevelParticles,
+    BlockChange, CAddEntity, CBlockEvent, CBlockUpdate, CClearTitles, CGameEvent, CLevelParticles,
     CRemoveEntities, CSectionBlocksUpdate, CSetActionBarText, CSetCamera, CSetSubtitleText,
-    CSetTime, CSetTitleText, CSetTitlesAnimation, CSound, GameEventType, RandomizationType,
-    SoundSource,
+    CSetTime, CSetTitleText, CSetTitlesAnimation, CSound, CSwingAnimation, GameEventType,
+    RandomizationType, SoundSource,
 };
 use steel_registry::{
     REGISTRY, RegistryEntry as _, RegistryExt as _,
+    data_components::vanilla_components::SwingAnimation,
     particle_type::{ParticleData, ParticleTypeRef},
     sound_event::SoundEventHolder,
-    vanilla_entities,
+    vanilla_blocks, vanilla_entities,
 };
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Identifier, PackedSectionBlockPos, SectionPos,
-    types::{GameType, UpdateFlags},
+    types::{GameType, InteractionHand, UpdateFlags},
 };
 use text_components::{
     Modifier as _, TextComponent,
@@ -39,9 +40,12 @@ use super::{
     actor::{Actor, Pose},
     blocks::{BlockSet, Placed, block_state, rotation, state_text},
     camera_path::{CameraPath, look, wrap},
+    effects::{Fx, Rift, RocketEnd, Shower, Volley},
     journal::{Journal, ViewerState},
     permanent,
-    script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript},
+    prop::Prop,
+    scatter::Scatter,
+    script::{Action, BlockMode, BlockSource, Cue, Gather, PathSource, ShowScript, Stage},
 };
 use crate::{blocklog::BlockLog, moderation::format::render};
 
@@ -76,6 +80,34 @@ enum Held {
     Shape { rotation: Quat, scale: Vec3 },
     Time { from: f64, target: f64 },
     Weather { rain: f32, thunder: f32 },
+    Meteors(Box<Shower>),
+    Rift(Box<Rift>),
+    Rockets(Box<Volley>),
+    Scatter(Box<Scatter>),
+}
+
+impl Held {
+    /// Takes away what an effect still shows.
+    fn clear(&mut self, fx: &Fx<'_>) {
+        match self {
+            Self::Meteors(shower) => shower.clear(fx),
+            Self::Rift(rift) => rift.clear(fx),
+            Self::Rockets(volley) => volley.clear(fx),
+            Self::Scatter(scatter) => scatter.clear(fx),
+            _ => {}
+        }
+    }
+
+    /// A viewer's game was started again and has none of the effect's entities.
+    fn forget(&mut self, id: Uuid) {
+        match self {
+            Self::Meteors(shower) => shower.forget(id),
+            Self::Rift(rift) => rift.forget(id),
+            Self::Rockets(volley) => volley.forget(id),
+            Self::Scatter(scatter) => scatter.forget(id),
+            _ => {}
+        }
+    }
 }
 
 struct Active {
@@ -106,6 +138,12 @@ pub struct Runner {
     ghosts_unsent: bool,
     /// Lightning the viewers were shown, and the tick it is taken away.
     bolts: Vec<(i32, u32)>,
+    /// The show's places apart from its stage, where meteors fall.
+    places: FxHashMap<String, Stage>,
+    /// The rifts that are open, by name: where rockets fly.
+    rifts: FxHashMap<String, DVec3>,
+    /// What `scatter` cues left lying: it stays until the show ends.
+    litter: Vec<Prop>,
     world: Arc<World>,
     origin: DVec3,
     mode: Mode,
@@ -146,6 +184,9 @@ impl Runner {
             ghosts: FxHashMap::default(),
             ghosts_unsent: false,
             bolts: Vec::new(),
+            places: FxHashMap::default(),
+            rifts: FxHashMap::default(),
+            litter: Vec::new(),
             world,
             origin,
             mode,
@@ -189,6 +230,23 @@ impl Runner {
     #[must_use]
     pub fn is_viewer(&self, id: Uuid) -> bool {
         self.viewers.contains(&id)
+    }
+
+    /// The show's spots (`/show spot`), as they are when it starts.
+    pub fn set_places(&mut self, places: FxHashMap<String, Stage>) {
+        self.places = places;
+    }
+
+    /// What the effects of this tick work with.
+    fn fx<'a>(&'a self, cx: &'a Cx<'_>) -> Fx<'a> {
+        Fx {
+            tick: self.tick,
+            muted: self.muted,
+            server: cx.server,
+            world: &self.world,
+            viewers: self.viewers_online(cx.online),
+            online: cx.online,
+        }
     }
 
     /// A stage-relative position in world coordinates.
@@ -409,6 +467,12 @@ impl Runner {
         for actor in self.actors.iter_mut().flatten() {
             actor.forget(id);
         }
+        for running in &mut self.active {
+            running.held.forget(id);
+        }
+        for prop in &mut self.litter {
+            prop.forget(id);
+        }
     }
 
     /// Out of the show early (`/show optout`): back where and how they were.
@@ -491,16 +555,16 @@ impl Runner {
         {
             let index = self.next;
             self.next += 1;
-            let held = self.start_cue(cue, cx);
+            let mut held = self.start_cue(cue, cx);
             if cue.duration == 0 {
-                self.end_cue(cue, &held, cx);
+                self.end_cue(cue, &mut held, cx);
             } else {
-                self.update_cue(cue, &held, 0.0, cx);
+                self.update_cue(cue, &mut held, 0.0, cx);
                 self.active.push(Active { cue: index, held });
             }
         }
 
-        for running in mem::take(&mut self.active) {
+        for mut running in mem::take(&mut self.active) {
             let Some(cue) = script.cues.get(running.cue) else {
                 continue;
             };
@@ -510,9 +574,9 @@ impl Runner {
                 continue;
             }
             let progress = (f64::from(elapsed) / f64::from(cue.duration)).min(1.0);
-            self.update_cue(cue, &running.held, progress, cx);
+            self.update_cue(cue, &mut running.held, progress, cx);
             if elapsed >= cue.duration {
-                self.end_cue(cue, &running.held, cx);
+                self.end_cue(cue, &mut running.held, cx);
             } else {
                 self.active.push(running);
             }
@@ -594,6 +658,26 @@ impl Runner {
             | Action::Bar { .. }
             | Action::Chat { .. }
             | Action::Explosion { .. } => self.emit(&cue.action, cx),
+            Action::Blocks { .. } | Action::ClearBlocks { .. } => {
+                self.start_blocks(&cue.action, cx);
+            }
+            Action::Lightning { pos } => self.strike(*pos, cx.online),
+            Action::Meteors(_) | Action::Rockets(_) | Action::Rift(_) | Action::Scatter(_) => {
+                return self.start_effect(cue, cx);
+            }
+            Action::Follow { .. }
+            | Action::Pose { .. }
+            | Action::Swing { .. }
+            | Action::Ignite { .. }
+            | Action::Chest { .. } => self.start_puppet(&cue.action, cx),
+            Action::Path { .. } | Action::Shake { .. } | Action::Shockwave(_) => {}
+        }
+        Held::Nothing
+    }
+
+    /// Puts or takes away the blocks of a cue.
+    fn start_blocks(&mut self, action: &Action, cx: &mut Cx<'_>) {
+        match action {
             Action::Blocks { mode, source, pos } => {
                 let blocks = self.blocks_of(source, *pos);
                 match mode {
@@ -614,16 +698,193 @@ impl Runner {
                     cx.journal.flush();
                 }
             }
-            Action::Lightning { pos } => self.strike(*pos, cx.online),
-            Action::Path { .. } | Action::Shake { .. } => {}
+            _ => {}
         }
-        Held::Nothing
     }
 
-    /// Called every tick of a cue with a duration; `progress` goes from 0 to 1, before any
+    /// The cues for characters, see `Puppets` of the Fabric mod.
+    fn start_puppet(&mut self, action: &Action, cx: &Cx<'_>) {
+        match action {
+            Action::Follow {
+                actor,
+                target,
+                offset,
+                look: toward,
+            } => self.follow(*actor, *target, *offset, *toward),
+            Action::Pose { actor, pose } => {
+                if let Some(actor) = self.actor_or_spawn(*actor) {
+                    actor.set_body_pose(*pose);
+                }
+            }
+            Action::Swing { actor, off_hand } => {
+                let body = self
+                    .actor_or_spawn(*actor)
+                    .and_then(|actor| actor.body_id());
+                if let Some(entity_id) = body.filter(|_| !self.muted) {
+                    let hand = if *off_hand {
+                        InteractionHand::OffHand
+                    } else {
+                        InteractionHand::MainHand
+                    };
+                    for player in self.viewers_here(cx.online) {
+                        player.send_packet(CSwingAnimation::new(
+                            entity_id,
+                            hand,
+                            SwingAnimation::DEFAULT,
+                        ));
+                    }
+                }
+            }
+            Action::Ignite { actor } => {
+                let Some(actor) = self.actor_or_spawn(*actor) else {
+                    return;
+                };
+                let at = actor.pos();
+                if actor.ignite() {
+                    self.play(
+                        "entity.creeper.primed",
+                        SoundSource::Hostile,
+                        at,
+                        1.0,
+                        0.5,
+                        cx,
+                    );
+                }
+            }
+            Action::Chest { pos, open, sound } => {
+                if self.muted {
+                    return;
+                }
+                let at = block_pos(self.abs(*pos));
+                let block = vanilla_blocks::CHEST.id() as i32;
+                for player in self.viewers_here(cx.online) {
+                    player.send_packet(CBlockEvent::new(at, 1, u8::from(*open), block));
+                }
+                if *sound {
+                    let name = if *open {
+                        "block.chest.open"
+                    } else {
+                        "block.chest.close"
+                    };
+                    let middle = DVec3::new(
+                        f64::from(at.x()) + 0.5,
+                        f64::from(at.y()) + 0.5,
+                        f64::from(at.z()) + 0.5,
+                    );
+                    self.play(name, SoundSource::Blocks, middle, 0.5, 0.95, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Puts the camera `offset` from the target, looking at `toward` from it.
+    fn follow(&mut self, camera: usize, target: usize, offset: DVec3, toward: DVec3) {
+        let Some(at) = self.actor(target).map(Actor::pos) else {
+            return;
+        };
+        let pos = at + offset;
+        let (yaw, pitch) = look(pos, at + toward);
+        if let Some(actor) = self.actor_or_spawn(camera) {
+            actor.move_to(pos, yaw, pitch);
+        }
+    }
+
+    /// A vanilla sound at a place, for the viewers in the show's world.
+    fn play(
+        &self,
+        name: &'static str,
+        source: SoundSource,
+        at: DVec3,
+        volume: f32,
+        pitch: f32,
+        cx: &Cx<'_>,
+    ) {
+        if self.muted {
+            return;
+        }
+        let Some(event) = REGISTRY
+            .sound_events
+            .by_key(&Identifier::vanilla_static(name))
+        else {
+            return;
+        };
+        let seed = rand::random();
+        for player in self.viewers_here(cx.online) {
+            player.send_packet(CSound::new_holder(
+                SoundEventHolder::Registry(event),
+                source,
+                at,
+                volume,
+                pitch,
+                seed,
+            ));
+        }
+    }
+
+    /// What a big effect keeps while it runs.
+    fn start_effect(&mut self, cue: &Cue, cx: &Cx<'_>) -> Held {
+        match &cue.action {
+            Action::Meteors(_) => Held::Meteors(Box::default()),
+            Action::Rockets(_) => Held::Rockets(Box::default()),
+            Action::Scatter(def) => Held::Scatter(Box::new(Scatter::throw(def, self.origin))),
+            Action::Rift(def) => {
+                let center = self.abs(def.pos);
+                let rift = Rift::open(def, cue.at, center, &self.fx(cx));
+                self.rifts.insert(def.name.clone(), center);
+                Held::Rift(Box::new(rift))
+            }
+            _ => Held::Nothing,
+        }
+    }
+
+    /// One tick of a cue that is a big effect; `progress` goes from 0 to 1, before any
     /// easing.
-    fn update_cue(&mut self, cue: &Cue, held: &Held, progress: f64, cx: &mut Cx<'_>) {
+    fn update_effect(&mut self, cue: &Cue, held: &mut Held, progress: f64, cx: &Cx<'_>) {
+        let elapsed = self.tick.saturating_sub(cue.at);
         match (&cue.action, held) {
+            (Action::Meteors(def), Held::Meteors(shower)) => {
+                shower.update(def, cue.duration, elapsed, &self.places, &self.fx(cx));
+            }
+            (Action::Rift(def), Held::Rift(rift)) => {
+                rift.update(def, cue.duration, elapsed, &self.fx(cx));
+                if rift.closing {
+                    self.rifts.remove(&def.name);
+                }
+            }
+            (Action::Rockets(def), Held::Rockets(volley)) => {
+                let ends: Vec<DVec3> = def
+                    .between
+                    .iter()
+                    .filter_map(|end| match end {
+                        RocketEnd::Rift(name) => self.rifts.get(name).copied(),
+                        RocketEnd::Point(pos) => Some(self.abs(*pos)),
+                    })
+                    .collect();
+                volley.update(def, cue.duration, elapsed, &ends, &self.fx(cx));
+            }
+            (Action::Shockwave(def), _) => {
+                def.update(self.abs(def.pos), progress, &self.fx(cx));
+            }
+            (Action::Scatter(def), Held::Scatter(scatter)) => {
+                scatter.update(def, elapsed, &self.fx(cx));
+            }
+            (
+                Action::Follow {
+                    actor,
+                    target,
+                    offset,
+                    look: toward,
+                },
+                _,
+            ) => self.follow(*actor, *target, *offset, *toward),
+            _ => {}
+        }
+    }
+
+    fn update_cue(&mut self, cue: &Cue, held: &mut Held, progress: f64, cx: &mut Cx<'_>) {
+        self.update_effect(cue, held, progress, cx);
+        match (&cue.action, &*held) {
             (Action::Path { actor, ease, path }, _) => {
                 let at = ease.apply(progress);
                 let pose = match path {
@@ -709,8 +970,17 @@ impl Runner {
 
     /// Called once after the last update, or right after the start of a cue without a
     /// duration: whatever the cue changes over time is at its end.
-    fn end_cue(&mut self, cue: &Cue, held: &Held, cx: &mut Cx<'_>) {
-        match (&cue.action, held) {
+    fn end_cue(&mut self, cue: &Cue, held: &mut Held, cx: &mut Cx<'_>) {
+        if let Action::Rift(def) = &cue.action {
+            self.rifts.remove(&def.name);
+        }
+        if let (Action::Scatter(def), Held::Scatter(scatter)) = (&cue.action, &mut *held) {
+            // What fell stays where it lies.
+            scatter.land(def);
+            self.litter.append(&mut scatter.leave());
+        }
+        held.clear(&self.fx(cx));
+        match (&cue.action, &*held) {
             (Action::Move { .. }, _) => self.update_cue(cue, held, 1.0, cx),
             (Action::Time { .. }, Held::Time { target, .. }) => self.time = Some(*target),
             (Action::Weather { rain, thunder }, _) if cue.duration == 0 => {
@@ -758,22 +1028,15 @@ impl Runner {
         {
             self.burst(particle, at, Vec3::ZERO, 0.0, 1, cx);
         }
-        let boom = REGISTRY
-            .sound_events
-            .by_key(&Identifier::vanilla_static("entity.generic.explode"))
-            .filter(|_| sound);
-        if let Some(boom) = boom {
-            let seed = rand::random();
-            for player in self.viewers_here(cx.online) {
-                player.send_packet(CSound::new_holder(
-                    SoundEventHolder::Registry(boom),
-                    SoundSource::Master,
-                    at,
-                    4.0,
-                    0.8,
-                    seed,
-                ));
-            }
+        if sound {
+            self.play(
+                "entity.generic.explode",
+                SoundSource::Master,
+                at,
+                4.0,
+                0.8,
+                cx,
+            );
         }
     }
 
@@ -899,6 +1162,9 @@ impl Runner {
         let here = self.viewers_here(online);
         for actor in self.actors.iter_mut().flatten() {
             actor.sync(&here, online);
+        }
+        for prop in &mut self.litter {
+            prop.sync(&here);
         }
 
         if let Some((entity, ..)) = camera {
@@ -1099,8 +1365,14 @@ impl Runner {
         self.finished = true;
         self.muted = false;
         self.cinematic = None;
-        self.active.clear();
+        for mut running in mem::take(&mut self.active) {
+            running.held.clear(&self.fx(cx));
+        }
+        self.rifts.clear();
         let online = cx.online;
+        for mut prop in self.litter.drain(..) {
+            prop.remove(online);
+        }
         for slot in &mut self.actors {
             if let Some(mut actor) = slot.take() {
                 actor.remove(online);
@@ -1137,7 +1409,7 @@ fn block_pos(at: DVec3) -> BlockPos {
     BlockPos::new(at.x as i32, at.y as i32, at.z as i32)
 }
 
-fn loaded(world: &World, pos: BlockPos) -> bool {
+pub fn loaded(world: &World, pos: BlockPos) -> bool {
     world
         .chunk_map
         .with_full_chunk(ChunkPos::from_block_pos(pos), |_| ())

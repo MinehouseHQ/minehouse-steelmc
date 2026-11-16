@@ -344,12 +344,6 @@ pub struct World {
     redstone_torch_toggles: SyncMutex<redstone::RedstoneTorchToggleTracker>,
     /// World registration and sparse head index for chunk-owned scheduled ticks.
     scheduled_ticks: tick_scheduler::WorldTickScheduler,
-    /// Published block batch used by `willTickThisTick` queries during callbacks.
-    scheduled_block_ticks_this_tick:
-        SyncMutex<Option<Arc<tick_scheduler::ScheduledTickRunBatch<BlockRef>>>>,
-    /// Published fluid batch used by `willTickThisTick` queries during callbacks.
-    scheduled_fluid_ticks_this_tick:
-        SyncMutex<Option<Arc<tick_scheduler::ScheduledTickRunBatch<FluidRef>>>>,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// Vanilla `ServerLevel.customSpawners`, ticked after natural spawning.
@@ -544,8 +538,6 @@ impl World {
                     redstone::RedstoneTorchToggleTracker::default(),
                 ),
                 scheduled_ticks: tick_scheduler::WorldTickScheduler::new(),
-                scheduled_block_ticks_this_tick: SyncMutex::new(None),
-                scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 custom_spawners: SyncMutex::new(custom_spawner::custom_spawners_for(
                     dimension_type,

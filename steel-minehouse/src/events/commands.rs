@@ -106,6 +106,19 @@ fn show_id(context: CommandContext<'_>) -> Result<&str, CommandError> {
     context.value::<ShowId>("show").map(|id| id.0.as_str())
 }
 
+/// `/show spot add|remove|list`: the places of a show apart from its stage.
+fn spot_tree() -> CommandNode {
+    literal("spot")
+        .requires(admin)
+        .then(literal("add").then(show_argument().then(
+            argument("name", CommandArgument::word()).executes(|context| spot_add(*context)),
+        )))
+        .then(literal("remove").then(show_argument().then(
+            argument("name", CommandArgument::word()).executes(|context| spot_remove(*context)),
+        )))
+        .then(literal("list").then(show_argument().executes(|context| spot_list(*context))))
+}
+
 fn tree() -> CommandNode {
     literal("show")
         .then(literal("optout").executes(|context| opt_out(*context)))
@@ -179,6 +192,7 @@ fn tree() -> CommandNode {
                     ),
                 ),
         )
+        .then(spot_tree())
         .then(
             literal("undo")
                 .requires(admin)
@@ -613,6 +627,72 @@ fn cam_preview(context: CommandContext<'_>, over: &str) -> Result<i32, CommandEr
             .map_err(|error| CommandError::from(format!("Не запустилось: {error}")))
     })?;
     Ok(1)
+}
+
+/// Where the admin stands becomes a spot of the show: a place meteors fall.
+fn spot_add(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let id = show_id(context)?;
+    let name = context.string("name")?;
+    let feet = player.position().floor();
+    let spot = Stage {
+        world: player.get_world().key.to_string(),
+        pos: feet + glam::DVec3::new(0.5, 0.0, 0.5),
+        yaw: 0,
+    };
+    let count = with(|shows| {
+        shows
+            .library
+            .set_spot(id, name, &spot)
+            .map_err(|error| CommandError::from(format!("Не сохранилось: {error}")))?;
+        Ok(shows.library.spots(id).len())
+    })?;
+    ok(
+        context,
+        &format!(
+            "&aМесто &6{name}&a шоу &6{id}&a здесь: {} {} {}. Всего мест: {count}",
+            feet.x, feet.y, feet.z
+        ),
+    );
+    Ok(1)
+}
+
+fn spot_remove(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let name = context.string("name")?;
+    let removed = with(|shows| {
+        shows
+            .library
+            .remove_spot(id, name)
+            .map_err(|error| CommandError::from(format!("Не сохранилось: {error}")))
+    })?;
+    if !removed {
+        return Err(CommandError::from(format!(
+            "У шоу {id} нет места \"{name}\""
+        )));
+    }
+    ok(context, &format!("&aМесто &6{name}&a шоу &6{id}&a удалено"));
+    Ok(1)
+}
+
+fn spot_list(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let spots = with(|shows| Ok(shows.library.spots(id)))?;
+    if spots.is_empty() {
+        ok(
+            context,
+            &format!("&7У шоу {id} нет мест. Встаньте и выполните /show spot add {id} <имя>"),
+        );
+        return Ok(0);
+    }
+    for (name, spot) in &spots {
+        let at = spot.pos.floor();
+        ok(
+            context,
+            &format!("&6{name} &f{} {} {} &7{}", at.x, at.y, at.z, spot.world),
+        );
+    }
+    Ok(i32::try_from(spots.len()).unwrap_or(i32::MAX))
 }
 
 /// The most blocks one capture takes.

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use steel_core::anvil_import::{self, AnvilImportError, ImportReport, LevelReport, PlayerReport};
 use steel_core::bootstrap::init_globals;
+use steel_minehouse::content::register_for_import;
 use tokio::runtime::Builder;
 
 const USAGE: &str =
@@ -65,6 +66,8 @@ pub fn run(args: &[String]) -> i32 {
         }
     };
 
+    // A world of our Fabric server has our blocks and items in it.
+    register_for_import();
     init_globals();
     let runtime = match Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,

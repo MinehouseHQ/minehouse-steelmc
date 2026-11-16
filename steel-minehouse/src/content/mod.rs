@@ -425,6 +425,32 @@ pub fn by_id(id: &str) -> Option<&'static CustomItem> {
         .find(|item| item.id == id || item.short_id() == id)
 }
 
+/// Tells the server our items by their ids. False if another extension did it first.
+fn name_items() -> bool {
+    set_extension_items(ExtensionItems {
+        ids: || ITEMS.iter().map(|item| item.id).collect(),
+        stack: |id| {
+            ITEMS
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| item.stack(1))
+        },
+    })
+}
+
+/// What `steel import-anvil` needs of us to read a world of the Fabric server: our blocks
+/// in the registry, so they are not replaced with air, and our items by their ids, so
+/// those in inventories and chests become the items we have here. Call before the registry
+/// is built.
+pub fn register_for_import() {
+    if !extend_registry(blocks::register) {
+        eprintln!("MineHouse blocks: the registry is already built, our blocks become air");
+    }
+    if !name_items() {
+        eprintln!("MineHouse items: another extension names the items, ours are dropped");
+    }
+}
+
 /// Registers `/mhgive`, and our blocks and recipes if the registry is not built yet (it is
 /// not when the server starts; it may be in a test that built it first).
 pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistrationError> {
@@ -433,15 +459,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     } else if !set_item_behavior_override(use_behavior) {
         log::warn!("MineHouse blocks: another extension decides what our items do when used");
     }
-    if !set_extension_items(ExtensionItems {
-        ids: || ITEMS.iter().map(|item| item.id).collect(),
-        stack: |id| {
-            ITEMS
-                .iter()
-                .find(|item| item.id == id)
-                .map(|item| item.stack(1))
-        },
-    }) {
+    if !name_items() {
         log::warn!("MineHouse items: another extension names items for /give");
     }
     if !set_extension_item_id(recipe_id) {

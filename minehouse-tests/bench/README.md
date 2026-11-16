@@ -20,3 +20,11 @@ With `[log] extra = true` Steel's "Game tick slow" warning shows the per-phase s
 
 Packet ids come from `steel-registry/build_assets/packets.json`. Note that 26.3 kicks
 a client that sends two position packets without a `client_tick_end` in between.
+
+## One run with a phase breakdown
+
+`run.sh TAG REGIONIZED BOT_SPEED MINUTES BOTS STEEL_BIN SERVER_DIR` starts the server in a
+pty, runs the bots (flying along +X at `BOT_SPEED` blocks per tick, 0 = idle) and prints
+`phases.py` averages of the "Game tick slow" (world phases, islands) and "Server tick slow"
+(packet drain and other game-loop steps) warnings. `REGIONIZED=1` sets
+`STEEL_REGIONIZED_TICKING=1`.

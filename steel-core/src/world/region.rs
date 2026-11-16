@@ -27,12 +27,15 @@ use std::sync::{Arc, OnceLock};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
+use steel_registry::blocks::BlockRef;
+use steel_registry::fluid::FluidRef;
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncMutex;
 
 use super::World;
 use super::block_event::BlockEventQueue;
 use super::block_updates::NeighborUpdateState;
+use super::tick_scheduler::ScheduledTickRunBatch;
 use crate::entity::Entity as _;
 use crate::player::Player;
 
@@ -45,6 +48,10 @@ pub(crate) struct RegionQueues {
     pub(super) block_events: SyncMutex<BlockEventQueue>,
     /// Vanilla `ServerLevel.handlingTick`.
     pub(super) handling_tick: AtomicBool,
+    /// Published block batch used by `willTickThisTick` queries during callbacks.
+    pub(super) block_ticks_this_tick: SyncMutex<Option<Arc<ScheduledTickRunBatch<BlockRef>>>>,
+    /// Published fluid batch used by `willTickThisTick` queries during callbacks.
+    pub(super) fluid_ticks_this_tick: SyncMutex<Option<Arc<ScheduledTickRunBatch<FluidRef>>>>,
     /// Island cells this island may write to. `None` allows every chunk.
     owned_cells: Option<Arc<FxHashSet<IslandCell>>>,
     /// Positions of players outside this island, taken before the island phase.

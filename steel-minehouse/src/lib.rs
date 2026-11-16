@@ -32,6 +32,7 @@ pub mod guides;
 pub mod moderation;
 pub mod roles;
 pub mod site;
+pub mod stats;
 pub mod tab;
 pub mod villagers;
 pub mod voice;
@@ -61,6 +62,7 @@ pub struct Minehouse {
     moderation: Option<Arc<Moderation>>,
     downtime: Option<Arc<Downtime>>,
     roles: Option<Roles>,
+    stats: Option<stats::Stats>,
     voice: Option<Arc<voice::Voice>>,
     blocklog: Option<Arc<BlockLog>>,
 }
@@ -107,6 +109,11 @@ impl Minehouse {
             .auth
             .as_ref()
             .and_then(|auth| Roles::start(server, auth.site.clone()));
+        // So do the statistics of the players go to it.
+        let stats = setup
+            .auth
+            .as_ref()
+            .and_then(|auth| stats::Stats::start(server, auth.site.clone()));
         if let Some(downtime) = &setup.downtime {
             downtime.start(server);
         }
@@ -137,6 +144,7 @@ impl Minehouse {
             moderation: setup.moderation,
             downtime: setup.downtime,
             roles,
+            stats,
             voice,
             blocklog: setup.blocklog,
         }
@@ -152,6 +160,9 @@ impl Minehouse {
         }
         if let Some(roles) = &self.roles {
             roles.stop();
+        }
+        if let Some(stats) = &self.stats {
+            stats.stop().await;
         }
         if let Some(voice) = &self.voice {
             voice.stop();

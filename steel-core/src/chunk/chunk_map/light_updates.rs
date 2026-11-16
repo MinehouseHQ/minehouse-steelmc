@@ -5,6 +5,39 @@ use super::{
     propagate_block_light_changes_with_empty_sections,
     propagate_sky_light_changes_with_empty_sections,
 };
+use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
+
+use crate::chunk::light::LightWorkWindowGate;
+use crate::world::region::regionized_ticking_enabled;
+use crate::world::tick_pool::install_on_tick_pool;
+
+/// Light sections a queued light change updated: sky first, then block.
+type UpdatedLightSections = (Vec<SectionPos>, Vec<SectionPos>);
+
+/// Queued light tasks keyed by their light window center.
+type LightTasks<T> = Vec<(ChunkPos, T)>;
+
+/// Splits queued light tasks into the next round to run and the rest.
+///
+/// A round holds tasks whose light cache windows are pairwise disjoint, so they can
+/// propagate in parallel. A task that overlaps a task already in the round, or one
+/// already deferred, is deferred too: two overlapping tasks keep their queue order.
+pub(super) fn split_light_round<T>(tasks: LightTasks<T>) -> (LightTasks<T>, LightTasks<T>) {
+    let mut round: LightTasks<T> = Vec::new();
+    let mut deferred: LightTasks<T> = Vec::new();
+    for (center, task) in tasks {
+        let waits = round
+            .iter()
+            .chain(deferred.iter())
+            .any(|&(other, _)| LightWorkWindowGate::windows_overlap(center, other));
+        if waits {
+            deferred.push((center, task));
+        } else {
+            round.push((center, task));
+        }
+    }
+    (round, deferred)
+}
 
 impl ChunkMap {
     /// Records a block change at the given position.
@@ -76,25 +109,71 @@ impl ChunkMap {
     }
 
     /// Drains all queued light updates and runs one scoped propagation per changed chunk.
+    ///
+    /// With regionized ticking, tasks whose light windows do not overlap propagate in
+    /// parallel on the tick pool, round by round. Their changed sections are reported in
+    /// queue order once each round is done, so broadcasts come out as they did sequentially.
     pub fn propagate_queued_light_changes(&self) {
         let Some((tasks, in_flight_updates)) = self.drain_pending_light_updates() else {
             return;
         };
 
         let mut blocked_tasks = Vec::new();
-        for (center, task) in tasks {
-            if task.is_empty() {
-                continue;
+        if regionized_ticking_enabled() {
+            let mut remaining = tasks
+                .into_iter()
+                .filter(|(_, task)| !task.is_empty())
+                .collect::<Vec<_>>();
+            while !remaining.is_empty() {
+                let (round, deferred) = split_light_round(remaining);
+                remaining = deferred;
+                let mut reserved = Vec::with_capacity(round.len());
+                for (center, task) in round {
+                    match self.light_work_window_gate.try_reserve_centered(center) {
+                        Some(reservation) => reserved.push((center, task, reservation)),
+                        None => blocked_tasks.push((center, task)),
+                    }
+                }
+                let results = if reserved.len() > 1 {
+                    install_on_tick_pool(|| {
+                        reserved
+                            .into_par_iter()
+                            .map(|(center, task, reservation)| {
+                                let updated = self.compute_queued_light_change(center, task);
+                                drop(reservation);
+                                updated
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                } else {
+                    reserved
+                        .into_iter()
+                        .map(|(center, task, reservation)| {
+                            let updated = self.compute_queued_light_change(center, task);
+                            drop(reservation);
+                            updated
+                        })
+                        .collect()
+                };
+                for updated in results.into_iter().flatten() {
+                    self.report_light_changes(updated);
+                }
             }
-            let Some(light_work_window_reservation) =
-                self.light_work_window_gate.try_reserve_centered(center)
-            else {
-                blocked_tasks.push((center, task));
-                continue;
-            };
+        } else {
+            for (center, task) in tasks {
+                if task.is_empty() {
+                    continue;
+                }
+                let Some(light_work_window_reservation) =
+                    self.light_work_window_gate.try_reserve_centered(center)
+                else {
+                    blocked_tasks.push((center, task));
+                    continue;
+                };
 
-            self.propagate_queued_light_change(center, task);
-            drop(light_work_window_reservation);
+                self.propagate_queued_light_change(center, task);
+                drop(light_work_window_reservation);
+            }
         }
 
         if !blocked_tasks.is_empty() {
@@ -298,26 +377,47 @@ impl ChunkMap {
         center: ChunkPos,
         task: PendingChunkLightUpdates,
     ) {
+        if let Some(updated) = self.compute_queued_light_change(center, task) {
+            self.report_light_changes(updated);
+        }
+    }
+
+    /// Marks the sections a queued light change updated for broadcast.
+    fn report_light_changes(&self, (sky, block): UpdatedLightSections) {
+        for section_pos in sky {
+            self.light_changed(LightLayer::Sky, section_pos);
+        }
+        for section_pos in block {
+            self.light_changed(LightLayer::Block, section_pos);
+        }
+    }
+
+    /// Propagates one queued light change inside its light window and returns the
+    /// sections it updated, without reporting them.
+    ///
+    /// The caller must hold the light work reservation for `center`.
+    fn compute_queued_light_change(
+        &self,
+        center: ChunkPos,
+        task: PendingChunkLightUpdates,
+    ) -> Option<UpdatedLightSections> {
         let Some(workset) = self.light_workset_for_change(center) else {
             log::warn!("Failed to set up light workset for queued light update at {center:?}");
-            return;
+            return None;
         };
 
         let empty_sections = task.empty_section_changes();
         let positions = task.changed_positions.into_iter().collect::<Vec<_>>();
         let world = self.world_gen_context.world();
 
+        let mut sky = Vec::new();
         if world.dimension_type.has_skylight {
             match propagate_sky_light_changes_with_empty_sections(
                 &workset,
                 positions.iter().copied(),
                 empty_sections.iter().copied(),
             ) {
-                Ok(result) => {
-                    for section_pos in result.updated_sections {
-                        self.light_changed(LightLayer::Sky, section_pos);
-                    }
-                }
+                Ok(result) => sky = result.updated_sections.into_iter().collect(),
                 Err(error) => {
                     log::warn!(
                         "Failed to propagate queued sky-light change for {center:?}: {error:?}"
@@ -330,12 +430,11 @@ impl ChunkMap {
             propagate_block_light_changes_with_empty_sections(&workset, positions, empty_sections)
         else {
             log::warn!("Failed to propagate queued block-light change for {center:?}");
-            return;
+            // The sky sections already changed; report them like the sequential path did.
+            return Some((sky, Vec::new()));
         };
 
-        for section_pos in result.updated_sections {
-            self.light_changed(LightLayer::Block, section_pos);
-        }
+        Some((sky, result.updated_sections.into_iter().collect()))
     }
 
     pub(super) fn light_workset_for_change(&self, center: ChunkPos) -> Option<LightWorkset> {

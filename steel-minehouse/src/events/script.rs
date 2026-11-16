@@ -11,8 +11,8 @@ use serde::{
 use serde_json::Value;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
-    REGISTRY, RegistryExt as _, items::ItemRef, particle_type::ParticleTypeRef,
-    sound_event::SoundEventHolder,
+    REGISTRY, RegistryExt as _, entity_data::EntityPose, entity_type::EntityTypeRef,
+    items::ItemRef, particle_type::ParticleTypeRef, sound_event::SoundEventHolder,
 };
 use steel_utils::{BlockStateId, Identifier};
 
@@ -20,27 +20,18 @@ use super::{
     blocks::{Shape, block_state},
     camera_path::CameraPath,
     ease::Ease,
+    effects::{MeteorsDef, RiftDef, RocketsDef, ShockwaveDef},
     json::{self, Object},
+    scatter::ScatterDef,
     time,
 };
 
 /// Actor types of the Fabric mod that have no Steel side yet.
-const LATER_ACTORS: [&str; 4] = ["train", "rig", "player", "mob"];
+const LATER_ACTORS: [&str; 2] = ["train", "rig"];
 /// Cues of the Fabric mod that have no Steel side yet.
-const LATER_CUES: [&str; 12] = [
-    "follow",
-    "sparks",
-    "meteors",
-    "rift",
-    "rockets",
-    "shockwave",
-    "animate",
-    "pose",
-    "swing",
-    "ignite",
-    "chest",
-    "scatter",
-];
+const LATER_CUES: [&str; 3] = ["sparks", "animate", "hide"];
+/// Living entities a `mob` actor can't be: they are no mobs.
+const NOT_MOBS: [&str; 3] = ["player", "mannequin", "armor_stand"];
 
 /// Where a show plays. `yaw` is the way the admin faced at `/show stage`, snapped to a
 /// quarter turn; only shows with `"stageFacing": true` turn with it.
@@ -101,6 +92,18 @@ pub enum ActorKind {
         line_width: i32,
         background: i32,
     },
+    /// A mannequin in a player's skin.
+    Player {
+        name: String,
+        /// Whether the name is written over its head.
+        names: bool,
+        hand: Option<ItemRef>,
+    },
+    /// Any mob, standing still until the show moves it.
+    Mob {
+        entity: EntityTypeRef,
+        hand: Option<ItemRef>,
+    },
     /// A captured block set drawn block by block, turning and growing as one piece.
     Model {
         blocks: String,
@@ -157,6 +160,10 @@ pub enum Action {
         pos: DVec3,
         sound: bool,
     },
+    Meteors(Box<MeteorsDef>),
+    Rift(Box<RiftDef>),
+    Rockets(Box<RocketsDef>),
+    Shockwave(Box<ShockwaveDef>),
     Cut {
         actor: usize,
         pos: DVec3,
@@ -193,6 +200,34 @@ pub enum Action {
     Remove {
         actor: usize,
     },
+    /// The camera keeps `offset` from the target and looks at `look` from it.
+    Follow {
+        actor: usize,
+        target: usize,
+        offset: DVec3,
+        look: DVec3,
+    },
+    /// A `player` or `mob` lies down, crouches or stands up again.
+    Pose {
+        actor: usize,
+        pose: EntityPose,
+    },
+    /// One swing of the arm.
+    Swing {
+        actor: usize,
+        off_hand: bool,
+    },
+    /// A creeper swells and flashes; nothing explodes.
+    Ignite {
+        actor: usize,
+    },
+    /// The lid of a chest (a ghost one too) opens or shuts.
+    Chest {
+        pos: DVec3,
+        open: bool,
+        sound: bool,
+    },
+    Scatter(Box<ScatterDef>),
     Time {
         ease: Ease,
         to: f64,
@@ -472,11 +507,7 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
         "camera" => ActorKind::Camera,
         "block" => ActorKind::Block(block_state(&json::string(object, "block")?)?),
         "item" => {
-            let id = json::string(object, "item")?;
-            let item = identifier(&id)
-                .ok()
-                .and_then(|key| REGISTRY.items.by_key(&key))
-                .ok_or_else(|| format!("нет предмета \"{id}\""))?;
+            let item = item(&json::string(object, "item")?)?;
             let model = json::get(object, "model")
                 .map(|_| identifier(&json::string_or(object, "model", "")))
                 .transpose()?;
@@ -487,6 +518,26 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
             line_width: json::int(object, "lineWidth", 200)?,
             background: argb(&json::string_or(object, "background", "40000000"))?,
         },
+        "player" => ActorKind::Player {
+            name: json::string(object, "player")?,
+            names: json::boolean(object, "names", false)?,
+            hand: hand(object)?,
+        },
+        "mob" => {
+            let id = json::string(object, "entity")?;
+            let entity = identifier(&id)
+                .ok()
+                .and_then(|key| REGISTRY.entity_types.by_key(&key))
+                .filter(|entity| {
+                    !entity.default_attributes.is_empty()
+                        && !NOT_MOBS.contains(&entity.key.path.as_ref())
+                })
+                .ok_or_else(|| format!("entity: нужен моб, а не \"{id}\""))?;
+            ActorKind::Mob {
+                entity,
+                hand: hand(object)?,
+            }
+        }
         "model" => {
             // The set may not be captured yet: it is read when the show starts.
             let blocks = json::string(object, "blocks")?;
@@ -501,7 +552,7 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
         }
         other => {
             return Err(format!(
-                "нет типа \"{other}\" (есть camera, block, item, text, model)"
+                "нет типа \"{other}\" (есть camera, block, item, text, model, player, mob)"
             ));
         }
     };
@@ -533,7 +584,21 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
     })
 }
 
-fn identifier(text: &str) -> Result<Identifier, String> {
+/// `hand`: what a `player` or `mob` holds.
+fn hand(object: &Object) -> Result<Option<ItemRef>, String> {
+    json::has(object, "hand")
+        .then(|| item(&json::string(object, "hand")?))
+        .transpose()
+}
+
+pub fn item(id: &str) -> Result<ItemRef, String> {
+    identifier(id)
+        .ok()
+        .and_then(|key| REGISTRY.items.by_key(&key))
+        .ok_or_else(|| format!("нет предмета \"{id}\""))
+}
+
+pub fn identifier(text: &str) -> Result<Identifier, String> {
     Identifier::from_str(text).map_err(|_| format!("не понимаю имя \"{text}\""))
 }
 
@@ -676,6 +741,22 @@ fn read_world_action(kind: &str, object: &Object) -> Result<(u32, Action), Strin
                 sound: json::boolean(object, "sound", true)?,
             },
         ),
+        "meteors" => {
+            let (over, def) = MeteorsDef::parse(object)?;
+            (over, Action::Meteors(Box::new(def)))
+        }
+        "rift" => {
+            let (over, def) = RiftDef::parse(object)?;
+            (over, Action::Rift(Box::new(def)))
+        }
+        "rockets" => {
+            let (over, def) = RocketsDef::parse(object)?;
+            (over, Action::Rockets(Box::new(def)))
+        }
+        "shockwave" => {
+            let (over, def) = ShockwaveDef::parse(object)?;
+            (over, Action::Shockwave(Box::new(def)))
+        }
         other => return Err(format!("нет такого действия \"{other}\"")),
     })
 }
@@ -763,11 +844,85 @@ fn read_action(kind: &str, object: &Object, actors: &[ActorDef]) -> Result<(u32,
                 },
             )
         }
-        "blocks" | "clear_blocks" | "lightning" | "explosion" => read_world_action(kind, object)?,
+        "blocks" | "clear_blocks" | "lightning" | "explosion" | "meteors" | "rift" | "rockets"
+        | "shockwave" => read_world_action(kind, object)?,
+        "follow" | "pose" | "swing" | "ignite" | "chest" | "scatter" => {
+            read_puppet_action(kind, object, actors)?
+        }
         later if LATER_CUES.contains(&later) => {
             return Err("это действие пока не перенесено в Steel".to_owned());
         }
         other => return Err(format!("нет такого действия \"{other}\"")),
+    })
+}
+
+/// The cues for characters: a camera that follows one, poses and arm swings of a `player`
+/// or `mob`, a creeper that hisses, a chest lid, things flying apart.
+fn read_puppet_action(
+    kind: &str,
+    object: &Object,
+    actors: &[ActorDef],
+) -> Result<(u32, Action), String> {
+    Ok(match kind {
+        "follow" => (
+            json::ticks(object, "over", seconds(3))?,
+            Action::Follow {
+                actor: camera(actors, object)?,
+                target: actor_index(actors, &json::string(object, "target")?)?,
+                offset: json::vec_opt(object, "offset")?.unwrap_or(DVec3::new(4.0, 1.5, 0.0)),
+                look: json::vec_opt(object, "look")?.unwrap_or(DVec3::ZERO),
+            },
+        ),
+        "pose" => {
+            let pose = match json::string(object, "pose")?.as_str() {
+                "standing" => EntityPose::Standing,
+                "sleeping" => EntityPose::Sleeping,
+                "crouching" => EntityPose::Sneaking,
+                "swimming" => EntityPose::Swimming,
+                "sitting" => EntityPose::Sitting,
+                _ => {
+                    return Err(
+                        "pose: standing, sleeping, crouching, swimming или sitting".to_owned()
+                    );
+                }
+            };
+            (
+                0,
+                Action::Pose {
+                    actor: actor(actors, object)?,
+                    pose,
+                },
+            )
+        }
+        "swing" => (
+            0,
+            Action::Swing {
+                actor: actor(actors, object)?,
+                off_hand: json::string_or(object, "hand", "main") == "off",
+            },
+        ),
+        "ignite" => {
+            let index = actor(actors, object)?;
+            if !matches!(actors[index].kind, ActorKind::Mob { .. }) {
+                return Err(format!(
+                    "актёр \"{}\" не mob (type: mob)",
+                    actors[index].name
+                ));
+            }
+            (0, Action::Ignite { actor: index })
+        }
+        "chest" => (
+            0,
+            Action::Chest {
+                pos: json::vec_at(object, "pos")?,
+                open: json::boolean(object, "open", true)?,
+                sound: json::boolean(object, "sound", true)?,
+            },
+        ),
+        _ => {
+            let (over, def) = ScatterDef::parse(object)?;
+            (over, Action::Scatter(Box::new(def)))
+        }
     })
 }
 
