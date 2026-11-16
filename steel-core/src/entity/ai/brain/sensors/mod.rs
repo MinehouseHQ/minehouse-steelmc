@@ -9,7 +9,7 @@ mod nearest_living_entities;
 mod players;
 mod tempting;
 
-pub use adult::AdultSensor;
+pub use adult::{AdultSensor, AdultSensorAnyType};
 pub use hurt_by::HurtBySensor;
 pub use is_in_water::IsInWaterSensor;
 pub use mob::MobSensor;

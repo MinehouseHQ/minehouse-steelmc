@@ -97,6 +97,9 @@ pub struct PathNavigation {
     /// Vanilla `Frog.FrogPathNavigation`: an amphibious navigation that keeps
     /// to the water border and prefers lily pads.
     frog: bool,
+    /// Vanilla `HappyGhast.BabyFlyingPathNavigation`: a flying navigation
+    /// whose straight-line shortcuts ignore fluids.
+    flies_through_fluids: bool,
 }
 
 impl PathNavigation {
@@ -131,6 +134,7 @@ impl PathNavigation {
             wall_climber: false,
             climber_path_to_position: None,
             frog: false,
+            flies_through_fluids: false,
         }
     }
 
@@ -317,6 +321,18 @@ impl PathNavigation {
             kind: NavigationKind::Flying,
             ..Self::new()
         }
+    }
+
+    /// Whether straight-line shortcuts of a flying navigation pass through
+    /// fluids (vanilla `BabyFlyingPathNavigation.canMoveDirectly`).
+    #[must_use]
+    pub const fn flies_through_fluids(&self) -> bool {
+        self.flies_through_fluids
+    }
+
+    /// Sets [`Self::flies_through_fluids`].
+    pub const fn set_flies_through_fluids(&mut self, flies_through_fluids: bool) {
+        self.flies_through_fluids = flies_through_fluids;
     }
 
     #[must_use]

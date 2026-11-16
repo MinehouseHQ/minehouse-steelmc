@@ -54,3 +54,5 @@ mod fox;
 pub use fox::FoxEntity;
 mod allay;
 pub use allay::{AllayEntity, hear_noteblock as allay_hear_noteblock};
+mod happy_ghast;
+pub use happy_ghast::HappyGhastEntity;

@@ -576,6 +576,12 @@ impl ServerEntityMovementSyncState {
         }
     }
 
+    /// Vanilla `Entity.syncPacketPositionCodec`: makes `position` the base
+    /// the next delta packets are measured from.
+    pub const fn sync_position_codec(&mut self, position: DVec3) {
+        self.position.last_sent_position = position;
+    }
+
     /// Vanilla `ServerEntity.tickCount`: how many send-changes passes this entity has had.
     #[must_use]
     pub const fn tick_count(&self) -> i32 {

@@ -15,6 +15,8 @@ use crate::player::Player;
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
 
 type TemptItemPredicate = Box<dyn Fn(&ItemStack) -> bool + Send + Sync>;
+/// A tempt predicate that also looks at the tempted mob.
+type MobTemptItemPredicate = fn(&dyn PathfinderMob, &ItemStack) -> bool;
 
 pub struct TemptGoal {
     player: Option<Arc<Player>>,
@@ -30,6 +32,8 @@ pub struct TemptGoal {
     scare_condition: Option<fn(&dyn PathfinderMob) -> bool>,
     running_flag: Option<Arc<AtomicBool>>,
     scare_exempt_player: Option<Uuid>,
+    mob_items: Option<MobTemptItemPredicate>,
+    for_non_pathfinders: bool,
 }
 
 impl TemptGoal {
@@ -63,7 +67,27 @@ impl TemptGoal {
             scare_condition: None,
             running_flag: None,
             scare_exempt_player: None,
+            mob_items: None,
+            for_non_pathfinders: false,
         }
+    }
+
+    /// Vanilla `TemptGoal.ForNonPathfinders`: steers the move control toward
+    /// a random point between the mob and the player's eyes instead of
+    /// pathing. `items` may look at the mob, like vanilla's lambdas that
+    /// capture it.
+    #[must_use]
+    pub(crate) fn for_non_pathfinders(
+        speed_modifier: f64,
+        items: MobTemptItemPredicate,
+        can_scare: bool,
+        stop_distance: f64,
+    ) -> Self {
+        let mut goal =
+            Self::with_stop_distance(speed_modifier, |_| false, can_scare, stop_distance);
+        goal.mob_items = Some(items);
+        goal.for_non_pathfinders = true;
+        goal
     }
 
     /// Adds a mob-side condition to `canScare`, like vanilla subclasses overriding it.
@@ -110,6 +134,39 @@ impl TemptGoal {
 
     fn should_follow(&self, player: &dyn LivingEntity) -> bool {
         player.is_holding(&mut |item_stack| (self.items)(item_stack))
+    }
+
+    fn should_follow_for(&self, mob: &dyn PathfinderMob, player: &dyn LivingEntity) -> bool {
+        match self.mob_items {
+            Some(items) => player.is_holding(&mut |item_stack| items(mob, item_stack)),
+            None => self.should_follow(player),
+        }
+    }
+
+    /// Vanilla `stopNavigation`.
+    fn stop_navigation(&self, mob: &dyn PathfinderMob) {
+        if self.for_non_pathfinders {
+            mob.mob_base().controls().lock().move_control.set_wait();
+        } else {
+            mob.mob_base().navigation().lock().stop();
+        }
+    }
+
+    /// Vanilla `navigateTowards`.
+    fn navigate_towards(&self, mob: &dyn PathfinderMob, player: &Player) {
+        if self.for_non_pathfinders {
+            let position = mob.position();
+            let eye_position =
+                DVec3::new(player.position().x, player.get_eye_y(), player.position().z);
+            let target = (eye_position - position) * rand::random::<f64>() + position;
+            mob.mob_base()
+                .controls()
+                .lock()
+                .move_control
+                .set_wanted_position(target, self.speed_modifier);
+        } else {
+            mob.move_to_pos(player.position(), self.speed_modifier);
+        }
     }
 
     fn can_scare(&self, mob: &dyn PathfinderMob) -> bool {
@@ -177,7 +234,7 @@ impl Goal for TemptGoal {
         let targeting_conditions = Self::targeting_conditions(range);
         self.player = world.nearest_player(mob.position(), range, |player| {
             targeting_conditions.test(world.as_ref(), Some(mob), player)
-                && self.should_follow(player)
+                && self.should_follow_for(mob, player)
         });
         self.player.is_some()
     }
@@ -199,13 +256,13 @@ impl Goal for TemptGoal {
 
     fn stop(&mut self, mob: &dyn PathfinderMob) {
         self.player = None;
-        mob.mob_base().navigation().lock().stop();
+        self.stop_navigation(mob);
         self.calm_down = reduced_tick_delay(100);
         self.set_running(false);
     }
 
     fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
-        let Some(player) = &self.player else {
+        let Some(player) = self.player.clone() else {
             return;
         };
 
@@ -219,9 +276,9 @@ impl Goal for TemptGoal {
         if mob.position().distance_squared(player_position)
             < self.stop_distance * self.stop_distance
         {
-            mob.mob_base().navigation().lock().stop();
+            self.stop_navigation(mob);
         } else {
-            mob.move_to_pos(player_position, self.speed_modifier);
+            self.navigate_towards(mob, &player);
         }
     }
 }

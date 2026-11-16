@@ -3,10 +3,13 @@
 
 use crate::chunk::heightmap::HeightmapType;
 use std::f32::consts::PI;
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_attributes;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, Direction};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
@@ -16,7 +19,8 @@ use crate::entity::block_effects::{
     collided_with_shape_moving_from, for_each_block_intersected_between,
 };
 use crate::entity::projectile::normalize_or_zero;
-use crate::entity::{Mob, PathfinderMob, SharedEntity};
+use crate::entity::{Mob, PathfinderMob, SharedEntity, collided_with_fluid};
+use crate::fluid::get_fluid_state;
 use crate::world::{LevelReader as _, World};
 
 /// Squared distance within which a ghast turns to face its target.
@@ -33,6 +37,22 @@ pub(crate) struct GhastMoveState {
 /// Vanilla `GhastMoveControl.tick` for a non-careful ghast: every few ticks
 /// push toward the wanted position, or give up when the way is blocked.
 pub(crate) fn tick_ghast_move_control(mob: &dyn Mob, state: &mut GhastMoveState) {
+    tick_ghast_move_control_with(mob, state, false, false);
+}
+
+/// Vanilla `GhastMoveControl.tick`. A `careful` ghast (the happy ghast) keeps
+/// a block away from what it avoids and from fluids it is not already in;
+/// `should_be_stopped` holds it in place.
+pub(crate) fn tick_ghast_move_control_with(
+    mob: &dyn Mob,
+    state: &mut GhastMoveState,
+    careful: bool,
+    should_be_stopped: bool,
+) {
+    if should_be_stopped {
+        mob.mob_base().controls().lock().move_control.set_wait();
+        mob.stop_in_place();
+    }
     let (operation, wanted) = {
         let controls = mob.mob_base().controls().lock();
         (
@@ -50,7 +70,7 @@ pub(crate) fn tick_ghast_move_control(mob: &dyn Mob, state: &mut GhastMoveState)
     }
     state.float_duration += rand::random_range(0..5) + 2;
     let travel = wanted - mob.position();
-    if can_reach(mob, travel) {
+    if can_reach(mob, travel, careful) {
         let flying_speed = mob
             .attributes()
             .lock()
@@ -61,29 +81,75 @@ pub(crate) fn tick_ghast_move_control(mob: &dyn Mob, state: &mut GhastMoveState)
     }
 }
 
-/// Vanilla `GhastMoveControl.canReach` (non-careful): no block along the way
-/// collides with the box.
-fn can_reach(mob: &dyn Mob, travel: DVec3) -> bool {
+/// Vanilla `GhastMoveControl.canReach`.
+fn can_reach(mob: &dyn Mob, travel: DVec3, careful: bool) -> bool {
     let Some(world) = mob.level() else {
         return false;
     };
     let aabb = mob.bounding_box();
     let aabb_at_destination = aabb.translate(travel);
+    if careful {
+        let around = aabb_at_destination.inflate(1.0);
+        for x in floor(around.min_x())..=floor(around.max_x()) {
+            for y in floor(around.min_y())..=floor(around.max_y()) {
+                for z in floor(around.min_z())..=floor(around.max_z()) {
+                    let pos = BlockPos::new(x, y, z);
+                    let traversal = Traversal::coarse(careful);
+                    if !block_traversal_possible(&world, mob, pos, traversal) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
     let start = mob.position();
     let end = start + travel;
+    let traversal = Traversal {
+        path: Some((start, end)),
+        through_water: mob.is_in_water(),
+        through_lava: mob.is_in_lava(),
+        careful,
+    };
     for_each_block_intersected_between(start, end, aabb_at_destination, |pos, _| {
-        aabb.intersects_block(pos) || block_traversal_possible(&world, mob, start, end, pos)
+        aabb.intersects_block(pos) || block_traversal_possible(&world, mob, pos, traversal)
     })
     .is_some()
 }
 
-/// Vanilla `blockTraversalPossible` with precise collisions and `careful == false`.
+/// Vanilla `Mth.floor` of a coordinate.
+const fn floor(value: f64) -> i32 {
+    value.floor() as i32
+}
+
+/// The arguments of vanilla `GhastMoveControl.blockTraversalPossible`.
+#[derive(Clone, Copy)]
+struct Traversal {
+    /// The move, for precise collisions; without it a block must have no
+    /// collision at all.
+    path: Option<(DVec3, DVec3)>,
+    through_water: bool,
+    through_lava: bool,
+    careful: bool,
+}
+
+impl Traversal {
+    /// The coarse check vanilla runs around the destination.
+    const fn coarse(careful: bool) -> Self {
+        Self {
+            path: None,
+            through_water: false,
+            through_lava: false,
+            careful,
+        }
+    }
+}
+
+/// Vanilla `GhastMoveControl.blockTraversalPossible`.
 fn block_traversal_possible(
-    world: &World,
+    world: &Arc<World>,
     mob: &dyn Mob,
-    start: DVec3,
-    end: DVec3,
     pos: BlockPos,
+    traversal: Traversal,
 ) -> bool {
     let state = world.get_block_state(pos);
     if state.is_air() {
@@ -91,8 +157,37 @@ fn block_traversal_possible(
     }
     let shape = BLOCK_BEHAVIORS
         .get_behavior(state.get_block())
-        .get_collision_shape(state, world, pos, BlockCollisionContext::empty());
-    !collided_with_shape_moving_from(mob.make_bounding_box_at(start), start, end, pos, shape)
+        .get_collision_shape(state, world.as_ref(), pos, BlockCollisionContext::empty());
+    let path_no_collisions = match traversal.path {
+        Some((start, end)) => !collided_with_shape_moving_from(
+            mob.make_bounding_box_at(start),
+            start,
+            end,
+            pos,
+            shape,
+        ),
+        None => shape.is_empty(),
+    };
+    if !traversal.careful {
+        return path_no_collisions;
+    }
+    if state.get_block().has_tag(&BlockTag::HAPPY_GHAST_AVOIDS) {
+        return false;
+    }
+    let fluid_state = get_fluid_state(world, pos);
+    let touches_fluid = !fluid_state.is_empty()
+        && traversal.path.is_none_or(|(start, end)| {
+            collided_with_fluid(world, fluid_state, pos, start, end, mob)
+        });
+    if touches_fluid {
+        if fluid_state.is_water() {
+            return traversal.through_water;
+        }
+        if fluid_state.is_lava() {
+            return traversal.through_lava;
+        }
+    }
+    path_no_collisions
 }
 
 /// Vanilla `Ghast.faceMovementDirection`: face the flight direction, or the

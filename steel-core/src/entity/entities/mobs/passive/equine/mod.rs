@@ -1784,6 +1784,11 @@ macro_rules! impl_equine_entity {
                 self.mob_interact_for(player, hand)
             }
 
+            /// Vanilla `AbstractHorse.supportQuadLeash`.
+            fn mob_supports_quad_leash(&self) -> bool {
+                true
+            }
+
             fn mob_flags(&self) -> i8 {
                 *self.entity_data.lock().mob().mob_flags.get()
             }

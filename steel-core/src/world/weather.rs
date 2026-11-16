@@ -22,6 +22,9 @@ use glam::DVec3;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::entity::ai::brain::Activity;
 
+/// Vanilla `EnvironmentAttributes.CLOUD_HEIGHT` default.
+const DEFAULT_CLOUD_HEIGHT: f32 = 192.33;
+
 static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
     PerlinSimplexNoise::new(&mut random, &[0])
@@ -210,6 +213,36 @@ impl World {
         self.biome_at(pos).is_some_and(|biome| {
             biome.has_precipitation && self.biome_temperature(biome, pos) >= 0.15
         })
+    }
+
+    /// Vanilla `precipitationAt(pos) != Precipitation.NONE`: rain or snow
+    /// falls on this block, whatever the temperature.
+    pub fn has_precipitation_at(&self, pos: BlockPos) -> bool {
+        self.is_raining()
+            && self.can_see_sky_for_precipitation(pos)
+            && self
+                .biome_at(pos)
+                .is_some_and(|biome| biome.has_precipitation)
+    }
+
+    /// Vanilla `Entity.isInClouds`' environment part: the cloud band's
+    /// bottom height, or `None` when this dimension draws no clouds. The
+    /// day timelines only multiply opaque cloud colors, so the dimension's
+    /// own cloud alpha decides whether there are clouds.
+    #[must_use]
+    pub fn cloud_bottom(&self) -> Option<f32> {
+        let color = self.dimension_type.cloud_color?;
+        let hex = color.trim_start_matches('#');
+        let alpha = if hex.len() == 8 {
+            u8::from_str_radix(hex.get(..2)?, 16).ok()?
+        } else {
+            u8::MAX
+        };
+        (alpha != 0).then_some(
+            self.dimension_type
+                .cloud_height
+                .unwrap_or(DEFAULT_CLOUD_HEIGHT),
+        )
     }
 
     /// Checks whether the rain level is sufficient to render rain clientside using the provided guard.

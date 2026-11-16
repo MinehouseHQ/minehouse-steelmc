@@ -3,7 +3,7 @@
 mod pathfinder;
 pub(crate) mod spawn_equipment;
 
-use crate::entity::leash::{LeashData, Leashable};
+use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
@@ -752,6 +752,21 @@ pub trait Mob: LivingEntity + Leashable {
     /// Vanilla `onElasticLeashPull` overrides, run after the shared
     /// fall-distance check.
     fn mob_on_elastic_leash_pull(&self) {}
+
+    /// Vanilla `leashSnapDistance` overrides.
+    fn mob_leash_snap_distance(&self) -> f64 {
+        LEASH_SNAP_DISTANCE
+    }
+
+    /// Vanilla `leashElasticDistance` overrides.
+    fn mob_leash_elastic_distance(&self) -> f64 {
+        LEASH_ELASTIC_DISTANCE
+    }
+
+    /// Vanilla `supportQuadLeash` overrides.
+    fn mob_supports_quad_leash(&self) -> bool {
+        false
+    }
 
     /// Returns whether this mob is allowed to pick up dropped items.
     fn can_pick_up_loot(&self) -> bool {
@@ -2094,6 +2109,18 @@ impl<T: Mob> Leashable for T {
         if self.leash_holder().is_none() {
             self.clear_home();
         }
+    }
+
+    fn leash_snap_distance(&self) -> f64 {
+        self.mob_leash_snap_distance()
+    }
+
+    fn leash_elastic_distance(&self) -> f64 {
+        self.mob_leash_elastic_distance()
+    }
+
+    fn supports_quad_leash(&self) -> bool {
+        self.mob_supports_quad_leash()
     }
 
     /// Drops the leash and disables MOVE until re-leashed at close range.

@@ -1477,6 +1477,11 @@ macro_rules! camel_entity {
                 self.camel_mob_interact(player, hand)
             }
 
+            /// Vanilla `AbstractHorse.supportQuadLeash`.
+            fn mob_supports_quad_leash(&self) -> bool {
+                true
+            }
+
             fn mob_flags(&self) -> i8 {
                 *self.entity_data.lock().mob().mob_flags.get()
             }

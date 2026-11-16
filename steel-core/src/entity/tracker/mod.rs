@@ -783,6 +783,14 @@ impl EntityTracker {
         self.entities.len()
     }
 
+    /// Vanilla `Entity.syncPacketPositionCodec` for a tracked entity: the
+    /// next delta packets are measured from `position`.
+    pub fn sync_position_codec(&self, entity_id: i32, position: DVec3) {
+        self.entities.read_sync(&entity_id, |_, tracked| {
+            tracked.server_entity.lock().sync_position_codec(position);
+        });
+    }
+
     /// Returns players currently tracking an entity.
     #[must_use]
     pub fn tracking_player_ids(&self, entity_id: i32) -> Vec<i32> {
