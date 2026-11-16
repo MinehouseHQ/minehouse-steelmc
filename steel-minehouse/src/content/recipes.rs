@@ -241,7 +241,9 @@ pub(super) fn registered() -> usize {
 /// Adds our recipes to the registry. Given to [`steel_registry::extend_registry`].
 pub(super) fn register(registry: &mut Registry) {
     registry.recipes.register(&*MAGNIFIER_RECIPE);
-    registry.recipes.register(&*CLOUD_RECIPE);
+    if super::end_lock::cloud_is_crafted() {
+        registry.recipes.register(&*CLOUD_RECIPE);
+    }
     registry.recipes.register(&*STATION_RECIPE);
     registry.recipes.register(&*JUNCTION_RECIPE);
     registry.recipes.register(&*LEAF_BLOCK_RECIPE);

@@ -5,7 +5,10 @@
 //!
 //! Off unless `config/minehouse/tweaks.toml` says `closed = true` under `[end]`.
 
-use std::sync::{Arc, OnceLock};
+use std::{
+    fs,
+    sync::{Arc, OnceLock},
+};
 
 use serde::{Deserialize, Serialize};
 use steel_core::{
@@ -57,6 +60,33 @@ impl Default for EndConfig {
 #[serde(default)]
 struct TweaksConfig {
     end: EndConfig,
+    cloud: CloudConfig,
+}
+
+/// The `[cloud]` table of the config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CloudConfig {
+    /// Whether the cloud block can be crafted. Clouds that already exist stay as they are.
+    pub craft: bool,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self { craft: true }
+    }
+}
+
+/// Whether the cloud block can be crafted. Read when the registry is built, so before the
+/// End settings; a missing or unreadable config leaves the recipe on.
+pub(super) fn cloud_is_crafted() -> bool {
+    let path = config::path(CONFIG);
+    let Ok(text) = fs::read_to_string(&path) else {
+        return true;
+    };
+    toml::from_str::<TweaksConfig>(&text)
+        .inspect_err(|error| log::error!("MineHouse tweaks: {error}, the cloud stays craftable"))
+        .map_or(true, |tweaks| tweaks.cloud.craft)
 }
 
 static END: OnceLock<EndConfig> = OnceLock::new();
@@ -168,6 +198,9 @@ mod tests {
         assert!(!config.end.closed);
         assert_eq!(config.end.message, "&5Энд пока закрыт.");
 
+        assert!(config.cloud.craft);
+        let no_cloud: TweaksConfig = toml::from_str("[cloud]\ncraft = false\n").unwrap_or_default();
+        assert!(!no_cloud.cloud.craft);
         let closed: Result<TweaksConfig, _> = toml::from_str("[end]\nclosed = true\n");
         assert_eq!(closed.map(|config| config.end.closed), Ok(true));
     }
