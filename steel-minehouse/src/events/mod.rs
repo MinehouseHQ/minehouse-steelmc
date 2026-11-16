@@ -7,12 +7,13 @@
 //!
 //! `/show` runs them: `list`, `reload`, `stage <show>` (the place the script's coordinates
 //! are counted from), `start <show> [in]` (now, or after a countdown on a boss bar),
-//! `rehearse <show> [marker]` (for one admin, from a marker), `stop`, `status`, and
-//! `optout` for a player who doesn't want to watch.
+//! `rehearse <show> [marker]` (for one admin, from a marker), `stop`, `status`,
+//! `cam add|undo|clear|preview <show> <path>` (camera paths recorded by standing and
+//! looking), and `optout` for a player who doesn't want to watch.
 //!
 //! Not ported yet, and refused when a script uses them: blocks placed by a show, models,
 //! trains, rigs, mannequins and mobs as actors, meteors, rifts and rockets, node logic,
-//! private cutscenes, recorded camera paths and the in-game editor.
+//! private cutscenes and the in-game editor.
 
 mod actor;
 mod camera_path;
@@ -255,6 +256,8 @@ impl Shows {
             return Err("на сервере режим техработ".to_owned());
         }
 
+        let paths = self.library.paths_of(script)?;
+
         let online = server.get_players();
         let (mode, audience) = match rehearsal_for {
             Some(player) => (Mode::Rehearsal, vec![Arc::clone(player)]),
@@ -267,7 +270,7 @@ impl Shows {
                     .collect(),
             ),
         };
-        let mut runner = Runner::new(Arc::clone(script), world, stage.pos, mode);
+        let mut runner = Runner::new(Arc::clone(script), paths, world, stage.pos, mode);
         runner.start(
             &audience,
             from_tick,

@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use serde_json::json;
 use steel_core::{
     command::{
         CommandArgument, CommandArgumentParser, CommandContext, CommandError, CommandNode,
@@ -17,7 +18,9 @@ use steel_protocol::packets::game::{ArgumentStringTypeBehavior, ArgumentType, Su
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use super::{
-    SHOWS, Shows, may_run_shows,
+    SHOWS, Shows,
+    camera_path::{CameraPath, Point},
+    may_run_shows,
     runner::Mode,
     script::{ShowScript, Stage, snap},
     time,
@@ -151,6 +154,34 @@ fn tree() -> CommandNode {
                 .requires(admin)
                 .then(show_argument().executes(|context| stage(*context))),
         )
+        .then(
+            literal("cam")
+                .requires(admin)
+                .then(literal("add").then(
+                    show_argument().then(path_argument().executes(|context| cam_add(*context))),
+                ))
+                .then(literal("undo").then(
+                    show_argument().then(path_argument().executes(|context| cam_undo(*context))),
+                ))
+                .then(literal("clear").then(
+                    show_argument().then(path_argument().executes(|context| cam_clear(*context))),
+                ))
+                .then(
+                    literal("preview").then(
+                        show_argument().then(
+                            path_argument()
+                                .executes(|context| cam_preview(*context, "8s"))
+                                .then(argument("over", CommandArgument::word()).executes(
+                                    |context| cam_preview(*context, context.string("over")?),
+                                )),
+                        ),
+                    ),
+                ),
+        )
+}
+
+fn path_argument() -> CommandNode {
+    argument("path", CommandArgument::word())
 }
 
 fn ok(context: CommandContext<'_>, text: &str) {
@@ -328,6 +359,11 @@ fn start(context: CommandContext<'_>, after: Option<&str>) -> Result<i32, Comman
                     script.id
                 )));
             }
+            // What would stop the show is said now, not when the countdown runs out.
+            shows
+                .library
+                .paths_of(&script)
+                .map_err(CommandError::from)?;
             shows.start_countdown(server, &script, ticks);
             ok(
                 context,
@@ -410,5 +446,127 @@ fn stage(context: CommandContext<'_>) -> Result<i32, CommandError> {
             feet.x, feet.y, feet.z
         ),
     );
+    Ok(1)
+}
+
+/// The stage a camera path of show `id` is recorded against.
+fn stage_for(shows: &Shows, id: &str) -> Result<Stage, CommandError> {
+    shows
+        .library
+        .stage_of(id)
+        .ok_or_else(|| CommandError::from(format!("Сначала задайте сцену: /show stage {id}")))
+}
+
+/// Adds where the admin stands and looks as the next point of a camera path.
+fn cam_add(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let id = show_id(context)?;
+    let name = context.string("path")?;
+    let feet = player.position();
+    let eye = glam::DVec3::new(feet.x, player.get_eye_y(), feet.z);
+    let (yaw, pitch) = player.rotation();
+    let count = with(|shows| {
+        let stage = stage_for(shows, id)?;
+        let mut points = shows
+            .library
+            .path_or_none(id, name)
+            .map_err(|error| CommandError::from(format!("Не записалось: {error}")))?
+            .map_or_default(|path| path.points().to_vec());
+        points.push(Point {
+            pos: eye - stage.pos,
+            yaw,
+            pitch,
+        });
+        let count = points.len();
+        CameraPath::new(points, None)
+            .and_then(|path| shows.library.save_path(id, name, &path))
+            .map_err(|error| CommandError::from(format!("Не записалось: {error}")))?;
+        Ok(count)
+    })?;
+    ok(
+        context,
+        &format!(
+            "&aТочка {count} пути &6{name}&a записана. Посмотреть: /show cam preview {id} {name}"
+        ),
+    );
+    Ok(i32::try_from(count).unwrap_or(i32::MAX))
+}
+
+/// Takes the last point of a camera path back.
+fn cam_undo(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let name = context.string("path")?;
+    let left = with(|shows| {
+        let failed = |error: String| CommandError::from(format!("Не вышло: {error}"));
+        let mut points = shows
+            .library
+            .path_or_none(id, name)
+            .map_err(failed)?
+            .map_or_default(|path| path.points().to_vec());
+        if points.pop().is_none() {
+            return Err(CommandError::from(format!("В пути {name} нет точек")));
+        }
+        let left = points.len();
+        if points.is_empty() {
+            shows.library.delete_path(id, name).map_err(failed)?;
+        } else {
+            CameraPath::new(points, None)
+                .and_then(|path| shows.library.save_path(id, name, &path))
+                .map_err(failed)?;
+        }
+        Ok(left)
+    })?;
+    ok(
+        context,
+        &format!("&eПоследняя точка убрана, осталось {left}"),
+    );
+    Ok(i32::try_from(left).unwrap_or(i32::MAX))
+}
+
+fn cam_clear(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let id = show_id(context)?;
+    let name = context.string("path")?;
+    with(|shows| {
+        shows
+            .library
+            .delete_path(id, name)
+            .map_err(|error| CommandError::from(format!("Не вышло: {error}")))
+    })?;
+    ok(context, &format!("&eПуть {name} удалён"));
+    Ok(1)
+}
+
+/// Flies the admin alone along a recorded path, then puts them back.
+fn cam_preview(context: CommandContext<'_>, over: &str) -> Result<i32, CommandError> {
+    let player = player(context)?;
+    let id = show_id(context)?;
+    let name = context.string("path")?;
+    time::parse(over)
+        .map_err(|error| CommandError::from(format!("{error} (например 8s, 1:30)")))?;
+    with(|shows| {
+        let stage = stage_for(shows, id)?;
+        // The admin watched a camera path: back to where they were afterwards.
+        let preview = json!({
+            "title": format!("Просмотр пути {name}"),
+            "audience": {"gather": "none", "returnAfter": true},
+            "actors": {"cam": {"type": "camera"}},
+            "cues": [
+                {"at": "0", "do": "cinematic"},
+                {"at": "0", "do": "path", "path": name, "over": over},
+                {"at": over, "do": "cinematic", "on": false},
+            ],
+            "length": over,
+        });
+        let script =
+            ShowScript::parse(id, &preview.to_string(), Some(stage)).map_err(CommandError::from)?;
+        shows
+            .start_show(
+                context.source().server(),
+                &Arc::new(script),
+                Some(player),
+                0,
+            )
+            .map_err(|error| CommandError::from(format!("Не запустилось: {error}")))
+    })?;
     Ok(1)
 }
