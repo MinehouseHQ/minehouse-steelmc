@@ -201,13 +201,16 @@ are counted from the stage, the place an admin sets with `/show stage <id>`; wit
 - `stage <show>`: the stage is where you stand
 - `start <show> [in]`: now, or after a countdown on a boss bar (`10m`, `90s`, `1:30`)
 - `rehearse <show> [marker]`: for you alone, from a marker
+- `cam add <show> <path>`: where you stand and look becomes the next point of a camera
+  path; `cam undo` takes the last point back, `cam clear` forgets the path, and
+  `cam preview <show> <path> [over]` flies you along it (8 seconds unless said)
 - `optout`: skip shows, or watch them again
 
 What works now:
 
 - actors `camera`, `block`, `item` (with `model`), `text`, with `scale`, `glow`,
   `billboard`, `bright`, `viewRange`
-- cues `cinematic`, `cut`, `path` (`points` or `orbit`), `shake`, `spawn`, `move`,
+- cues `cinematic`, `cut`, `path` (`points`, `orbit`, or a recorded `path`), `shake`, `spawn`, `move`,
   `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
   `chat`
 - viewers: gathered in a ring around the stage (`audience`), in adventure mode and
@@ -217,14 +220,16 @@ What works now:
 
 A script that uses anything else (blocks placed by a show, `model`, `train`, `rig`,
 `player` and `mob` actors, `meteors`, `rift`, `rockets`, `shockwave`, `lightning`,
-`explosion`, `follow`, puppet cues, `logic`, recorded camera paths) does not load, and
-`/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
+`explosion`, `follow`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
 ported yet either.
 
 Different from Fabric: actors are display entities that exist only in the packets sent to
 the viewers. Nothing enters the world, so nobody else sees a show and nothing is left
 behind after a crash. Where shows are staged is kept in `events/stages.json` of the data
-directory, not next to the scripts. A `weather` cue without `over` changes the weather at
+directory, not next to the scripts. Recorded camera paths are where Fabric kept them, in
+`config/minehouse/events/assets/<show>/paths/<name>.json`, so they can be copied over as
+they are; a show that flies a path nobody has recorded yet loads, and refuses to start
+with the command that records it. A `weather` cue without `over` changes the weather at
 once (on Fabric it did nothing).
 
 ## Voice chat

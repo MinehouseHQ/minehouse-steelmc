@@ -99,6 +99,40 @@ impl CameraPath {
         Self::new(points, json::vec_opt(object, "look")?)
     }
 
+    /// The points the path goes through.
+    #[must_use]
+    pub fn points(&self) -> &[Point] {
+        &self.points
+    }
+
+    /// The path as it is kept in a file.
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        let points: Vec<Value> = self
+            .points
+            .iter()
+            .map(|point| {
+                let mut object = Object::new();
+                object.insert("pos".to_owned(), json::array(point.pos));
+                object.insert(
+                    "yaw".to_owned(),
+                    Value::from(json::round(f64::from(point.yaw))),
+                );
+                object.insert(
+                    "pitch".to_owned(),
+                    Value::from(json::round(f64::from(point.pitch))),
+                );
+                Value::Object(object)
+            })
+            .collect();
+        let mut object = Object::new();
+        object.insert("points".to_owned(), Value::from(points));
+        if let Some(look_at) = self.look_at {
+            object.insert("look".to_owned(), json::array(look_at));
+        }
+        Value::Object(object)
+    }
+
     /// Where the camera is at `t` in 0..1.
     #[must_use]
     #[expect(
