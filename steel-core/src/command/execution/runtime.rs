@@ -18,8 +18,9 @@ use super::{
         ComponentValue, CompoundTagValue, CoordinateAxes, DialogValue, DomainValue,
         EnchantmentValue, EntityTypeValue, FeatureValue, FunctionReference, FunctionValue,
         GameModeValue, IdentifierValue, ItemSlotValue, ItemStackValue, LootTableValue,
-        NbtPathValue, NbtTagValue, ObjectiveValue, SlotSourceValue, SteelArgumentValue,
-        TemplateMirrorValue, TemplateRotationValue, TimeValue, TimelineValue, WorldClockValue,
+        NbtPathValue, NbtTagValue, ObjectiveValue, ParticleValue, SlotSourceValue,
+        SteelArgumentValue, TemplateMirrorValue, TemplateRotationValue, TimeValue, TimelineValue,
+        WorldClockValue,
     },
     argument::{
         CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
@@ -56,6 +57,7 @@ use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::ParticleData;
 use steel_registry::recipe::UntypedRecipeRef;
 use steel_registry::{
     REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
@@ -370,6 +372,12 @@ where
 
     pub(crate) fn block_input(&self, name: &str) -> Result<&BlockInput, CommandSyntaxError> {
         self.typed_argument(name)
+    }
+
+    /// Returns a parsed vanilla particle with its options.
+    pub(crate) fn particle(&self, name: &str) -> Result<&ParticleData, CommandSyntaxError> {
+        self.typed_argument::<ParticleValue>(name)
+            .map(|value| &value.0)
     }
 
     /// Returns a configured Steel domain name.

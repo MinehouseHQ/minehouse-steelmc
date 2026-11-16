@@ -67,6 +67,13 @@ impl ParticleType {
     pub fn is_simple(&self) -> bool {
         self.expected_type_key == SimpleParticleOptions::TYPE_KEY
     }
+
+    /// The type key of the options this particle carries, so codecs outside
+    /// the registry can pick the options family.
+    #[must_use]
+    pub const fn options_type_key(&self) -> DowncastTypeKey {
+        self.expected_type_key
+    }
 }
 
 impl Debug for ParticleType {

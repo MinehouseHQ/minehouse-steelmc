@@ -5,8 +5,10 @@ use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::data_components::PotionContents;
+use steel_registry::particle_type::{ParticleData, PowerParticleOption};
 use steel_registry::{
-    init_vanilla_registry, vanilla_entities, vanilla_mob_effects, vanilla_potions,
+    init_vanilla_registry, vanilla_entities, vanilla_mob_effects, vanilla_particle_types,
+    vanilla_potions,
 };
 use steel_utils::ChunkPos;
 
@@ -161,4 +163,34 @@ fn load_restores_age_and_resizes_to_saved_radius() {
     assert_eq!(cloud.tick_count(), 42);
     assert_eq!(cloud.bounding_box().width(), 2.0);
     assert_eq!(cloud.duration(), -1, "a missing duration never expires");
+}
+
+#[test]
+fn a_custom_particle_survives_save_and_load() {
+    init_vanilla_registry();
+    let fixture = fresh_test_world("area_effect_cloud_custom_particle");
+    let cloud = lingering_cloud(&fixture.world);
+    let particle = ParticleData::new(
+        &vanilla_particle_types::DRAGON_BREATH,
+        PowerParticleOption::new(1.0),
+    );
+    cloud.set_custom_particle(particle.clone());
+
+    let mut saved = NbtCompound::new();
+    cloud.save_additional(&mut saved);
+    let saved_particle = saved.compound("custom_particle").expect("particle saved");
+    assert_eq!(
+        saved_particle
+            .string("type")
+            .map(|id| id.to_str().into_owned()),
+        Some("minecraft:dragon_breath".to_owned())
+    );
+
+    let restored = lingering_cloud(&fixture.world);
+    let mut bytes = Vec::new();
+    saved.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+    restored.load_additional((&borrowed).into());
+    assert_eq!(restored.state.lock().custom_particle, Some(particle));
 }

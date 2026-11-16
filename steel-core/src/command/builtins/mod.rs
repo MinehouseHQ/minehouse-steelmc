@@ -34,6 +34,7 @@ mod list;
 mod locate;
 mod loot;
 mod operator;
+mod particle;
 mod perms;
 mod place;
 mod playsound;
@@ -137,6 +138,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
     builder.register(place::registration())?;
+    builder.register(particle::registration())?;
     builder.register(playsound::registration())?;
     builder.register(random::registration())?;
     builder.register(recipe::registration())?;
@@ -258,6 +260,7 @@ mod tests {
                 "op",
                 "perms",
                 "place",
+                "particle",
                 "playsound",
                 "random",
                 "recipe",

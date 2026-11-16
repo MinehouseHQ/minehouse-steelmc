@@ -15,6 +15,7 @@ use super::{
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     message::MessageArgument,
     nbt::{parse_compound_tag, parse_nbt_path, parse_nbt_tag},
+    particle::{parse_particle, suggest_particles},
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_double_range, parse_int_range, parse_score_holder, suggest_score_holders},
@@ -58,6 +59,7 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::feature::ConfiguredFeatureEntryRef;
 use steel_registry::loot_table::LootTableRef;
+use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_template_pools::vanilla_template_pools;
 use steel_registry::{
     ATTRIBUTE_REGISTRY, BIOMES_REGISTRY, DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
@@ -381,6 +383,11 @@ impl SteelArgumentType {
 
     pub(crate) fn block_state() -> Self {
         Self::new(BlockStateParser)
+    }
+
+    /// Vanilla `ParticleArgument.particle`.
+    pub(crate) fn particle() -> Self {
+        Self::new(ParticleParser)
     }
 
     pub(crate) fn game_mode() -> Self {
@@ -796,6 +803,7 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(ParticleValue(ParticleData), "steel:command/value/particle");
 
 macro_rules! unit_argument_parser {
     (
@@ -1300,6 +1308,18 @@ unit_argument_parser!(
         suggest_block_inputs(builder);
     },
     protocol(ProtocolArgumentType::BlockState, None)
+);
+unit_argument_parser!(
+    ParticleParser,
+    "steel:command/parser/particle",
+    ParticleValue,
+    parse | reader,
+    _source | { parse_particle(reader).map(ParticleValue) },
+    suggest | _context,
+    builder | {
+        suggest_particles(builder);
+    },
+    protocol(ProtocolArgumentType::Particle, None)
 );
 unit_argument_parser!(
     BlockPredicateParser,

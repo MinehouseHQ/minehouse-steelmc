@@ -134,6 +134,7 @@ mod level_effects;
 mod level_reader;
 pub mod maps;
 pub(crate) mod natural_spawner;
+pub(crate) mod particle_codec;
 mod player_index;
 pub(crate) mod player_spawn_finder;
 mod portals;
