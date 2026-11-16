@@ -422,6 +422,34 @@ pub static VISIBLE_ADULT_PIGLIN_COUNT: MemoryModuleType<i32> =
     MemoryModuleType::new("visible_adult_piglin_count");
 pub static VISIBLE_ADULT_HOGLIN_COUNT: MemoryModuleType<i32> =
     MemoryModuleType::new("visible_adult_hoglin_count");
+pub static NEAREST_VISIBLE_ADULT_PIGLINS: MemoryModuleType<Vec<SharedEntity>> =
+    MemoryModuleType::new("nearest_visible_adult_piglins");
+pub static NEARBY_ADULT_PIGLINS: MemoryModuleType<Vec<SharedEntity>> =
+    MemoryModuleType::new("nearby_adult_piglins");
+pub static NEAREST_VISIBLE_HUNTABLE_HOGLIN: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_visible_huntable_hoglin");
+pub static NEAREST_VISIBLE_BABY_HOGLIN: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_visible_baby_hoglin");
+pub static NEAREST_VISIBLE_ZOMBIFIED: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_visible_zombified");
+pub static NEAREST_TARGETABLE_PLAYER_NOT_WEARING_GOLD: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_targetable_player_not_wearing_gold");
+pub static NEAREST_PLAYER_HOLDING_WANTED_ITEM: MemoryModuleType<SharedEntity> =
+    MemoryModuleType::new("nearest_player_holding_wanted_item");
+pub static ADMIRING_ITEM: MemoryModuleType<bool> =
+    MemoryModuleType::with_codec("admiring_item", bool_codec());
+pub static ADMIRING_DISABLED: MemoryModuleType<bool> =
+    MemoryModuleType::with_codec("admiring_disabled", bool_codec());
+pub static TIME_TRYING_TO_REACH_ADMIRE_ITEM: MemoryModuleType<i32> =
+    MemoryModuleType::new("time_trying_to_reach_admire_item");
+pub static DISABLE_WALK_TO_ADMIRE_ITEM: MemoryModuleType<bool> =
+    MemoryModuleType::new("disable_walk_to_admire_item");
+pub static HUNTED_RECENTLY: MemoryModuleType<bool> =
+    MemoryModuleType::with_codec("hunted_recently", bool_codec());
+pub static CELEBRATE_LOCATION: MemoryModuleType<BlockPos> =
+    MemoryModuleType::new("celebrate_location");
+pub static DANCING: MemoryModuleType<bool> = MemoryModuleType::new("dancing");
+pub static ATE_RECENTLY: MemoryModuleType<bool> = MemoryModuleType::new("ate_recently");
 pub static VISIBLE_VILLAGER_BABIES: MemoryModuleType<Vec<SharedEntity>> =
     MemoryModuleType::new("visible_villager_babies");
 pub static GOLEM_DETECTED_RECENTLY: MemoryModuleType<bool> =

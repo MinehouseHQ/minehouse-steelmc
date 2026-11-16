@@ -1,5 +1,6 @@
 //! Shared brain behaviors (vanilla `net.minecraft.world.entity.ai.behavior`).
 
+mod anger;
 mod attack;
 mod combat;
 mod cooldown;
@@ -14,16 +15,21 @@ mod long_jump;
 mod look;
 mod make_love;
 mod memory_ops;
+mod mount;
 mod move_to_target;
 mod panic;
 mod poi;
 mod ram;
+mod ranged;
 mod stroll;
 mod swim;
 mod temptation;
+#[cfg(test)]
+mod tests;
 pub mod utils;
 mod walk;
 
+pub use anger::{start_celebrating_if_target_dead, stop_being_angry_if_target_dead};
 pub use attack::{ChargeAttack, start_attacking};
 pub use combat::{
     get_nearest_target, is_other_target_much_further_away_than_current_attack_target, trigger_if,
@@ -48,7 +54,8 @@ pub use look::{
     LookAtTargetSink, RandomLookAround, set_entity_look_target, set_entity_look_target_sometimes,
 };
 pub use make_love::AnimalMakeLove;
-pub use memory_ops::become_passive_if_memory_present;
+pub use memory_ops::{become_passive_if_memory_present, copy_memory_with_expiry};
+pub use mount::{dismount_or_skip_mounting, mount};
 pub use move_to_target::MoveToTargetSink;
 pub use panic::AnimalPanic;
 pub use poi::{
@@ -56,6 +63,7 @@ pub use poi::{
     validate_bed_poi, validate_nearby_poi,
 };
 pub use ram::PrepareRamNearestTarget;
+pub use ranged::{CrossbowAttack, back_up_if_too_close};
 pub use stroll::{
     inside_brownian_walk, set_walk_target_away_from_entity, village_bound_random_stroll,
     village_bound_random_stroll_within,
