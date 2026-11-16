@@ -155,6 +155,12 @@ pub(crate) struct BlockPatternMatch {
 }
 
 impl BlockPatternMatch {
+    /// The direction the pattern's depth runs in the world.
+    #[must_use]
+    pub(crate) const fn forwards(&self) -> Direction {
+        self.forwards
+    }
+
     /// The world position of pattern cell (`right`, `down`, `forwards`).
     #[must_use]
     pub(crate) fn block(&self, right: i32, down: i32, forwards: i32) -> BlockPos {

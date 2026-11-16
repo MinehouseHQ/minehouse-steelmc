@@ -18,7 +18,7 @@ use steel_registry::{
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
-use crate::behavior::blocks::{CarvedPumpkinBlock, FireBlock, TntBlock};
+use crate::behavior::blocks::{CarvedPumpkinBlock, FireBlock, TntBlock, WitherSkullBlock};
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::items::{BlockItem, BoneMealItem, can_light, empty_contents};
 use crate::behavior::projectile_item::{
@@ -85,6 +85,8 @@ pub(crate) enum DispenseBehavior {
     Shears,
     /// Completes a golem in front, or puts the pumpkin on an entity's head.
     CarvedPumpkin,
+    /// Completes a wither in front, or puts the skull on an entity's head.
+    WitherSkeletonSkull,
     /// Shoots the item as a projectile (Vanilla `ProjectileDispenseBehavior`).
     Projectile,
 }
@@ -108,6 +110,8 @@ impl DispenseBehavior {
             Self::Shears
         } else if item.is(&vanilla_items::CARVED_PUMPKIN) {
             Self::CarvedPumpkin
+        } else if item.is(&vanilla_items::WITHER_SKELETON_SKULL) {
+            Self::WitherSkeletonSkull
         } else if shulker_box_block(item).is_some() {
             Self::ShulkerBox
         } else if is_dispensed_projectile(item) {
@@ -154,12 +158,14 @@ impl DispenseBehavior {
             | Self::BoneMeal
             | Self::ShulkerBox
             | Self::Shears
-            | Self::CarvedPumpkin => {
+            | Self::CarvedPumpkin
+            | Self::WitherSkeletonSkull => {
                 let (result, success) = match self {
                     Self::FlintAndSteel => flint_and_steel(source, stack),
                     Self::BoneMeal => bone_meal(source, stack),
                     Self::Shears => shears(source, stack),
                     Self::CarvedPumpkin => carved_pumpkin(source, stack),
+                    Self::WitherSkeletonSkull => wither_skeleton_skull(source, stack),
                     _ => shulker_box(source, stack),
                 };
                 source.world.level_event(
@@ -503,6 +509,40 @@ fn carved_pumpkin(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack,
             target,
             &GameEventContext::new(None, None),
         );
+        stack.shrink(1);
+        return (stack, true);
+    }
+    let success = dispense_equipment(source, &mut stack);
+    (stack, success)
+}
+
+/// Vanilla `DispenseItemBehavior.bootStrap` wither skeleton skull behavior.
+fn wither_skeleton_skull(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool) {
+    let world = source.world;
+    let target = source.target();
+    if world.get_block_state(target).is_air()
+        && WitherSkullBlock::can_spawn_mob(world, target, &stack)
+    {
+        // Vanilla `RotationSegment.convertToSegment(direction)`: `toYRot` is
+        // `(data2d & 3) * 90`.
+        #[expect(clippy::cast_precision_loss, reason = "at most 270")]
+        let y_rot = ((source.facing().get_2d_data_value() & 3) * 90) as f32;
+        world.set_block(
+            target,
+            vanilla_blocks::WITHER_SKELETON_SKULL
+                .default_state()
+                .set_value(
+                    &BlockStateProperties::ROTATION_16,
+                    steel_math::convert_to_rotation_segment(y_rot),
+                ),
+            UpdateFlags::UPDATE_ALL,
+        );
+        world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            target,
+            &GameEventContext::new(None, None),
+        );
+        WitherSkullBlock::check_spawn(world, target);
         stack.shrink(1);
         return (stack, true);
     }

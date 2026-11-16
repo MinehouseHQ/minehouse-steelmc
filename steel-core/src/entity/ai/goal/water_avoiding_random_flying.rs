@@ -5,7 +5,9 @@ use std::f32::consts::FRAC_PI_2;
 
 use glam::DVec3;
 
+use super::RandomStrollGoal;
 use super::random_pos::{air_and_water_random_pos, hover_random_pos};
+use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
 
 /// Vanilla `xzDist`.
@@ -36,4 +38,45 @@ pub(crate) fn random_flying_pos(mob: &(impl PathfinderMob + ?Sized)) -> Option<D
             f64::from(FRAC_PI_2),
         )
     })
+}
+
+/// Vanilla `WaterAvoidingRandomFlyingGoal`: a random stroll through the air
+/// to [`random_flying_pos`].
+pub(crate) struct WaterAvoidingRandomFlyingGoal {
+    stroll: RandomStrollGoal,
+}
+
+impl WaterAvoidingRandomFlyingGoal {
+    #[must_use]
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            stroll: RandomStrollGoal::new(speed_modifier),
+        }
+    }
+}
+
+fn flying_pos(mob: &dyn PathfinderMob) -> Option<DVec3> {
+    random_flying_pos(mob)
+}
+
+impl Goal for WaterAvoidingRandomFlyingGoal {
+    fn controls(&self) -> GoalControls {
+        self.stroll.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.stroll.can_use_with_position(mob, flying_pos)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.stroll.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        self.stroll.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.stroll.stop(mob);
+    }
 }

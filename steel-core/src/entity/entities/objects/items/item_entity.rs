@@ -245,6 +245,12 @@ impl ItemEntity {
         self.item_state.lock().age = age;
     }
 
+    /// Vanilla `setExtendedLifetime`: the item lasts ten minutes instead of
+    /// five.
+    pub fn set_extended_lifetime(&self) {
+        self.set_age(-LIFETIME);
+    }
+
     /// Makes this a one-tick visual pickup item that cannot be collected.
     pub fn make_fake_item(&self) {
         let mut state = self.item_state.lock();
