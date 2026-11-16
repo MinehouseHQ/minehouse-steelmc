@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::enchantment_helper;
 use crate::entity::entities::mobs::hostile::cube_mob::AbstractCubeMob;
+use crate::entity::entities::mobs::hostile::piglin::AbstractPiglin;
 use crate::entity::entities::mobs::passive::AbstractNautilus;
 use crate::entity::entities::mobs::passive::equine::{AbstractHorse, Llama, PlayerRideableJumping};
 use crate::entity::entities::mobs::villagers::Merchant;
@@ -1918,6 +1919,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns the `RangedAttackMob` capability, equivalent to vanilla's `instanceof RangedAttackMob`.
     fn as_ranged_attack_mob(&self) -> Option<&dyn RangedAttackMob> {
         try_as_dyn::<Self, dyn RangedAttackMob>(self)
+    }
+
+    /// Returns the `AbstractPiglin` capability (piglins and piglin brutes),
+    /// equivalent to vanilla's `instanceof AbstractPiglin`.
+    fn as_abstract_piglin(&self) -> Option<&dyn AbstractPiglin> {
+        try_as_dyn::<Self, dyn AbstractPiglin>(self)
     }
 
     /// Returns the `CrossbowAttackMob` capability, equivalent to vanilla's

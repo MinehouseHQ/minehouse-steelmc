@@ -47,10 +47,12 @@ pub use shulker_box_block::*;
 pub use smithing_table_block::*;
 pub use stonecutter_block::*;
 
+use crate::entity::entities::mobs::hostile::piglin;
 use crate::player::Player;
 use crate::world::World;
 
 /// Vanilla `PiglinAi.angerNearbyPiglins`, called when a player opens a
 /// container. `require_line_of_sight` is Vanilla's `onlyIfSeen`.
-// TODO: Steel has no piglins yet; anger the piglins near `player` once they exist.
-pub const fn anger_nearby_piglins(_world: &World, _player: &Player, _require_line_of_sight: bool) {}
+pub fn anger_nearby_piglins(world: &World, player: &Player, require_line_of_sight: bool) {
+    piglin::anger_nearby_piglins(world, player, require_line_of_sight);
+}
