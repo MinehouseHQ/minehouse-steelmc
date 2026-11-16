@@ -120,8 +120,7 @@ mod context;
 pub use context::LiquidStand;
 pub use context::{
     BlockCollisionBoxes, BlockCollisionContext, BlockEntityCreation, BlockLootContext,
-    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable,
-    PickupResult, RailBehavior,
+    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, Fallable, PickupResult, RailBehavior,
 };
 
 /// Data exposed by blocks that support vanilla archaeology brushing.
@@ -1126,52 +1125,6 @@ pub trait BlockBehavior: Send + Sync {
         fall_damage: &EntityFallDamage,
         damage_applied: bool,
     ) {
-    }
-
-    /// Default post-fall movement hook.
-    ///
-    /// Overrides that mirror vanilla `super.updateEntityMovementAfterFallOn(...)`
-    /// should call [`Self::default_update_entity_movement_after_fall_on`].
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores state, world, and pos"
-    )]
-    fn default_update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> DVec3 {
-        context.default_velocity_after_fall_on()
-    }
-
-    /// Updates entity velocity after a vertical movement collision with this block.
-    ///
-    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
-    /// Steel returns the velocity to apply so movement resolution keeps entity
-    /// state changes centralized in [`Entity::move_entity`].
-    fn update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> (DVec3, bool) {
-        let restitution = state.get_block().config.bounce_restitution;
-        if context.velocity.y >= 0.0
-            || restitution <= 0.0
-            || context.suppresses_bounce
-            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
-            || -context.velocity.y <= context.gravity
-        {
-            (
-                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
-                false,
-            )
-        } else {
-            (context.velocity_after_bounce(restitution), true)
-        }
     }
 
     /// Default step-on hook.

@@ -13,6 +13,8 @@ use crate::entity::{Entity, LivingEntity, PathfinderMob, SharedEntity};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
+/// The turn limits of the cube-mob tempt goal's `lookAt`.
+const CUBE_MOB_LOOK_MAX_ROT: f32 = 10.0;
 
 type TemptItemPredicate = Box<dyn Fn(&ItemStack) -> bool + Send + Sync>;
 /// A tempt predicate that also looks at the tempted mob.
@@ -34,6 +36,7 @@ pub struct TemptGoal {
     scare_exempt_player: Option<Uuid>,
     mob_items: Option<MobTemptItemPredicate>,
     for_non_pathfinders: bool,
+    for_cube_mobs: bool,
 }
 
 impl TemptGoal {
@@ -69,6 +72,7 @@ impl TemptGoal {
             scare_exempt_player: None,
             mob_items: None,
             for_non_pathfinders: false,
+            for_cube_mobs: false,
         }
     }
 
@@ -87,6 +91,21 @@ impl TemptGoal {
             Self::with_stop_distance(speed_modifier, |_| false, can_scare, stop_distance);
         goal.mob_items = Some(items);
         goal.for_non_pathfinders = true;
+        goal
+    }
+
+    /// Vanilla `SulfurCube.SulfurCubeTemptGoal`: a non-pathfinder tempt goal
+    /// that only takes the look control and steers a cube mob by turning it
+    /// toward the player and hopping.
+    #[must_use]
+    pub(crate) fn for_cube_mobs(
+        speed_modifier: f64,
+        items: MobTemptItemPredicate,
+        can_scare: bool,
+        stop_distance: f64,
+    ) -> Self {
+        let mut goal = Self::for_non_pathfinders(speed_modifier, items, can_scare, stop_distance);
+        goal.for_cube_mobs = true;
         goal
     }
 
@@ -145,7 +164,11 @@ impl TemptGoal {
 
     /// Vanilla `stopNavigation`.
     fn stop_navigation(&self, mob: &dyn PathfinderMob) {
-        if self.for_non_pathfinders {
+        if self.for_cube_mobs {
+            if let Some(cube) = mob.as_cube_mob() {
+                cube.set_wanted_movement(0.0);
+            }
+        } else if self.for_non_pathfinders {
             mob.mob_base().controls().lock().move_control.set_wait();
         } else {
             mob.mob_base().navigation().lock().stop();
@@ -154,7 +177,12 @@ impl TemptGoal {
 
     /// Vanilla `navigateTowards`.
     fn navigate_towards(&self, mob: &dyn PathfinderMob, player: &Player) {
-        if self.for_non_pathfinders {
+        if self.for_cube_mobs {
+            mob.mob_look_at(player, CUBE_MOB_LOOK_MAX_ROT, CUBE_MOB_LOOK_MAX_ROT);
+            if let Some(cube) = mob.as_cube_mob() {
+                cube.set_move_direction(mob.rotation().0, true);
+            }
+        } else if self.for_non_pathfinders {
             let position = mob.position();
             let eye_position =
                 DVec3::new(player.position().x, player.get_eye_y(), player.position().z);
@@ -211,7 +239,11 @@ impl TemptGoal {
 
 impl Goal for TemptGoal {
     fn controls(&self) -> GoalControls {
-        GoalControls::MOVE | GoalControls::LOOK
+        if self.for_cube_mobs {
+            GoalControls::LOOK
+        } else {
+            GoalControls::MOVE | GoalControls::LOOK
+        }
     }
 
     fn is_tempt_goal(&self) -> bool {

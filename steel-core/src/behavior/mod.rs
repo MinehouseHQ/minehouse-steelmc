@@ -71,7 +71,7 @@ pub use block::LiquidStand;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
     BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
-    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
+    EntityFallOnContext, EntityFallOnFacts, Fallable, RailBehavior,
 };
 pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;

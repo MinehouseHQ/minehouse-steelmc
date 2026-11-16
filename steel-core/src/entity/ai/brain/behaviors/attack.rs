@@ -15,7 +15,7 @@ use crate::entity::ai::brain::memory_types::{
     ATTACK_TARGET, CANT_REACH_WALK_TARGET_SINCE, CHARGE_COOLDOWN_TICKS,
 };
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Mob, SharedEntity, TamableAnimal};
+use crate::entity::{KnockbackCause, Mob, SharedEntity, TamableAnimal};
 use crate::inventory::prelude::{EquipmentSlot, ItemStack};
 use crate::world::World;
 
@@ -140,6 +140,7 @@ impl ChargeAttack {
             target.as_ref(),
             f64::from(speed_factor * self.knockback_force),
             body.velocity(),
+            &KnockbackCause::new(&damage_source, damage, false),
         );
     }
 }

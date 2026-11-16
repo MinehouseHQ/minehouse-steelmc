@@ -59,6 +59,7 @@ mod entities;
 mod entity_data;
 mod features;
 mod fluids;
+mod sulfur_cube_archetypes;
 
 mod cat_sound_variants;
 mod chicken_sound_variants;
@@ -139,6 +140,7 @@ const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
 const BLOCK_TRANSFORMERS: &str = "block_transformers";
+const SULFUR_CUBE_ARCHETYPES: &str = "sulfur_cube_archetypes";
 const DAMAGE_TYPE_TAGS: &str = "damage_type_tags";
 const BANNER_PATTERN_TAGS: &str = "banner_pattern_tags";
 const ENTITY_TYPE_TAGS: &str = "entity_type_tags";
@@ -238,6 +240,7 @@ pub fn main() {
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
         (block_transformers::build(), BLOCK_TRANSFORMERS),
+        (sulfur_cube_archetypes::build(), SULFUR_CUBE_ARCHETYPES),
         (tags::damage_type(), DAMAGE_TYPE_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),

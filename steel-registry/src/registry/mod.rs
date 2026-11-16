@@ -70,6 +70,7 @@ use crate::{
     sound_events, steel_ticket_types,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
+    sulfur_cube_archetype::SulfurCubeArchetypeRegistry,
     template_pool,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
@@ -91,10 +92,10 @@ use crate::{
     vanilla_pig_variants, vanilla_placed_features, vanilla_poi_type_tags, vanilla_poi_types,
     vanilla_position_source_types, vanilla_potion_tags, vanilla_potions, vanilla_recipes,
     vanilla_structure_processors, vanilla_structure_tags, vanilla_structures,
-    vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags, vanilla_timelines,
-    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
-    vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
-    vanilla_world_clocks, vanilla_zombie_nautilus_variants,
+    vanilla_sulfur_cube_archetypes, vanilla_template_pools, vanilla_ticket_types,
+    vanilla_timeline_tags, vanilla_timelines, vanilla_trim_materials, vanilla_trim_patterns,
+    vanilla_villager_professions, vanilla_villager_types, vanilla_wolf_sound_variants,
+    vanilla_wolf_variants, vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
     villager_type::VillagerTypeRegistry,
     wolf_sound_variant::WolfSoundVariantRegistry,
@@ -270,6 +271,8 @@ pub const PLACED_FEATURE_REGISTRY: Identifier =
 pub const BLOCK_STATE_PROVIDER_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/block_state_provider");
 pub const BLOCK_TRANSFORMER_REGISTRY: Identifier = Identifier::vanilla_static("block_transformer");
+pub const SULFUR_CUBE_ARCHETYPE_REGISTRY: Identifier =
+    Identifier::vanilla_static("sulfur_cube_archetype");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
@@ -309,6 +312,7 @@ pub struct Registry {
     pub dimension_types: DimensionTypeRegistry,
     pub damage_types: DamageTypeRegistry,
     pub block_transformers: BlockTransformerRegistry,
+    pub sulfur_cube_archetypes: SulfurCubeArchetypeRegistry,
     pub banner_patterns: BannerPatternRegistry,
     pub jukebox_songs: JukeboxSongRegistry,
     pub instruments: InstrumentRegistry,
@@ -418,6 +422,9 @@ impl Registry {
             &mut registry.damage_types,
         );
         vanilla_block_transformers::register_block_transformers(&mut registry.block_transformers);
+        vanilla_sulfur_cube_archetypes::register_sulfur_cube_archetypes(
+            &mut registry.sulfur_cube_archetypes,
+        );
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
         vanilla_banner_pattern_tags::BannerPatternTag::register_banner_pattern_tags(
             &mut registry.banner_patterns,
@@ -525,6 +532,7 @@ impl Registry {
         self.dimension_types.freeze();
         self.damage_types.freeze();
         self.block_transformers.freeze();
+        self.sulfur_cube_archetypes.freeze();
         self.banner_patterns.freeze();
         self.jukebox_songs.freeze();
         self.instruments.freeze();
@@ -790,6 +798,7 @@ impl Registry {
             dimension_types: DimensionTypeRegistry::new(),
             damage_types: DamageTypeRegistry::new(),
             block_transformers: BlockTransformerRegistry::new(),
+            sulfur_cube_archetypes: SulfurCubeArchetypeRegistry::new(),
             banner_patterns: BannerPatternRegistry::new(),
             jukebox_songs: JukeboxSongRegistry::new(),
             instruments: InstrumentRegistry::new(),

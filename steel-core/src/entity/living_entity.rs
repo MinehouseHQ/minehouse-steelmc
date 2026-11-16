@@ -16,6 +16,7 @@ use crate::behavior::{
 use crate::entity::ai::brain::Memories;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+use crate::entity::entity::compute_modified_friction;
 use crate::entity::get_kill_credit;
 use crate::entity::pushing::EntityPush;
 use crate::inventory::slot_access::SlotAccess;
@@ -53,6 +54,31 @@ const fn hand_slot(hand: InteractionHand) -> EquipmentSlot {
     match hand {
         InteractionHand::MainHand => EquipmentSlot::MainHand,
         InteractionHand::OffHand => EquipmentSlot::OffHand,
+    }
+}
+
+/// What caused a knockback: vanilla's `source`, `damage` and
+/// `comesFromEffect` arguments to `LivingEntity.knockback`.
+#[derive(Clone, Copy)]
+pub struct KnockbackCause<'a> {
+    /// The damage source of the hit.
+    pub source: &'a DamageSource,
+    /// The damage the hit dealt.
+    pub damage: f32,
+    /// Whether the knockback comes from an attack's knockback effect
+    /// (the extra knockback of an attack) rather than the hit itself.
+    pub comes_from_effect: bool,
+}
+
+impl<'a> KnockbackCause<'a> {
+    /// Bundles a knockback's cause.
+    #[must_use]
+    pub const fn new(source: &'a DamageSource, damage: f32, comes_from_effect: bool) -> Self {
+        Self {
+            source,
+            damage,
+            comes_from_effect,
+        }
     }
 }
 
@@ -926,7 +952,7 @@ pub trait LivingEntity: Entity {
             }
             let fully_blocked = blocked && damage <= 0.0;
             if !fully_blocked {
-                self.apply_damage_knockback(source, blocked);
+                self.apply_damage_knockback(source, damage, blocked);
             }
         }
 
@@ -1137,13 +1163,18 @@ pub trait LivingEntity: Entity {
 
     /// Vanilla `dealDefaultKnockback`: hurt knockback for a damage source; a
     /// partly blocked hit pushes without the client-side damage tilt.
-    fn apply_damage_knockback(&self, source: &DamageSource, blocked: bool) {
+    fn apply_damage_knockback(&self, source: &DamageSource, damage: f32, blocked: bool) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
             return;
         }
 
         let (xd, zd) = self.damage_knockback_direction(source);
-        self.knockback(DAMAGE_KNOCKBACK_POWER, xd, zd);
+        self.knockback_with_source(
+            DAMAGE_KNOCKBACK_POWER,
+            xd,
+            zd,
+            &KnockbackCause::new(source, damage, false),
+        );
         if !blocked {
             self.indicate_damage(xd, zd);
         }
@@ -1288,17 +1319,18 @@ pub trait LivingEntity: Entity {
     fn blocked_by_item(
         &self,
         defender: &dyn LivingEntity,
-        _source: &DamageSource,
-        _damage: f32,
+        source: &DamageSource,
+        damage: f32,
         fully_blocked: bool,
     ) {
         if !fully_blocked {
             let defender_position = defender.position();
             let position = self.position();
-            defender.knockback(
+            defender.knockback_with_source(
                 BLOCKED_KNOCKBACK_POWER,
                 defender_position.x - position.x,
                 defender_position.z - position.z,
+                &KnockbackCause::new(source, damage, false),
             );
         }
     }
@@ -1342,6 +1374,13 @@ pub trait LivingEntity: Entity {
             source_position.x - position.x,
             source_position.z - position.z,
         )
+    }
+
+    /// Vanilla `knockback(power, xd, zd, source, damage, comesFromEffect)`:
+    /// knockback from a hit. Mobs that react to who hit them and how hard
+    /// (the sulfur cube) override this; everything else ignores the cause.
+    fn knockback_with_source(&self, power: f64, xd: f64, zd: f64, _cause: &KnockbackCause<'_>) {
+        self.knockback(power, xd, zd);
     }
 
     /// Applies knockback velocity in the direction (`xd`, `zd`), scaled by
@@ -2562,12 +2601,18 @@ pub trait LivingEntity: Entity {
         });
     }
 
+    /// Runs before vanilla `collectEquipmentChanges` applies the changes:
+    /// subclass overrides that react to their own equipment (a sulfur cube
+    /// swallowing a block) go here. Each change is `(slot, previous, current)`.
+    fn before_equipment_changes(&self, _changes: &[(EquipmentSlot, ItemStack, ItemStack)]) {}
+
     /// Detects and applies Vanilla living-equipment changes once per tick.
     fn detect_equipment_updates(&self) {
         let mut changes = self.living_base().collect_equipment_changes();
         if changes.is_empty() {
             return;
         }
+        self.before_equipment_changes(&changes);
 
         // Vanilla `collectEquipmentChanges`: stop the previous items' location
         // effects first, then install the new items and run theirs.
@@ -3354,14 +3399,23 @@ pub trait LivingEntity: Entity {
         false
     }
 
-    /// Returns the vertical friction used by `travelInAir`.
+    /// Returns the vertical friction used by `travelInAir`: the 0.91 air
+    /// drag for omnidirectional movers, else 0.98, each with the
+    /// `air_drag_modifier` attribute.
     fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
-        if self.omnidirectional_air_mover() {
-            // Vanilla `airDrag`: the 0.91 air friction with the drag modifier.
-            self.get_air_drag() as f32
+        let base = if self.omnidirectional_air_mover() {
+            0.91
         } else {
             0.98
-        }
+        };
+        compute_modified_friction(base, self.air_drag_modifier())
+    }
+
+    /// The `air_drag_modifier` attribute, as vanilla's float.
+    fn air_drag_modifier(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32
     }
 
     /// Clamps movement while on a climbable block: caps horizontal and
@@ -3453,11 +3507,17 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            compute_modified_friction(
+                world.get_block_state(pos_below).get_block().config.friction,
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::FRICTION_MODIFIER) as f32,
+            )
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
+        let horizontal_friction =
+            block_friction * compute_modified_friction(0.91, self.air_drag_modifier());
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -3638,6 +3698,11 @@ pub trait LivingEntity: Entity {
 
     /// Dispatches fluid movement handling to the water or lava variant based on the current fluid.
     fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+        self.default_travel_in_fluid(entity, input)
+    }
+
+    /// Vanilla `LivingEntity.travelInFluid`, callable from overrides as `super`.
+    fn default_travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let is_falling = self.velocity().y <= 0.0;
         let old_y = self.position().y;
         let base_gravity = self.get_effective_gravity();

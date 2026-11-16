@@ -11,12 +11,14 @@ use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::{REGISTRY, RegistryExt as _};
+use steel_registry::vanilla_game_rules::TNT_EXPLODES;
+use steel_registry::vanilla_item_tags::ItemTag;
+use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _, sound_events};
 use steel_registry::{
     level_events, vanilla_blocks, vanilla_fluids, vanilla_game_events, vanilla_items,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, WorldAabb};
 
 use crate::behavior::blocks::{CarvedPumpkinBlock, FireBlock, TntBlock, WitherSkullBlock};
 use crate::behavior::context::BlockPlaceContext;
@@ -26,6 +28,8 @@ use crate::behavior::projectile_item::{
 };
 use crate::behavior::{BLOCK_BEHAVIORS, ITEM_BEHAVIORS, pickup_waterlogged_block};
 use crate::block_entity::entities::DispenserBlockEntity;
+use crate::entity::Entity as _;
+use crate::entity::entities::SulfurCubeEntity;
 use crate::inventory::prelude::EquipmentSlot;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -91,6 +95,10 @@ pub(crate) enum DispenseBehavior {
     WitherSkeletonSkull,
     /// Shoots the item as a projectile (Vanilla `ProjectileDispenseBehavior`).
     Projectile,
+    /// Feeds a block to a sulfur cube in front, or drops it.
+    SulfurCubeBlock,
+    /// Feeds TNT to a sulfur cube in front, or primes it there.
+    Tnt,
 }
 
 impl DispenseBehavior {
@@ -122,8 +130,16 @@ impl DispenseBehavior {
             Self::WitherSkeletonSkull
         } else if shulker_box_block(item).is_some() {
             Self::ShulkerBox
+        } else if item.is(&vanilla_items::TNT) {
+            Self::Tnt
         } else if is_dispensed_projectile(item) {
             Self::Projectile
+        } else if item.get_equippable().is_none()
+            && REGISTRY
+                .items
+                .is_in_tag(item.item, &ItemTag::SULFUR_CUBE_SWALLOWABLE)
+        {
+            Self::SulfurCubeBlock
         } else {
             Self::Default
         }
@@ -167,16 +183,28 @@ impl DispenseBehavior {
                 play_default_sound_and_animation(source);
                 result
             }
+            Self::SulfurCubeBlock => {
+                let mut stack = stack;
+                let result = if dispense_into_sulfur_cube(source, &mut stack) {
+                    stack
+                } else {
+                    default_execute(source, stack)
+                };
+                play_default_sound_and_animation(source);
+                result
+            }
             Self::FlintAndSteel
             | Self::BoneMeal
             | Self::ShulkerBox
             | Self::Shears
+            | Self::Tnt
             | Self::CarvedPumpkin
             | Self::WitherSkeletonSkull => {
                 let (result, success) = match self {
                     Self::FlintAndSteel => flint_and_steel(source, stack),
                     Self::BoneMeal => bone_meal(source, stack),
                     Self::Shears => shears(source, stack),
+                    Self::Tnt => tnt(source, stack),
                     Self::CarvedPumpkin => carved_pumpkin(source, stack),
                     Self::WitherSkeletonSkull => wither_skeleton_skull(source, stack),
                     _ => shulker_box(source, stack),
@@ -363,6 +391,67 @@ fn empty_bucket(source: &BlockSource<'_>, stack: ItemStack) -> ItemStack {
     );
     let filled = ItemStack::new(result.filled_bucket.item());
     consume_with_remainder(source, stack, filled)
+}
+
+/// Vanilla `SulfurCubeBlockDispenseItemBehavior.dispenseBlock`: the first
+/// sulfur cube in front that swallows the block takes one of it.
+fn dispense_into_sulfur_cube(source: &BlockSource<'_>, stack: &mut ItemStack) -> bool {
+    let target = source.target();
+    let search_box = WorldAabb::new(
+        f64::from(target.x()),
+        f64::from(target.y()),
+        f64::from(target.z()),
+        f64::from(target.x() + 1),
+        f64::from(target.y() + 1),
+        f64::from(target.z() + 1),
+    );
+    let cubes = source
+        .world
+        .get_entities_in_aabb_matching(&search_box, |entity| {
+            entity.downcast_ref::<SulfurCubeEntity>().is_some()
+        });
+    for entity in cubes {
+        if let Some(cube) = entity.downcast_ref::<SulfurCubeEntity>()
+            && cube.equip_item(stack)
+        {
+            stack.shrink(1);
+            return true;
+        }
+    }
+    false
+}
+
+/// Vanilla TNT dispense behavior: feeds a sulfur cube, otherwise primes TNT
+/// in front of the dispenser.
+fn tnt(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool) {
+    let world = source.world;
+    if !world.get_game_rule(&TNT_EXPLODES) {
+        return (stack, false);
+    }
+    if dispense_into_sulfur_cube(source, &mut stack) {
+        return (stack, true);
+    }
+    let target = source.target();
+    let primed = TntBlock::primed_entity(world, target, None);
+    let position = primed.position();
+    if let Err(error) = world.try_add_entity(primed) {
+        log::debug!("failed to add dispensed primed TNT: {error}");
+    }
+    world.play_sound_at(
+        &sound_events::ENTITY_TNT_PRIMED,
+        SoundSource::Blocks,
+        position,
+        1.0,
+        1.0,
+        None,
+    );
+    world.game_event(
+        &vanilla_game_events::ENTITY_PLACE,
+        target,
+        &GameEventContext::new(None, None),
+    );
+    stack.shrink(1);
+    (stack, true)
 }
 
 /// `DefaultDispenseItemBehavior.execute`: the drop without sound and animation,

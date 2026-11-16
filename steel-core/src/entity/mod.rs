@@ -69,7 +69,7 @@ use uuid::Uuid;
 use crate::behavior::LiquidStand;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
-    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
+    FLUID_BEHAVIORS, InteractionResult,
     blocks::{BedBlock, PowderSnowBlock},
 };
 use crate::chunk_saver::ChunkStorage;
@@ -93,8 +93,6 @@ pub(crate) const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
 
 /// The default air drag value for entities.
 pub const DEFAULT_AIR_DRAG: f64 = 0.98;
-/// Vanilla air drag of omnidirectional air movers, `0.91F` widened to double.
-pub const OMNIDIRECTIONAL_AIR_DRAG: f64 = 0.91_f32 as f64;
 
 /// Clamps an entity position using vanilla's load-time world-bound limits.
 pub(crate) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
@@ -907,7 +905,7 @@ pub use living_base::{
     MobEffectSyncPacket, sync_dirty_mob_effects,
 };
 pub(crate) use living_entity::LIVING_FLAG_SPIN_ATTACK;
-pub use living_entity::LivingEntity;
+pub use living_entity::{KnockbackCause, LivingEntity};
 pub(crate) use manager::EntityCollisionCandidates;
 #[cfg(feature = "benchmark-support")]
 pub use manager::benchmark_support as entity_manager_benchmark_support;
