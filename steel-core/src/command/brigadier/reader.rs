@@ -323,7 +323,28 @@ impl<'input> StringReader<'input> {
         matches!(character, SYNTAX_DOUBLE_QUOTE | SYNTAX_SINGLE_QUOTE)
     }
 
-    const fn is_allowed_in_unquoted_string(character: char) -> bool {
+    pub(crate) const fn is_allowed_in_unquoted_string(character: char) -> bool {
         character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '+')
     }
+}
+
+/// Brigadier `StringArgumentType.escapeIfRequired`: `input` as it reads back
+/// as a quotable phrase, quoted only when it has to be.
+pub(crate) fn escape_if_required(input: &str) -> String {
+    if input
+        .chars()
+        .all(StringReader::is_allowed_in_unquoted_string)
+    {
+        return input.to_owned();
+    }
+    let mut escaped = String::with_capacity(input.len() + 2);
+    escaped.push(SYNTAX_DOUBLE_QUOTE);
+    for character in input.chars() {
+        if matches!(character, SYNTAX_ESCAPE | SYNTAX_DOUBLE_QUOTE) {
+            escaped.push(SYNTAX_ESCAPE);
+        }
+        escaped.push(character);
+    }
+    escaped.push(SYNTAX_DOUBLE_QUOTE);
+    escaped
 }

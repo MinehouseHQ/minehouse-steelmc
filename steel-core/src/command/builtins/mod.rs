@@ -8,6 +8,7 @@ mod clear;
 mod clone;
 mod damage;
 mod data;
+mod datapack;
 mod defaultgamemode;
 mod dialog;
 mod difficulty;
@@ -110,6 +111,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(defaultgamemode::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(dialog::registration())?;
+    builder.register(datapack::registration())?;
     builder.register(effect::registration())?;
     builder.register(domain::registration())?;
     builder.register(enchant::registration())?;
@@ -227,6 +229,7 @@ mod tests {
                 "defaultgamemode",
                 "difficulty",
                 "dialog",
+                "datapack",
                 "effect",
                 "domain",
                 "enchant",

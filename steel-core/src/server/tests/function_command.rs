@@ -20,7 +20,10 @@ fn datapacks(name: &str, files: &[(&str, &str)]) -> PathBuf {
     let root = env::temp_dir().join(format!("steel-function-command-{name}-{}", process::id()));
     let _ = fs::remove_dir_all(&root);
     let pack = root.join("pack");
-    write(&pack.join("pack.mcmeta"), "{}");
+    write(
+        &pack.join("pack.mcmeta"),
+        r#"{"pack":{"description":"","min_format":121,"max_format":121}}"#,
+    );
     for (path, contents) in files {
         write(&pack.join("data").join(path), contents);
     }

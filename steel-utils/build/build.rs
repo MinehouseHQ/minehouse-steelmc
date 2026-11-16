@@ -437,8 +437,10 @@ fn build_version_constants(manifest_dir: &str) -> TokenStream {
         world_version,
         series_id,
         stable,
+        pack_version,
         ..
     } = info;
+    let data_pack_major = pack_version.data_major;
 
     quote! {
         /// The targeted Minecraft version.
@@ -457,6 +459,8 @@ fn build_version_constants(manifest_dir: &str) -> TokenStream {
         pub const RESOURCE_PACK_VERSION: &str = #resource_pack_version;
         /// Vanilla `WorldVersion.packVersion(PackType.SERVER_DATA)`, formatted like `PackFormat::toString`.
         pub const DATA_PACK_VERSION: &str = #data_pack_version;
+        /// The major part of vanilla `WorldVersion.packVersion(PackType.SERVER_DATA)`.
+        pub const DATA_PACK_MAJOR_VERSION: i32 = #data_pack_major;
         /// Vanilla `WorldVersion.stable`.
         pub const STABLE: bool = #stable;
     }

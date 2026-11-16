@@ -74,7 +74,7 @@ pub(crate) use node::{
     CommandRedirectTarget, CommandRequirement, NodeId, NodeKind, RegistrationError,
     RegistrationErrorKind,
 };
-pub(crate) use reader::{ReaderCursor, StringReader};
+pub(crate) use reader::{ReaderCursor, StringReader, escape_if_required};
 pub(crate) use runtime::{BrigadierRuntime, CommandRuntime};
 pub(crate) use string_range::StringRange;
 #[cfg_attr(

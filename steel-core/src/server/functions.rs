@@ -10,39 +10,84 @@ use crate::command::execution::{
 };
 use crate::command::function::{CommandFunction, FunctionLibrary, TimerCallback};
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
-use crate::datapack::{DataPack, find_packs};
+use crate::datapack::{DataPack, FeatureFlagSet, PackRepository};
 use crate::world::World;
 
 impl Server {
-    /// Vanilla `ServerFunctionLibrary.reload` for every domain: compiles the
-    /// functions in its default world's `datapacks` folder.
+    /// Vanilla `MinecraftServer.configurePackRepository` and the first
+    /// resource load, for every domain: selects its packs from its default
+    /// world's saved selection and compiles their functions.
     ///
     /// Lines compile as the domain's server console, as vanilla compiles them
     /// with a gamemaster source; Steel has no permission levels to lower it to.
     pub(crate) fn reload_functions(self: &Arc<Self>) {
         for domain in self.worlds.domain_names() {
-            self.reload_domain_functions(domain);
+            self.configure_data_packs(domain);
         }
     }
 
-    /// [`Self::reload_functions`] for one domain, finding its packs anew.
-    pub(crate) fn reload_domain_functions(self: &Arc<Self>, domain: &str) {
+    /// Runs `f` on `domain`'s pack repository, configuring the domain first
+    /// if it has none yet. `None` for an unknown domain.
+    pub(crate) fn with_pack_repository<R>(
+        self: &Arc<Self>,
+        domain: &str,
+        f: impl FnOnce(&mut PackRepository) -> R,
+    ) -> Option<R> {
+        if self.pack_repositories.with(domain, |_| ()).is_none() {
+            self.configure_data_packs(domain);
+        }
+        self.pack_repositories.with(domain, f)
+    }
+
+    /// [`Self::reload_functions`] for one domain.
+    fn configure_data_packs(self: &Arc<Self>, domain: &str) {
         let Some(world) = self.worlds.default_world(domain) else {
             return;
         };
-        let packs = world
-            .level_path
-            .as_ref()
-            .map_or_else(Vec::new, |path| find_packs(&path.join("datapacks")));
-        self.load_functions(domain, world, &packs);
+        let mut repository =
+            PackRepository::new(world.level_path.as_ref().map(|path| path.join("datapacks")));
+        let saved = world.level_data.read().data().data_packs.clone();
+        let selection = repository.configure(&saved, &FeatureFlagSet::vanilla());
+        let packs = repository.selected_packs().to_vec();
+        self.pack_repositories.insert(domain, repository);
+        if selection != saved {
+            world.level_data.write().data_mut().data_packs = selection;
+        }
+        self.load_functions(domain, world, packs.iter().filter_map(|pack| pack.files()));
     }
 
-    /// Compiles `packs` into `domain`'s function library, replacing the last.
-    pub(crate) fn load_functions(
+    /// Vanilla `ReloadCommand.reloadPacks` and `MinecraftServer.reloadResources`:
+    /// makes `selected` the domain's packs, saves the selection and compiles
+    /// their functions.
+    ///
+    /// Steel's packs carry only functions, so the functions are what reloads.
+    /// Vanilla reloads in the background and swaps them in a few ticks later;
+    /// Steel swaps them before returning. Either way `#minecraft:load` runs on
+    /// the next tick.
+    pub(crate) fn reload_data_packs(self: &Arc<Self>, domain: &str, selected: &[String]) {
+        let Some(world) = self.worlds.default_world(domain) else {
+            return;
+        };
+        let Some((selection, packs)) = self.pack_repositories.with(domain, |repository| {
+            repository.set_selected(selected);
+            (
+                repository.selection_config(),
+                repository.selected_packs().to_vec(),
+            )
+        }) else {
+            return;
+        };
+        world.level_data.write().data_mut().data_packs = selection;
+        self.load_functions(domain, world, packs.iter().filter_map(|pack| pack.files()));
+    }
+
+    /// Compiles `packs`, bottom first, into `domain`'s function library,
+    /// replacing the last.
+    pub(crate) fn load_functions<'pack>(
         self: &Arc<Self>,
         domain: &str,
         world: &Arc<World>,
-        packs: &[DataPack],
+        packs: impl IntoIterator<Item = &'pack DataPack>,
     ) {
         let compilation_source =
             CommandSource::server_in(Arc::clone(self), Arc::clone(world)).with_suppressed_output();

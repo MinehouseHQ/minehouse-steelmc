@@ -103,6 +103,30 @@ pub struct LevelData {
     /// Generator settings this persisted world was created with.
     #[serde(default)]
     pub generation: Option<WorldGenerationSettings>,
+    /// Vanilla `WorldDataConfiguration.dataPacks`: the domain's pack selection,
+    /// kept on its default world.
+    #[serde(default)]
+    pub data_packs: DataPackConfig,
+}
+
+/// Vanilla `DataPackConfig`: the enabled packs, bottom first, and the packs
+/// left off on purpose, which a reload does not add back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataPackConfig {
+    /// Vanilla `Enabled`.
+    pub enabled: Vec<String>,
+    /// Vanilla `Disabled`.
+    pub disabled: Vec<String>,
+}
+
+impl Default for DataPackConfig {
+    /// Vanilla `DataPackConfig.DEFAULT`: only the vanilla pack.
+    fn default() -> Self {
+        Self {
+            enabled: vec![String::from("vanilla")],
+            disabled: Vec::new(),
+        }
+    }
 }
 
 /// Persisted generator metadata used to reject incompatible config changes.
@@ -315,6 +339,7 @@ impl LevelData {
             game_rules_values: GameRuleValues::new(&REGISTRY.game_rules),
             initialized: false,
             generation: None,
+            data_packs: DataPackConfig::default(),
         }
     }
 
