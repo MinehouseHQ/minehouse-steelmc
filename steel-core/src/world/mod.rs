@@ -120,7 +120,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
-mod custom_spawner;
+pub(crate) mod custom_spawner;
 mod difficulty;
 mod domain_entity_directory;
 pub mod dragon_fight;
