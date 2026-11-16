@@ -40,9 +40,11 @@ impl ServerExplosion<'_> {
             ),
         );
         let source_id = self.source.as_ref().map(|source| source.id());
-        let entities = self.world.get_entities_in_aabb_matching(&bounds, |entity| {
-            source_id != Some(entity.id()) && !entity.is_spectator()
-        });
+        // Vanilla `level.getEntities(source, bounds)` includes Ender Dragon
+        // parts, except those of the source itself.
+        let entities = self
+            .world
+            .get_entities_in_aabb_with_parts(source_id, &bounds, |entity| !entity.is_spectator());
         let builtin_entity_effects = self.damage_calculator.has_builtin_entity_effects();
         let mut exposure_raycast =
             ExplosionExposureRaycast::new(self.world.as_ref(), BlockCollisionContext::empty());

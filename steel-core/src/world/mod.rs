@@ -361,6 +361,9 @@ pub struct World {
     pub(crate) wandering_trader_data: SyncMutex<custom_spawner::WanderingTraderData>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Vanilla `ServerLevel.dragonParts`: the Ender Dragons whose parts
+    /// lookups by id and area must find.
+    ender_dragons: SyncMutex<Vec<Weak<dyn Entity>>>,
     /// Vanilla `ServerLevel.noSave`, set by `/save-off`.
     no_save: AtomicBool,
 }
@@ -533,6 +536,7 @@ impl World {
                 raids,
                 exploration_loot: SyncMutex::new(maps::exploration::ExplorationLoot::default()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                ender_dragons: SyncMutex::new(Vec::new()),
                 wandering_trader_data: SyncMutex::new(wandering_trader_data),
                 no_save: AtomicBool::new(false),
             }

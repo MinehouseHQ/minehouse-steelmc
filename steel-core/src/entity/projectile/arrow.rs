@@ -880,7 +880,9 @@ pub(super) fn get_many_entity_hit_result(
     matching: impl Fn(&dyn Entity) -> bool,
 ) -> Vec<EntityHitResult> {
     let mut collector = Vec::new();
-    for entity in world.get_entities_in_aabb(&search_box) {
+    // Vanilla `level.getEntities(projectile, box, predicate)` also finds
+    // Ender Dragon parts.
+    for entity in world.get_entities_in_aabb_with_parts(None, &search_box, |_| true) {
         if !matching(entity.as_ref()) {
             continue;
         }
