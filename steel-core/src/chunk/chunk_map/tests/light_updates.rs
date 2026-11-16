@@ -243,3 +243,31 @@ fn pending_chunk_light_updates_sort_empty_section_changes_deterministically() {
         ]
     );
 }
+
+#[test]
+fn light_rounds_hold_disjoint_windows_and_keep_order_of_overlapping_tasks() {
+    use super::super::light_updates::split_light_round;
+
+    let tasks = [
+        (0, 'a'),
+        (10, 'b'),
+        (2, 'c'),
+        (20, 'd'),
+        (12, 'e'),
+        (5, 'g'),
+    ]
+    .into_iter()
+    .map(|(x, name)| (ChunkPos::new(x, 0), name))
+    .collect::<Vec<_>>();
+
+    let (round, deferred) = split_light_round(tasks);
+    let names = |tasks: &[(ChunkPos, char)]| tasks.iter().map(|&(_, n)| n).collect::<String>();
+
+    // `g` overlaps no task in the round, but it overlaps the deferred `c`, so it waits.
+    assert_eq!(names(&round), "abd");
+    assert_eq!(names(&deferred), "ceg");
+
+    let (round, deferred) = split_light_round(deferred);
+    assert_eq!(names(&round), "ce");
+    assert_eq!(names(&deferred), "g");
+}
