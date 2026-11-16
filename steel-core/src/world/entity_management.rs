@@ -7,6 +7,10 @@ use super::{
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
 
+use std::ptr;
+use std::sync::Weak;
+
+use crate::entity::entities::{EnderDragonEntity, EnderDragonPartEntity};
 use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
 use crate::world::game_event::DynamicListenerAction;
 
@@ -552,7 +556,78 @@ impl World {
     /// Returns `None` if the entity is not live or is hidden in an inaccessible chunk.
     #[must_use]
     pub fn get_accessible_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
-        self.entity_manager.get_accessible_by_id(id)
+        // Vanilla `ServerLevel.getEntityOrPart`: an Ender Dragon part answers
+        // to its own id.
+        self.entity_manager
+            .get_accessible_by_id(id)
+            .or_else(|| self.ender_dragon_part_by_id(id))
+    }
+
+    /// Indexes `dragon` so lookups find its parts, like vanilla
+    /// `ServerLevel.EntityCallbacks.onTrackingStart`. Calling it again for
+    /// the same dragon does nothing.
+    pub fn register_ender_dragon(&self, dragon: &SharedEntity) {
+        let mut dragons = self.ender_dragons.lock();
+        dragons.retain(|known| known.strong_count() > 0);
+        if !dragons
+            .iter()
+            .any(|known| ptr::addr_eq(known.as_ptr(), Arc::as_ptr(dragon)))
+        {
+            dragons.push(Arc::downgrade(dragon));
+        }
+    }
+
+    /// The parts of every live Ender Dragon in this world, like vanilla
+    /// `Level.dragonParts`.
+    #[must_use]
+    pub fn ender_dragon_parts(&self) -> Vec<SharedEntity> {
+        let dragons: Vec<SharedEntity> = {
+            let mut dragons = self.ender_dragons.lock();
+            dragons.retain(|known| known.strong_count() > 0);
+            dragons.iter().filter_map(Weak::upgrade).collect()
+        };
+        dragons
+            .iter()
+            .filter(|dragon| !dragon.is_removed())
+            .filter_map(|dragon| {
+                steel_utils::Downcast::downcast_ref::<EnderDragonEntity>(dragon.as_ref())
+            })
+            .flat_map(EnderDragonEntity::shared_parts)
+            .collect()
+    }
+
+    fn ender_dragon_part_by_id(&self, id: i32) -> Option<SharedEntity> {
+        self.ender_dragon_parts()
+            .into_iter()
+            .find(|part| part.id() == id)
+    }
+
+    /// Vanilla `Level.getEntities(except, bb, selector)`: the entities in
+    /// `aabb` plus the Ender Dragon parts in it, leaving out `except` and the
+    /// parts of `except`.
+    #[must_use]
+    pub fn get_entities_in_aabb_with_parts(
+        &self,
+        except: Option<i32>,
+        aabb: &WorldAabb,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<SharedEntity> {
+        let mut entities = self.get_entities_in_aabb_matching(aabb, |entity| {
+            Some(entity.id()) != except && predicate(entity)
+        });
+        for part in self.ender_dragon_parts() {
+            let parent =
+                steel_utils::Downcast::downcast_ref::<EnderDragonPartEntity>(part.as_ref())
+                    .map(EnderDragonPartEntity::parent_id);
+            if Some(part.id()) != except
+                && parent != except
+                && predicate(part.as_ref())
+                && aabb.intersects(part.bounding_box())
+            {
+                entities.push(part);
+            }
+        }
+        entities
     }
 
     /// Gets an entity by its UUID.

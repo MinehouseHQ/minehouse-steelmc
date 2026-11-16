@@ -533,6 +533,15 @@ pub fn next_entity_id() -> i32 {
     ENTITY_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Allocates `count` consecutive entity IDs and returns the first.
+///
+/// The Ender Dragon takes one block for itself and its parts, because the
+/// client numbers the parts after the dragon's own id.
+#[must_use]
+pub fn reserve_entity_ids(count: i32) -> i32 {
+    ENTITY_COUNTER.fetch_add(count, Ordering::Relaxed)
+}
+
 fn apply_block_effect_segment(
     entity: &dyn Entity,
     world: &Arc<World>,
