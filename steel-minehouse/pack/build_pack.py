@@ -27,7 +27,6 @@ DESCRIPTION = "MineHouse"
 MODS = [
     ("tweaks-mod", "src/main/resources/assets"),
     ("bank-mod", "src/main/resources/assets"),
-    ("herbs-mod", "src/main/resources/assets"),
     ("paradise-mod", "src/main/resources/assets"),
     ("guides-mod", "src/main/resources/assets"),
     ("events-mod", "src/main/resources/assets"),
