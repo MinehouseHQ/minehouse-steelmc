@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --verbose
-      - name: Unit tests with regionized ticking
+      - name: Unit tests with sequential ticking
         env:
-          STEEL_REGIONIZED_TICKING: "1"
+          STEEL_REGIONIZED_TICKING: "0"
         run: cargo test -p steel-core --lib
