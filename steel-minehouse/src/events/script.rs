@@ -25,7 +25,7 @@ use super::{
 };
 
 /// Actor types of the Fabric mod that have no Steel side yet.
-const LATER_ACTORS: [&str; 5] = ["model", "train", "rig", "player", "mob"];
+const LATER_ACTORS: [&str; 4] = ["train", "rig", "player", "mob"];
 /// Cues of the Fabric mod that have no Steel side yet.
 const LATER_CUES: [&str; 12] = [
     "follow",
@@ -100,6 +100,12 @@ pub enum ActorKind {
         text: String,
         line_width: i32,
         background: i32,
+    },
+    /// A captured block set drawn block by block, turning and growing as one piece.
+    Model {
+        blocks: String,
+        /// What it turns around, from the set's origin; the middle of the set if not said.
+        pivot: Option<Vec3>,
     },
 }
 
@@ -304,15 +310,20 @@ struct TrackOrder {
 }
 
 impl ShowScript {
-    /// The captured block sets the cues put, by name.
+    /// The captured block sets the cues put and the models are made of, by name.
     pub fn block_sets(&self) -> impl Iterator<Item = &str> {
-        self.cues.iter().filter_map(|cue| match &cue.action {
+        let put = self.cues.iter().filter_map(|cue| match &cue.action {
             Action::Blocks {
                 source: BlockSource::Set(name),
                 ..
             } => Some(name.as_str()),
             _ => None,
-        })
+        });
+        let models = self.actors.iter().filter_map(|actor| match &actor.kind {
+            ActorKind::Model { blocks, .. } => Some(blocks.as_str()),
+            _ => None,
+        });
+        put.chain(models)
     }
 
     /// The recorded camera paths the cues fly, by name.
@@ -476,12 +487,21 @@ fn read_actor(name: &str, object: &Object) -> Result<ActorDef, String> {
             line_width: json::int(object, "lineWidth", 200)?,
             background: argb(&json::string_or(object, "background", "40000000"))?,
         },
+        "model" => {
+            // The set may not be captured yet: it is read when the show starts.
+            let blocks = json::string(object, "blocks")?;
+            check_name(&blocks)?;
+            ActorKind::Model {
+                blocks,
+                pivot: json::vec_opt(object, "pivot")?.map(DVec3::as_vec3),
+            }
+        }
         later if LATER_ACTORS.contains(&later) => {
             return Err(format!("тип \"{later}\" пока не перенесён в Steel"));
         }
         other => {
             return Err(format!(
-                "нет типа \"{other}\" (есть camera, block, item, text)"
+                "нет типа \"{other}\" (есть camera, block, item, text, model)"
             ));
         }
     };

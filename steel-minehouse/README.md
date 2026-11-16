@@ -211,8 +211,11 @@ are counted from the stage, the place an admin sets with `/show stage <id>`; wit
 
 What works now:
 
-- actors `camera`, `block`, `item` (with `model`), `text`, with `scale`, `glow`,
+- actors `camera`, `block`, `item` (with `model`), `text`, `model`, with `scale`, `glow`,
   `billboard`, `bright`, `viewRange`
+- a `model` actor is a captured block set (`"blocks": "<name>"`) drawn block by block; it
+  moves, turns and grows as one piece around its `pivot`, the middle of the set unless
+  the script names one
 - cues `cinematic`, `cut`, `path` (`points`, `orbit`, or a recorded `path`), `shake`, `spawn`, `move`,
   `transform`, `remove`, `time`, `weather`, `sound`, `particles`, `title`, `actionbar`,
   `chat`, `blocks`, `clear_blocks`, `lightning`, `explosion`
@@ -227,7 +230,7 @@ What works now:
   (`events/journal.json` in the data directory), so they are put back at the end, on
   `/show stop`, or when they next join after the server died mid-show
 
-A script that uses anything else (`model`, `train`, `rig`, `player` and `mob` actors,
+A script that uses anything else (`train`, `rig`, `player` and `mob` actors,
 `meteors`, `rift`, `rockets`, `shockwave`, `follow`, puppet cues, `logic`) does not load, and `/show list` says why. Private cutscenes (`/show play`) and the in-game editor are not
 ported yet either.
 
