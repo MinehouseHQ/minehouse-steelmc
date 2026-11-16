@@ -6,7 +6,7 @@ pub mod objects;
 pub use mobs::ambient::BatEntity;
 pub use mobs::bosses::{DragonPhase, EnderDragonEntity, EnderDragonPartEntity, WitherBossEntity};
 pub use mobs::golems::ShulkerEntity;
-pub use mobs::golems::{IronGolemEntity, SnowGolemEntity};
+pub use mobs::golems::{CopperGolemEntity, IronGolemEntity, SnowGolemEntity};
 pub use mobs::hostile::BreezeEntity;
 pub use mobs::hostile::CreakingEntity;
 pub use mobs::hostile::EndermanEntity;

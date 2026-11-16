@@ -328,6 +328,11 @@ pub fn init_block_entities() {
         );
 
         registry.register(
+            &vanilla_block_entity_types::COPPER_GOLEM_STATUE,
+            |level, pos, state| Arc::new(CopperGolemStatueBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
             &vanilla_block_entity_types::DAYLIGHT_DETECTOR,
             |level, pos, state| Arc::new(DaylightDetectorBlockEntity::new(level, pos, state)),
         );

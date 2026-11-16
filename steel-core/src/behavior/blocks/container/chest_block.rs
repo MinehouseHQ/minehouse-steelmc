@@ -402,6 +402,70 @@ fn least_oxidized_chest_of_connected_blocks(
     REGISTRY.blocks.copy_matching_properties(own, block)
 }
 
+/// The copper chests a golem's copper block turns into, by oxidation, Vanilla
+/// `COPPER_TO_COPPER_CHEST_MAPPING`.
+const COPPER_CHESTS_BY_WEATHER: [BlockRef; 4] = [
+    &vanilla_blocks::COPPER_CHEST,
+    &vanilla_blocks::EXPOSED_COPPER_CHEST,
+    &vanilla_blocks::WEATHERED_COPPER_CHEST,
+    &vanilla_blocks::OXIDIZED_COPPER_CHEST,
+];
+
+/// The waxed copies of [`COPPER_CHESTS_BY_WEATHER`].
+const WAXED_COPPER_CHESTS_BY_WEATHER: [BlockRef; 4] = [
+    &vanilla_blocks::WAXED_COPPER_CHEST,
+    &vanilla_blocks::WAXED_EXPOSED_COPPER_CHEST,
+    &vanilla_blocks::WAXED_WEATHERED_COPPER_CHEST,
+    &vanilla_blocks::WAXED_OXIDIZED_COPPER_CHEST,
+];
+
+/// Vanilla `CopperChestBlock.getFromCopperBlock`: the copper chest that
+/// replaces the copper block of a built copper golem, with the block's
+/// oxidation and wax, joined to a neighboring copper chest.
+#[must_use]
+pub fn copper_chest_from_copper_block(
+    copper_block: BlockRef,
+    facing: Direction,
+    world: &dyn LevelReader,
+    pos: BlockPos,
+) -> BlockStateId {
+    let unwaxed = get_normal_from_waxed_variant(copper_block);
+    let is_full_copper_block = copper_block.has_tag(&BlockTag::COPPER);
+    let chest = match get_weather_state(unwaxed.unwrap_or(copper_block)) {
+        Some(weather) if is_full_copper_block && unwaxed.is_some() => {
+            WAXED_COPPER_CHESTS_BY_WEATHER[weather as usize]
+        }
+        Some(weather) if is_full_copper_block => COPPER_CHESTS_BY_WEATHER[weather as usize],
+        _ => &vanilla_blocks::COPPER_CHEST,
+    };
+    let state = chest
+        .default_state()
+        .set_value(&BlockStateProperties::FACING, facing)
+        .set_value(
+            &BlockStateProperties::CHEST_TYPE,
+            copper_chest_type(world, pos, facing),
+        );
+    least_oxidized_chest_of_connected_blocks(state, world, pos)
+}
+
+/// Vanilla `ChestBlock.getChestType` for a copper chest: joins a single
+/// copper chest facing the same way on either side.
+fn copper_chest_type(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> ChestType {
+    let partner_facing = |direction: Direction| {
+        let state = world.get_block_state(pos.relative(direction));
+        (state.get_block().has_tag(&BlockTag::COPPER_CHESTS)
+            && state.try_get_value(&BlockStateProperties::CHEST_TYPE) == Some(ChestType::Single))
+        .then(|| state.get_value(&BlockStateProperties::FACING))
+    };
+    if partner_facing(facing.rotate_y_clockwise()) == Some(facing) {
+        ChestType::Left
+    } else if partner_facing(facing.rotate_y_counter_clockwise()) == Some(facing) {
+        ChestType::Right
+    } else {
+        ChestType::Single
+    }
+}
+
 /// The sounds a chest block opens and closes with, Vanilla
 /// `ChestBlock.getOpenChestSound` / `getCloseChestSound`, or `None` for a
 /// block that is not a chest. Copper chests sound by oxidation, Vanilla

@@ -26,6 +26,7 @@ mod swim;
 mod temptation;
 #[cfg(test)]
 mod tests;
+mod transport_items;
 pub mod utils;
 mod walk;
 
@@ -71,6 +72,10 @@ pub use stroll::{
 };
 pub use swim::Swim;
 pub use temptation::FollowTemptation;
+pub use transport_items::{
+    ContainerInteractionState, TARGET_INTERACTION_TIME, TransportItemTarget,
+    TransportItemsBetweenContainers,
+};
 pub use walk::{
     baby_follow_adult, go_to_target_location, random_fly, random_stroll, random_stroll_within,
     random_swim, set_walk_target_away_from_pos, set_walk_target_from_look_target, try_find_liquid,

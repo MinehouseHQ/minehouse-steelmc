@@ -7,9 +7,15 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumPr
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, BlockStateId};
 
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_utils::types::UpdateFlags;
+
 use crate::behavior::block_pattern::{BlockPattern, BlockPatternMatch};
+use crate::behavior::blocks::{WeatherState, copper_chest_from_copper_block};
+use crate::behavior::waxables::get_normal_from_waxed_variant;
+use crate::behavior::weathering::get_weather_state;
 use crate::behavior::{BlockBehavior, BlockPlaceContext, BlockRef};
-use crate::entity::entities::{IronGolemEntity, SnowGolemEntity};
+use crate::entity::entities::{CopperGolemEntity, IronGolemEntity, SnowGolemEntity};
 use crate::entity::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -26,6 +32,10 @@ fn is_snow_block(state: BlockStateId) -> bool {
 
 fn is_iron_block(state: BlockStateId) -> bool {
     state.get_block() == &vanilla_blocks::IRON_BLOCK
+}
+
+fn is_copper_block(state: BlockStateId) -> bool {
+    state.get_block().has_tag(&BlockTag::COPPER)
 }
 
 fn is_air(state: BlockStateId) -> bool {
@@ -53,6 +63,12 @@ static IRON_GOLEM_FULL: LazyLock<BlockPattern> = LazyLock::new(|| {
     )
 });
 
+static COPPER_GOLEM_BASE: LazyLock<BlockPattern> =
+    LazyLock::new(|| BlockPattern::new(&[&[" ", "#"]], &[('#', is_copper_block)]));
+static COPPER_GOLEM_FULL: LazyLock<BlockPattern> = LazyLock::new(|| {
+    BlockPattern::new(&[&["^", "#"]], &[('^', is_pumpkin), ('#', is_copper_block)])
+});
+
 /// Behavior for carved pumpkins and jack o'lanterns.
 #[block_behavior]
 pub struct CarvedPumpkinBlock {
@@ -67,11 +83,11 @@ impl CarvedPumpkinBlock {
     }
 
     /// Whether a pumpkin placed at `top_pos` would complete a golem.
-    // TODO: The copper golem pattern comes with the copper golem entity.
     #[must_use]
     pub fn can_spawn_golem(world: &World, top_pos: BlockPos) -> bool {
         SNOW_GOLEM_BASE.find(world, top_pos).is_some()
             || IRON_GOLEM_BASE.find(world, top_pos).is_some()
+            || COPPER_GOLEM_BASE.find(world, top_pos).is_some()
     }
 
     fn try_spawn_golem(world: &Arc<World>, top_pos: BlockPos) {
@@ -97,8 +113,44 @@ impl CarvedPumpkinBlock {
             );
             golem.set_player_created(true);
             spawn_golem_in_world(world, &found, Arc::new(golem));
+            return;
+        }
+
+        if let Some(found) = COPPER_GOLEM_FULL.find(world, top_pos) {
+            Self::spawn_copper_golem(world, &found);
         }
     }
+
+    /// Vanilla `trySpawnGolem` for the copper golem: the copper block turns
+    /// into a copper chest and the golem takes the block's oxidation.
+    fn spawn_copper_golem(world: &Arc<World>, found: &BlockPatternMatch) {
+        let pumpkin_pos = found.block(0, 0, 0);
+        let copper_pos = found.block(0, 1, 0);
+        let pumpkin = world.get_block_state(pumpkin_pos);
+        let copper = world.get_block_state(copper_pos).get_block();
+        let golem = Arc::new(CopperGolemEntity::new(
+            &vanilla_entities::COPPER_GOLEM,
+            next_entity_id(),
+            golem_spawn_position(pumpkin_pos),
+            Arc::downgrade(world),
+        ));
+        spawn_golem_in_world(world, found, Arc::clone(&golem) as SharedEntity);
+        let facing = pumpkin.get_value(HORIZONTAL_FACING);
+        world.set_block(
+            copper_pos,
+            copper_chest_from_copper_block(copper, facing, world.as_ref(), copper_pos),
+            UpdateFlags::UPDATE_CLIENTS,
+        );
+        golem.spawn(copper_weather_state(copper));
+    }
+}
+
+/// Vanilla `getWeatherStateFromPattern`: the copper block's oxidation, a
+/// waxed block counting as its unwaxed copy.
+fn copper_weather_state(copper: BlockRef) -> WeatherState {
+    get_weather_state(copper)
+        .or_else(|| get_normal_from_waxed_variant(copper).and_then(get_weather_state))
+        .unwrap_or(WeatherState::Unaffected)
 }
 
 /// Vanilla `snapTo(x + 0.5, y + 0.05, z + 0.5, 0, 0)` of the golem's bottom block.

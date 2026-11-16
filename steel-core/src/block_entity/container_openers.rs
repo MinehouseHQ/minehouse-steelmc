@@ -2,10 +2,11 @@
 //! block (chest, trapped chest, ender chest, barrel) and drives its lid,
 //! sounds and game events.
 //!
-//! Opening and closing a menu adjust the count directly. While anyone is
-//! counted, the block schedules a tick every [`CHECK_TICK_DELAY`] ticks that
-//! recounts the players who still have the container open, so a viewer who
-//! vanished without closing the menu is dropped.
+//! Opening and closing a menu adjust the count directly, and so do mobs that
+//! open a chest, Vanilla `ContainerUser`s such as the copper golem. While
+//! anyone is counted, the block schedules a tick every [`CHECK_TICK_DELAY`]
+//! ticks that recounts the users who still have the container open, so a
+//! viewer who vanished without closing the menu is dropped.
 
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ use steel_registry::vanilla_game_events;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
-use crate::entity::Entity as _;
+use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -43,6 +44,18 @@ pub trait ContainerOpenersHooks {
 
     /// Whether `player`'s open menu is this container.
     fn is_own_container(&self, player: &Player) -> bool;
+}
+
+/// A mob that opens containers itself. Vanilla `ContainerUser`, which
+/// players implement through their open menu instead.
+pub trait ContainerUser: LivingEntity {
+    /// Whether the container at `pos` is open for this mob. Vanilla
+    /// `hasContainerOpen`.
+    fn has_container_open(&self, world: &World, pos: BlockPos) -> bool;
+
+    /// How far this mob reaches into containers. Vanilla
+    /// `getContainerInteractionRange`.
+    fn container_interaction_range(&self) -> f64;
 }
 
 #[derive(Default)]
@@ -77,7 +90,7 @@ impl ContainerOpenersCounter {
     pub fn increment_openers(
         &self,
         hooks: &dyn ContainerOpenersHooks,
-        player: &Player,
+        user: &dyn Entity,
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
@@ -94,7 +107,7 @@ impl ContainerOpenersCounter {
             world.game_event(
                 &vanilla_game_events::CONTAINER_OPEN,
                 pos,
-                &GameEventContext::new(Some(player), None),
+                &GameEventContext::new(Some(user), None),
             );
             schedule_recheck(world, pos, state);
         }
@@ -107,7 +120,7 @@ impl ContainerOpenersCounter {
     pub fn decrement_openers(
         &self,
         hooks: &dyn ContainerOpenersHooks,
-        player: &Player,
+        user: &dyn Entity,
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
@@ -123,22 +136,38 @@ impl ContainerOpenersCounter {
             world.game_event(
                 &vanilla_game_events::CONTAINER_CLOSE,
                 pos,
-                &GameEventContext::new(Some(player), None),
+                &GameEventContext::new(Some(user), None),
             );
             self.state.lock().max_interaction_range = 0.0;
         }
         hooks.opener_count_changed(world, pos, state, previous, current);
     }
 
-    /// The players near `pos` that have this container open. Vanilla
-    /// `getEntitiesWithContainerOpen`; players are Steel's only container users.
+    /// The interaction range of every entity near `pos` that has this
+    /// container open. Vanilla `getEntitiesWithContainerOpen`: a player
+    /// counts while its menu shows the container, a mob while it says so.
     #[must_use]
-    pub fn players_with_container_open(
+    pub fn users_with_container_open(
         &self,
         hooks: &dyn ContainerOpenersHooks,
         world: &World,
         pos: BlockPos,
-    ) -> Vec<Arc<Player>> {
+    ) -> Vec<f64> {
+        self.entities_with_container_open(hooks, world, pos)
+            .into_iter()
+            .map(|(_, range)| range)
+            .collect()
+    }
+
+    /// The entity id and interaction range of every entity near `pos` that
+    /// has this container open, see [`Self::users_with_container_open`].
+    #[must_use]
+    pub fn entities_with_container_open(
+        &self,
+        hooks: &dyn ContainerOpenersHooks,
+        world: &World,
+        pos: BlockPos,
+    ) -> Vec<(i32, f64)> {
         let range = self.state.lock().max_interaction_range + 4.0;
         let x = f64::from(pos.x());
         let y = f64::from(pos.y());
@@ -146,12 +175,23 @@ impl ContainerOpenersCounter {
         let aabb = WorldAabb::new(x, y, z, x + 1.0, y + 1.0, z + 1.0).inflate(range);
         // Collect first: the menu check takes the player's menu lock, which must
         // not nest inside the entity index lock.
-        let candidates =
-            world.get_entities_in_aabb_matching(&aabb, |entity| entity.as_player().is_some());
+        let candidates = world.get_entities_in_aabb_matching(&aabb, |entity| {
+            entity.as_player().is_some() || entity.as_container_user().is_some()
+        });
         candidates
             .iter()
-            .filter_map(|entity| world.players.get_by_entity_id(entity.id()))
-            .filter(|player| !player.is_spectator() && hooks.is_own_container(player))
+            .filter(|entity| !entity.is_spectator())
+            .filter_map(|entity| {
+                if let Some(user) = entity.as_container_user() {
+                    return user
+                        .has_container_open(world, pos)
+                        .then(|| (entity.id(), user.container_interaction_range()));
+                }
+                let player = world.players.get_by_entity_id(entity.id())?;
+                hooks
+                    .is_own_container(&player)
+                    .then(|| (entity.id(), player.block_interaction_range()))
+            })
             .collect()
     }
 
@@ -164,12 +204,9 @@ impl ContainerOpenersCounter {
         pos: BlockPos,
         state: BlockStateId,
     ) {
-        let players = self.players_with_container_open(hooks, world, pos);
-        let max_interaction_range = players
-            .iter()
-            .map(|player| player.block_interaction_range())
-            .fold(0.0, f64::max);
-        let current = i32::try_from(players.len()).unwrap_or(i32::MAX);
+        let users = self.users_with_container_open(hooks, world, pos);
+        let max_interaction_range = users.iter().copied().fold(0.0, f64::max);
+        let current = i32::try_from(users.len()).unwrap_or(i32::MAX);
         let previous = {
             let mut counter = self.state.lock();
             counter.max_interaction_range = max_interaction_range;

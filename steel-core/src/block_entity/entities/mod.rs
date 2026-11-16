@@ -13,6 +13,7 @@ mod chest;
 mod chiseled_bookshelf;
 mod comparator;
 mod conduit;
+mod copper_golem_statue;
 mod crafter;
 mod creaking_heart;
 mod daylight_detector;
@@ -62,6 +63,7 @@ pub use chest::{CHEST_SLOTS, ChestBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use conduit::ConduitBlockEntity;
+pub use copper_golem_statue::CopperGolemStatueBlockEntity;
 pub use crafter::{
     CRAFTER_DATA_TRIGGERED, CRAFTER_GRID_SIZE, CRAFTER_NUM_DATA, CRAFTER_SLOTS, CrafterBlockEntity,
     CrafterContainer, CrafterData, crafter_container,
