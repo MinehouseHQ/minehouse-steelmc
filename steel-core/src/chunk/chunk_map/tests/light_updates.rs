@@ -249,12 +249,12 @@ fn light_rounds_hold_disjoint_windows_and_keep_order_of_overlapping_tasks() {
     use super::super::light_updates::split_light_round;
 
     let tasks = [
-        (0, 'a'),
-        (10, 'b'),
-        (2, 'c'),
-        (20, 'd'),
-        (12, 'e'),
-        (5, 'g'),
+        (0, 'p'),
+        (10, 'q'),
+        (2, 'r'),
+        (20, 's'),
+        (12, 't'),
+        (5, 'u'),
     ]
     .into_iter()
     .map(|(x, name)| (ChunkPos::new(x, 0), name))
@@ -263,11 +263,11 @@ fn light_rounds_hold_disjoint_windows_and_keep_order_of_overlapping_tasks() {
     let (round, deferred) = split_light_round(tasks);
     let names = |tasks: &[(ChunkPos, char)]| tasks.iter().map(|&(_, n)| n).collect::<String>();
 
-    // `g` overlaps no task in the round, but it overlaps the deferred `c`, so it waits.
-    assert_eq!(names(&round), "abd");
-    assert_eq!(names(&deferred), "ceg");
+    // `u` overlaps no task in the round, but it overlaps the deferred `r`, so it waits.
+    assert_eq!(names(&round), "pqs");
+    assert_eq!(names(&deferred), "rtu");
 
     let (round, deferred) = split_light_round(deferred);
-    assert_eq!(names(&round), "ce");
-    assert_eq!(names(&deferred), "g");
+    assert_eq!(names(&round), "rt");
+    assert_eq!(names(&deferred), "u");
 }
