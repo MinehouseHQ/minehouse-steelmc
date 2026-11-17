@@ -17,11 +17,9 @@ use steel_utils::{BlockPos, ChunkPos, WorldAabb};
 
 use super::{AbstractPiglin as _, PiglinBruteEntity, PiglinEntity, anger_nearby_piglins};
 use crate::behavior::init_behaviors;
-use crate::entity::ai::brain::memory_types::{ADMIRING_ITEM, ANGRY_AT};
+use crate::entity::ai::brain::memory_types::{ADMIRING_ITEM, ANGRY_AT, SPEAR_STATUS, SpearStatus};
 use crate::entity::entities::HoglinEntity;
-use crate::entity::{
-    Entity, LivingEntity as _, Mob as _, SharedEntity, init_entities, next_entity_id,
-};
+use crate::entity::{Entity, LivingEntity, Mob as _, SharedEntity, init_entities, next_entity_id};
 use crate::inventory::container::Container as _;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
@@ -245,6 +243,63 @@ fn a_crossbow_piglin_shoots_the_hoglin_it_is_angry_at() {
     }
     assert!(saw_charging, "the piglin charges its crossbow first");
     assert!(fired, "the charged crossbow fires at the hoglin");
+}
+
+#[test]
+fn a_spear_piglin_approaches_charges_and_stabs_the_hoglin_it_is_angry_at() {
+    let world_fixture = nether_world("spear");
+    let world = &world_fixture.world;
+    let piglin = add_piglin(world, 2.5);
+    piglin.set_item_slot(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::GOLDEN_SPEAR),
+    );
+    let hoglin: SharedEntity = Arc::new(HoglinEntity::new(
+        &vanilla_entities::HOGLIN,
+        next_entity_id(),
+        DVec3::new(14.5, 65.0, 8.5),
+        Arc::downgrade(world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&hoglin))
+        .expect("hoglin should attach to the loaded chunk");
+    let full_health = hoglin
+        .as_living_entity()
+        .map_or(0.0, LivingEntity::get_health);
+    piglin
+        .memories()
+        .lock()
+        .set_with_expiry(&ANGRY_AT, hoglin.uuid(), 600);
+
+    let mut statuses = Vec::new();
+    let mut stabbed = false;
+    for _ in 0..300 {
+        world.level_data.write().advance_game_time();
+        tick(&piglin);
+        if let Some(status) = piglin.memories().lock().get(&SPEAR_STATUS)
+            && statuses.last() != Some(&status)
+        {
+            statuses.push(status);
+        }
+        if hoglin
+            .as_living_entity()
+            .map_or(0.0, LivingEntity::get_health)
+            < full_health
+        {
+            stabbed = true;
+            break;
+        }
+    }
+    assert_eq!(
+        statuses.first(),
+        Some(&SpearStatus::Approach),
+        "the piglin first walks up to the hoglin"
+    );
+    assert!(
+        statuses.contains(&SpearStatus::Charging),
+        "then charges it: {statuses:?}"
+    );
+    assert!(stabbed, "the charge stabs the hoglin");
 }
 
 #[test]

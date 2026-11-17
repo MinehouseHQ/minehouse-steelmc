@@ -238,6 +238,12 @@ impl Entity for SulfurCubeEntity {
         EntityMovementEmission::All
     }
 
+    /// Vanilla `SulfurCube.isInvulnerableToPiercingWeapon`: a primed cube can
+    /// always be pierced.
+    fn is_invulnerable_to_piercing_weapon(&self) -> bool {
+        self.is_invulnerable() && !self.is_primed()
+    }
+
     fn tick(self: Arc<Self>) {
         self.tick_fuse();
         if self.is_removed() {

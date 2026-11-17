@@ -29,15 +29,15 @@ use crate::entity::ai::brain::activity::Activity;
 use crate::entity::ai::brain::behavior::{OneShot, TimedBehavior};
 use crate::entity::ai::brain::behaviors::utils::throw_item;
 use crate::entity::ai::brain::behaviors::{
-    CrossbowAttack, DoNothing, LookAtTargetSink, MoveToTargetSink, Ticker, UniformInt,
-    back_up_if_too_close, copy_memory_with_expiry, dismount_or_skip_mounting, erase_memory_if,
-    get_nearest_target, go_to_target_location, go_to_wanted_item, interact_with_door,
-    interact_with_type, melee_attack, mount, random_stroll, random_stroll_within, run_one,
-    set_entity_look_target, set_look_and_interact, set_walk_target_away_from_entity,
-    set_walk_target_away_from_pos, set_walk_target_from_attack_target_if_target_out_of_reach,
-    set_walk_target_from_look_target, start_attacking, start_celebrating_if_target_dead,
-    stop_attacking_if_target_invalid_when, stop_being_angry_if_target_dead, trigger_if,
-    trigger_one_shuffled,
+    CrossbowAttack, DoNothing, LookAtTargetSink, MoveToTargetSink, SpearApproach, SpearAttack,
+    SpearRetreat, Ticker, UniformInt, back_up_if_too_close, copy_memory_with_expiry,
+    dismount_or_skip_mounting, erase_memory_if, get_nearest_target, go_to_target_location,
+    go_to_wanted_item, interact_with_door, interact_with_type, melee_attack, mount, random_stroll,
+    random_stroll_within, run_one, set_entity_look_target, set_look_and_interact,
+    set_walk_target_away_from_entity, set_walk_target_away_from_pos,
+    set_walk_target_from_attack_target_if_target_out_of_reach, set_walk_target_from_look_target,
+    start_attacking, start_celebrating_if_target_dead, stop_attacking_if_target_invalid_when,
+    stop_being_angry_if_target_dead, trigger_if, trigger_one_shuffled,
 };
 use crate::entity::ai::brain::memory_types::{
     ADMIRING_DISABLED, ADMIRING_ITEM, ANGRY_AT, ATE_RECENTLY, ATTACK_TARGET, AVOID_TARGET,
@@ -272,9 +272,9 @@ impl PiglinEntity {
                 Box::new(set_walk_target_from_attack_target_if_target_out_of_reach(
                     |_| 1.0,
                 )),
-                // TODO(spear): vanilla runs `SpearApproach`, `SpearAttack` and
-                // `SpearRetreat` here; Steel has no mob spear use yet (zombies
-                // lack it too), so spear piglins do not attack until it lands.
+                Box::new(TimedBehavior::new(SpearApproach::new(1.0, 10.0))),
+                Box::new(TimedBehavior::new(SpearAttack::new(1.0, 1.0, 2.0))),
+                Box::new(TimedBehavior::new(SpearRetreat::new(1.0))),
                 Box::new(melee_attack(MELEE_ATTACK_COOLDOWN)),
                 Box::new(TimedBehavior::new(CrossbowAttack::new())),
                 Box::new(remember_if_hoglin_was_killed()),

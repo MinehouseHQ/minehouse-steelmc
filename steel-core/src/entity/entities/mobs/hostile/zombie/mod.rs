@@ -38,7 +38,7 @@ use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
     BreakDoorGoal, HurtByTargetGoal, LookAtPlayerGoal, MoveThroughVillageGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, RemoveBlockGoal, RemoveBlockSound,
-    WaterAvoidingRandomStrollGoal, ZombieAttackGoal,
+    SpearUseGoal, WaterAvoidingRandomStrollGoal, ZombieAttackGoal,
 };
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::conversion::ConversionParams;
@@ -358,7 +358,7 @@ fn zombie_mob_base(variant: ZombieVariant) -> MobBase {
     }
     {
         let mut goal_selector = mob_base.goal_selector().lock();
-        // Vanilla priority 2 uses spears; Steel has no spear goal yet.
+        goal_selector.add_goal(2, SpearUseGoal::new(1.0, 1.0, 10.0, 2.0));
         goal_selector.add_goal(3, ZombieAttackGoal::new(1.0, false));
         goal_selector.add_goal(
             6,

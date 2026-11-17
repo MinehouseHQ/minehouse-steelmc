@@ -1647,6 +1647,19 @@ pub trait Mob: LivingEntity + Leashable {
         self.set_mob_flag(MOB_FLAG_AGGRESSIVE, aggressive);
     }
 
+    /// Vanilla `Mob.chargeSpeedModifier`: how much faster this mob carries a
+    /// spear-charging rider; `ZombieHorse` and `CamelHusk` override it.
+    fn charge_speed_modifier(&self) -> f32 {
+        let entity_type = self.entity_type();
+        if entity_type == &vanilla_entities::ZOMBIE_HORSE {
+            1.4
+        } else if entity_type == &vanilla_entities::CAMEL_HUSK {
+            4.0
+        } else {
+            1.0
+        }
+    }
+
     fn set_mob_flag(&self, flag: i8, enabled: bool) {
         let flags = self.mob_flags();
         let next = if enabled { flags | flag } else { flags & !flag };

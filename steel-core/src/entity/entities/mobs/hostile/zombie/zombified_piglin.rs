@@ -25,7 +25,7 @@ use super::{
     ZombieState, ZombieVariant, ZombieVariantHooks, ZombieVariantSaveData, zombie_mob_base,
 };
 use crate::entity::ai::goal::{
-    HurtByTargetGoal, NearestAttackableTargetGoal, ResetUniversalAngerTargetGoal,
+    HurtByTargetGoal, NearestAttackableTargetGoal, ResetUniversalAngerTargetGoal, SpearUseGoal,
     WaterAvoidingRandomStrollGoal, ZombieAttackGoal,
 };
 use crate::entity::ai::path::PathType;
@@ -319,7 +319,7 @@ pub(super) fn populate_zombified_piglin_equipment(
 pub(super) fn add_behaviour_goals(mob_base: &MobBase) {
     {
         let mut goal_selector = mob_base.goal_selector().lock();
-        // Vanilla priority 1 uses spears; Steel has no `SpearUseGoal` yet.
+        goal_selector.add_goal(1, SpearUseGoal::new(1.0, 1.0, 10.0, 2.0));
         goal_selector.add_goal(2, ZombieAttackGoal::new(1.0, false));
         goal_selector.add_goal(7, WaterAvoidingRandomStrollGoal::new(1.0));
     }

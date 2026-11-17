@@ -3,7 +3,6 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
-use std::mem::swap;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -43,7 +42,7 @@ use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
-use crate::world::{ClipBlockShape, ClipFluid, World};
+use crate::world::World;
 use steel_utils::axis::Axis;
 
 mod adventure_mode;
@@ -53,7 +52,6 @@ mod entity_interaction;
 mod item_interaction;
 mod kinetic;
 mod player_methods;
-mod raycast;
 mod swing;
 
 pub(crate) use adventure_mode::can_break;
@@ -101,8 +99,6 @@ impl PlayerGameModeState {
         true
     }
 }
-
-use raycast::piercing_ray_hit_t;
 
 const CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT: f64 = 0.5;
 const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;

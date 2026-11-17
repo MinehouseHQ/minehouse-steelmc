@@ -21,6 +21,7 @@ mod panic;
 mod poi;
 mod ram;
 mod ranged;
+mod spear;
 mod stroll;
 mod swim;
 mod temptation;
@@ -66,6 +67,7 @@ pub use poi::{
 };
 pub use ram::PrepareRamNearestTarget;
 pub use ranged::{CrossbowAttack, back_up_if_too_close};
+pub use spear::{SpearApproach, SpearAttack, SpearRetreat};
 pub use stroll::{
     inside_brownian_walk, set_walk_target_away_from_entity, village_bound_random_stroll,
     village_bound_random_stroll_within,

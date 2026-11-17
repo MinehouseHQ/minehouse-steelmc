@@ -1084,3 +1084,64 @@ fn cured_zombie_villager_turns_back_into_its_villager() {
     });
     assert!(boots.is_empty(), "unpreserved gear is not dropped");
 }
+
+#[test]
+fn a_zombie_with_a_spear_charges_and_stabs_its_target() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+    let fixture = fresh_test_world("zombie_spear_charge");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let stone = vanilla_blocks::STONE.default_state();
+    for x in 0..16 {
+        for z in 0..16 {
+            world.set_block(BlockPos::new(x, 64, z), stone, UpdateFlags::UPDATE_ALL);
+        }
+    }
+    let zombie = add(
+        world,
+        ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            next_entity_id(),
+            DVec3::new(2.5, 65.0, 8.5),
+            Arc::downgrade(world),
+        ),
+    );
+    let zombie_ref = zombie
+        .downcast_ref::<ZombieEntity>()
+        .expect("zombie is concrete");
+    zombie_ref.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |held| {
+        *held = ItemStack::new(&vanilla_items::IRON_SPEAR);
+    });
+    // A helmet keeps it from burning in daylight.
+    zombie_ref.with_equipment_slot_mut(EquipmentSlot::Head, &mut |held| {
+        *held = ItemStack::new(&vanilla_items::LEATHER_HELMET);
+    });
+    let cow = add(
+        world,
+        CowEntity::new(
+            &vanilla_entities::COW,
+            next_entity_id(),
+            DVec3::new(10.5, 65.0, 8.5),
+            Arc::downgrade(world),
+        ),
+    );
+    let full_health = cow.as_living_entity().map_or(0.0, LivingEntity::get_health);
+    assert!(zombie_ref.set_target(Some(&cow)));
+
+    let mut lowered_spear = false;
+    let mut stabbed = false;
+    for _ in 0..200 {
+        world.level_data.write().advance_game_time();
+        Arc::clone(&zombie).tick();
+        lowered_spear |= zombie_ref.is_using_item();
+        if cow.as_living_entity().map_or(0.0, LivingEntity::get_health) < full_health {
+            stabbed = true;
+            break;
+        }
+    }
+
+    assert!(lowered_spear, "the zombie lowers its spear to charge");
+    assert!(stabbed, "the charge stabs the cow");
+}
