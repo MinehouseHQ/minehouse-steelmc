@@ -17,6 +17,14 @@ pub(crate) struct AutosaveChunk {
     _save_dependency: ChunkSaveDependency,
 }
 
+impl AutosaveChunk {
+    /// Drops a capture that will not be written, marking its chunk unsaved
+    /// again so a later save picks it up.
+    pub(crate) fn discard(self) {
+        ChunkMap::mark_chunk_dirty_for_save_retry(&self.holder);
+    }
+}
+
 impl ChunkMap {
     async fn prepare_chunk_save_on_pool(
         self: &Arc<Self>,
@@ -358,16 +366,33 @@ impl ChunkMap {
     /// only covers `LevelChunk`s too; lower statuses are saved on unload.
     ///
     /// Must run while this world is not ticking, so blocks and entities are
-    /// captured at one consistent point. The capture runs on the tick pool,
-    /// which is idle between ticks: the chunk encoding pool is shared with
-    /// generation, so a capture queued there waits behind generation work
-    /// and stalls the tick.
+    /// captured at one consistent point.
     pub(crate) fn prepare_autosave(self: &Arc<Self>) -> Vec<AutosaveChunk> {
+        self.capture_autosave(self.autosave_holders())
+    }
+
+    /// Every loaded chunk holder, for a capture split over several ticks
+    /// with [`Self::capture_autosave`].
+    pub(crate) fn autosave_holders(&self) -> Vec<Arc<ChunkHolder>> {
         let mut holders = Vec::new();
         self.chunks.iter_sync(|_, holder| {
             holders.push(Arc::clone(holder));
             true
         });
+        holders
+    }
+
+    /// Captures the Full chunks among `holders` that have unsaved changes.
+    ///
+    /// Must run while this world is not ticking, so each chunk's blocks and
+    /// entities are captured at one consistent point. The capture runs on the
+    /// tick pool, which is idle between ticks: the chunk encoding pool is
+    /// shared with generation, so a capture queued there would wait behind
+    /// generation work.
+    pub(crate) fn capture_autosave(
+        self: &Arc<Self>,
+        holders: Vec<Arc<ChunkHolder>>,
+    ) -> Vec<AutosaveChunk> {
         let world = self.world_gen_context.world();
         let entity_manager = world.entity_manager();
         install_on_tick_pool(|| {
