@@ -290,3 +290,30 @@ fn a_rose_that_cannot_grow_drops_as_an_item() {
     );
     assert_eq!(roses.len(), 1);
 }
+
+#[test]
+fn a_player_the_wither_kills_leaves_a_wither_rose() {
+    use crate::test_support::TestPlayerBuilder;
+
+    let fixture = world("wither_rose_player");
+    let (_wither, shared) = add_wither(&fixture);
+    fixture.world.set_block(
+        BlockPos::new(4, 64, 0),
+        vanilla_blocks::GRASS_BLOCK.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    );
+    let player = TestPlayerBuilder::new(Arc::clone(&fixture.world), "Victim", 1).build();
+    player.base().set_position_local(DVec3::new(4.5, 65.0, 0.5));
+    player.set_last_hurt_by_mob(Some(&shared));
+
+    player.set_health(0.0);
+    player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
+
+    assert_eq!(
+        fixture
+            .world
+            .get_block_state(BlockPos::new(4, 65, 0))
+            .get_block(),
+        &vanilla_blocks::WITHER_ROSE
+    );
+}
