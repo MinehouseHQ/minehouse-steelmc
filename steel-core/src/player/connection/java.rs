@@ -21,7 +21,7 @@ use steel_protocol::packets::game::{
     SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
     SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
     SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSetJigsawBlock,
-    SSetStructureBlock, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -120,6 +120,7 @@ enum ScheduledPlayPacketKind {
     SetCommandMinecart(SSetCommandMinecart),
     SetJigsawBlock(SSetJigsawBlock),
     SetStructureBlock(SSetStructureBlock),
+    SetTestBlock(SSetTestBlock),
     JigsawGenerate(SJigsawGenerate),
     SetCarriedItem(SSetCarriedItem),
     Punch(SPunch),
@@ -242,6 +243,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SetCommandMinecart(_)
             | ScheduledPlayPacketKind::SetJigsawBlock(_)
             | ScheduledPlayPacketKind::SetStructureBlock(_)
+            | ScheduledPlayPacketKind::SetTestBlock(_)
             | ScheduledPlayPacketKind::JigsawGenerate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
@@ -375,6 +377,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::SetStructureBlock(packet) => {
                 player.handle_set_structure_block(packet);
+            }
+            ScheduledPlayPacketKind::SetTestBlock(packet) => {
+                player.handle_set_test_block(packet);
             }
             ScheduledPlayPacketKind::JigsawGenerate(packet) => {
                 player.handle_jigsaw_generate(&packet);
@@ -902,6 +907,9 @@ impl JavaConnection {
             )),
             play::S_SET_STRUCTURE_BLOCK => scheduled(ScheduledPlayPacketKind::SetStructureBlock(
                 SSetStructureBlock::read_packet(data)?,
+            )),
+            play::S_SET_TEST_BLOCK => scheduled(ScheduledPlayPacketKind::SetTestBlock(
+                SSetTestBlock::read_packet(data)?,
             )),
             play::S_JIGSAW_GENERATE => scheduled(ScheduledPlayPacketKind::JigsawGenerate(
                 SJigsawGenerate::read_packet(data)?,
