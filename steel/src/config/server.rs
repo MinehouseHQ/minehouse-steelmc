@@ -64,6 +64,10 @@ pub struct ServerConfig {
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     #[serde(default)]
     pub allow_flight: bool,
+    /// Vanilla `force-gamemode`: players join, and `/defaultgamemode` moves
+    /// every online player, in their domain's default game mode.
+    #[serde(default)]
+    pub force_gamemode: bool,
     /// The message of the day.
     pub motd: String,
     /// Whether to use a favicon.
@@ -109,6 +113,7 @@ impl ServerConfig {
             encryption: self.encryption,
             velocity_secret: self.proxy.secret(),
             allow_flight: self.allow_flight,
+            force_gamemode: self.force_gamemode,
             motd: self.motd,
             use_favicon: self.use_favicon,
             favicon: self.favicon,

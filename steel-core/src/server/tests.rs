@@ -4883,6 +4883,7 @@ mod dialog_command;
 mod execute_items_command;
 mod fetchprofile_command;
 mod fillbiome_command;
+mod force_game_mode;
 mod function_command;
 mod game_time;
 mod help_command;
