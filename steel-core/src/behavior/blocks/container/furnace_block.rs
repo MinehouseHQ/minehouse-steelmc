@@ -9,10 +9,11 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
+use text_components::translation::Translation;
 
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::{BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess};
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::entities::FurnaceKind;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::inventory::container::calculate_redstone_signal_from_container;
@@ -55,7 +56,7 @@ fn open_furnace(
     player: &Player,
     expected_type: BlockEntityTypeRef,
     kind: FurnaceKind,
-    title: TextComponent,
+    default_name: &'static Translation<0>,
 ) -> bool {
     let Some(block_entity) = world.get_block_entity(pos) else {
         return false;
@@ -63,6 +64,9 @@ fn open_furnace(
     if block_entity.get_type() != expected_type {
         return false;
     }
+    let Some(title) = unlocked_menu_title(&*block_entity, player, default_name) else {
+        return false;
+    };
     let Some(container) = ContainerRef::from_block_entity(block_entity) else {
         return false;
     };
@@ -117,7 +121,7 @@ macro_rules! impl_furnace_block {
                     player,
                     &vanilla_block_entity_types::$entity_type,
                     FurnaceKind::$kind,
-                    TextComponent::translated(translations::$title.msg()),
+                    &translations::$title,
                 )
             }
 
@@ -130,7 +134,12 @@ macro_rules! impl_furnace_block {
                 _hit_result: &BlockHitResult,
                 _inv: &mut InventoryAccess,
             ) -> InteractionResult {
-                if self.open_menu_provider(state, world, pos, player) {
+                // Vanilla counts the use even when the furnace is locked.
+                let is_furnace = world.get_block_entity(pos).is_some_and(|entity| {
+                    entity.get_type() == &vanilla_block_entity_types::$entity_type
+                });
+                if is_furnace {
+                    self.open_menu_provider(state, world, pos, player);
                     player.award_custom_stat(&vanilla_custom_stats::$stat);
                 }
                 InteractionResult::Success

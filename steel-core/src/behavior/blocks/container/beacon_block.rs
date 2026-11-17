@@ -9,12 +9,12 @@ use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::{DyeColor, vanilla_block_entity_types, vanilla_custom_stats};
-use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
-use text_components::TextComponent;
+use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::block_entity::container_name::{block_center, check_container_locks};
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker, entities::BeaconBlockEntity};
 use crate::inventory::menu::kinds::beacon;
 use crate::player::Player;
@@ -52,15 +52,19 @@ impl BlockBehavior for BeaconBlock {
         let Some(beacon_entity) = block_entity.downcast_ref::<BeaconBlockEntity>() else {
             return false;
         };
+        let name = beacon_entity.name();
+        let title = name.display_name();
+        if !check_container_locks(&[name], player, block_center(pos), &title) {
+            return false;
+        }
         let state = beacon_entity.state();
         let base = beacon_entity.base_handle();
 
         let inventory = Arc::clone(&player.inventory);
         let world = Arc::clone(world);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_BEACON.msg()),
-            move |context| beacon(inventory, context.container_id, pos, &world, state, base),
-        );
+        player.open_menu(title, move |context| {
+            beacon(inventory, context.container_id, pos, &world, state, base)
+        });
         true
     }
 
@@ -73,7 +77,12 @@ impl BlockBehavior for BeaconBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if self.open_menu_provider(state, world, pos, player) {
+        // Vanilla awards the stat whenever a beacon entity is there, locked or not.
+        let is_beacon = world
+            .get_block_entity(pos)
+            .is_some_and(|entity| entity.downcast_ref::<BeaconBlockEntity>().is_some());
+        if is_beacon {
+            self.open_menu_provider(state, world, pos, player);
             player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_BEACON);
         }
         InteractionResult::Success

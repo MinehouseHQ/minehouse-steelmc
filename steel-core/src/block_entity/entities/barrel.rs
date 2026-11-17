@@ -15,17 +15,21 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{sound_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
+use steel_utils::{
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, translations,
+};
 
 use crate::block_entity::container_loot::ContainerLoot;
+use crate::block_entity::container_name::ContainerName;
 use crate::block_entity::container_openers::{
     ContainerOpenersCounter, ContainerOpenersHooks, container_sound_pitch,
 };
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::Entity as _;
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
@@ -46,6 +50,8 @@ pub struct BarrelBlockEntity {
     loot: Arc<ContainerLoot>,
     /// Viewers, for the `open` state and the sounds.
     openers: ContainerOpenersCounter,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 struct BarrelContainer {
@@ -89,7 +95,14 @@ impl BarrelBlockEntity {
             base,
             container,
             openers: ContainerOpenersCounter::new(),
+            name: ContainerName::new(&translations::CONTAINER_BARREL),
         }
+    }
+
+    /// The barrel's custom name and lock.
+    #[must_use]
+    pub const fn name(&self) -> &ContainerName {
+        &self.name
     }
 
     /// The number of players viewing this barrel.
@@ -176,6 +189,7 @@ impl BlockEntity for BarrelBlockEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        self.name.load(nbt_view);
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
@@ -200,6 +214,7 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         if self.loot.save(nbt) {
             return;
         }
@@ -216,6 +231,18 @@ impl BlockEntity for BarrelBlockEntity {
             }
         }
         nbt.insert("Items", NbtList::Compound(items));
+    }
+
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {

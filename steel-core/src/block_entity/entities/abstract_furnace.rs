@@ -12,6 +12,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{
     CachedRecipeCheck, CookingRecipe, RecipeType, SingleItemRecipeInput, TypedRecipeRef,
@@ -21,10 +22,11 @@ use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_items};
 use steel_utils::locks::IntoShared;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
-    types::UpdateFlags,
+    translations, types::UpdateFlags,
 };
 
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::inventory::container::Container;
 use crate::inventory::fuel_values::VANILLA_FUEL_VALUES;
@@ -313,6 +315,8 @@ pub struct AbstractFurnaceBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<FurnaceContainer>>,
     container_ref: ContainerRef,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 impl AbstractFurnaceBlockEntity {
@@ -326,10 +330,16 @@ impl AbstractFurnaceBlockEntity {
         let base = Arc::new(BlockEntityBase::new(block_entity_type, level, pos, state));
         let container = FurnaceContainer::new(kind).into_shared();
         let shared: SharedContainer = Arc::<SyncMutex<FurnaceContainer>>::clone(&container);
+        let default_name = match kind {
+            FurnaceKind::Furnace => &translations::CONTAINER_FURNACE,
+            FurnaceKind::BlastFurnace => &translations::CONTAINER_BLAST_FURNACE,
+            FurnaceKind::Smoker => &translations::CONTAINER_SMOKER,
+        };
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,
             container,
+            name: ContainerName::new(default_name),
         }
     }
 
@@ -352,6 +362,7 @@ impl AbstractFurnaceBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
+        self.name.load(nbt);
         // TODO: Load `speed_multiplier` once fuel comes from the `cooking_fuel` component.
         let mut furnace = self.container.lock();
         furnace.items.fill(ItemStack::empty());
@@ -385,6 +396,7 @@ impl AbstractFurnaceBlockEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         let furnace = self.container.lock();
         nbt.insert("cooking_time_spent", furnace.cooking_timer);
         nbt.insert("cooking_total_time", furnace.cooking_total_time);
@@ -504,6 +516,18 @@ macro_rules! furnace_block_entity {
 
             fn tick(&self, world: &Arc<World>) {
                 self.common.server_tick(world);
+            }
+
+            fn container_name(&self) -> Option<&ContainerName> {
+                Some(&self.common.name)
+            }
+
+            fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+                self.common.name.apply_implicit_components(components);
+            }
+
+            fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+                self.common.name.collect_implicit_components(components);
             }
 
             fn container_ref(&self) -> Option<ContainerRef> {

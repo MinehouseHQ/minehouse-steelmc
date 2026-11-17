@@ -14,7 +14,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{level_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, Identifier, WorldAabb, translations};
-use text_components::TextComponent;
 
 use crate::behavior::ITEM_BEHAVIORS;
 use crate::behavior::InventoryAccess;
@@ -23,6 +22,7 @@ use crate::behavior::context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, PlacementSource,
 };
 use crate::behavior::dispense::spawn_item;
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::entities::{
     CRAFTER_GRID_SIZE, CrafterBlockEntity, CrafterContainer, HopperBlockEntity, add_item,
 };
@@ -158,15 +158,17 @@ impl CrafterBlock {
         let Some(crafter_entity) = block_entity.downcast_ref::<CrafterBlockEntity>() else {
             return false;
         };
+        let Some(title) =
+            unlocked_menu_title(&*block_entity, player, &translations::CONTAINER_CRAFTER)
+        else {
+            return false;
+        };
         let Some(container) = block_entity.container_ref() else {
             return false;
         };
         if !ContainerRef::prepare_open(slice::from_ref(&container), player) {
             return false;
         }
-        let title = crafter_entity
-            .custom_name()
-            .unwrap_or_else(|| TextComponent::translated(translations::CONTAINER_CRAFTER.msg()));
         let data = Arc::clone(crafter_entity.data());
         let inventory = Arc::clone(&player.inventory);
         player.open_menu(title, move |context| {

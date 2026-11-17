@@ -9,13 +9,17 @@ use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
+use steel_utils::{
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, translations,
+};
 use text_components::TextComponent;
 
 use crate::block_entity::container_loot::{ContainerLoot, LOOT_TABLE_SEED_TAG, LOOT_TABLE_TAG};
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
@@ -24,9 +28,6 @@ use crate::world::World;
 pub const DISPENSER_SLOTS: usize = 9;
 
 /// Dispenser or dropper block entity.
-///
-/// Steel does not yet apply container locks: `lock` and `CustomName` are kept
-/// as loaded.
 pub struct DispenserBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<DispenserContainer>>,
@@ -35,6 +36,8 @@ pub struct DispenserBlockEntity {
     loot: Arc<ContainerLoot>,
     /// Saved fields other than `Items`, written back unchanged.
     preserved: SyncMutex<NbtCompound>,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 struct DispenserContainer {
@@ -88,6 +91,13 @@ impl DispenserBlockEntity {
             container,
             loot,
             preserved: SyncMutex::new(NbtCompound::new()),
+            name: ContainerName::new(
+                if block_entity_type == &vanilla_block_entity_types::DROPPER {
+                    &translations::CONTAINER_DROPPER
+                } else {
+                    &translations::CONTAINER_DISPENSER
+                },
+            ),
         }
     }
 
@@ -165,9 +175,7 @@ impl DispenserBlockEntity {
     /// Returns the saved custom name, if any.
     #[must_use]
     pub fn custom_name(&self) -> Option<TextComponent> {
-        let preserved = self.preserved.lock();
-        let tag = preserved.get("CustomName")?;
-        TextComponent::from_nbt(tag)
+        self.name.custom_name()
     }
 }
 
@@ -221,10 +229,13 @@ impl BlockEntity for DispenserBlockEntity {
         while preserved.remove("components").is_some() {}
         while preserved.remove(LOOT_TABLE_TAG).is_some() {}
         while preserved.remove(LOOT_TABLE_SEED_TAG).is_some() {}
+        self.name.load(nbt_view);
+        ContainerName::remove_tags(&mut preserved);
         *self.preserved.lock() = preserved;
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         for (key, value) in self.preserved.lock().iter() {
             nbt.insert(key.to_string(), value.clone());
         }
@@ -247,6 +258,18 @@ impl BlockEntity for DispenserBlockEntity {
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
         None
+    }
+
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {
