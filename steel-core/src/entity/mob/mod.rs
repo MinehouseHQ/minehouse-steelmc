@@ -21,7 +21,7 @@ use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::components::ItemEnchantments;
-use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
+use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, USE_REMAINDER};
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -718,14 +718,23 @@ pub trait Mob: LivingEntity + Leashable {
         !self.is_vehicle()
     }
 
-    /// Consumes one of the player's held item after this mob uses it in an
-    /// interaction. Like vanilla `ItemStack.consume`, players with infinite
-    /// materials (creative) keep the item.
+    /// Vanilla `Animal.usePlayerItem`: consumes one of the player's held item
+    /// after this mob uses it in an interaction, then turns what is left into
+    /// its `use_remainder`. Like vanilla `ItemStack.consume`, players with
+    /// infinite materials (creative) keep the item.
     fn use_player_item(&self, player: &Player, hand: InteractionHand) {
-        if !player.has_infinite_materials() {
-            player.inventory.lock().shrink_item_in_hand(hand, 1);
+        let infinite = player.has_infinite_materials();
+        let extra = player.inventory.lock().mutate_item_in_hand(hand, |stack| {
+            let count = stack.count();
+            let remainder = stack.get(USE_REMAINDER).cloned();
+            if !infinite {
+                stack.shrink(1);
+            }
+            remainder.and_then(|remainder| remainder.convert_into_remainder(stack, count, infinite))
+        });
+        if let Some(extra) = extra {
+            player.handle_extra_items_created_on_use(extra);
         }
-        // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
     }
 
     fn remove_when_far_away(&self, dist_sqr: f64) -> bool {

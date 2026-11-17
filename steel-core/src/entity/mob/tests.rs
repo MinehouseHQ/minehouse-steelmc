@@ -1711,3 +1711,31 @@ fn creative_players_keep_the_item_a_mob_uses() {
     pig.use_player_item(&player, InteractionHand::MainHand);
     assert_eq!(player.inventory.lock().get_selected_item().count(), 2);
 }
+
+#[test]
+fn a_used_item_turns_into_its_use_remainder() {
+    use steel_registry::ItemStackTemplate;
+    use steel_registry::data_components::components::UseRemainder;
+    use steel_registry::data_components::vanilla_components::USE_REMAINDER;
+
+    init_vanilla_registry();
+    let fixture = fresh_test_world("mob_use_player_item_remainder");
+    let player = TestPlayerBuilder::new(Arc::clone(&fixture.world), "Feeder", 1).build();
+    let pig = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
+    let mut carrot = ItemStack::new(&vanilla_items::CARROT);
+    carrot.set(
+        USE_REMAINDER,
+        UseRemainder::new(ItemStackTemplate::new(&vanilla_items::BOWL)),
+    );
+    player.inventory.lock().set_selected_item(carrot);
+
+    pig.use_player_item(&player, InteractionHand::MainHand);
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .get_selected_item()
+            .is(&vanilla_items::BOWL)
+    );
+}
