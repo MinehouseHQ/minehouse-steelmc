@@ -218,8 +218,9 @@ impl FireBlock {
     }
 
     /// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
-    /// Requires a portal-capable world, adjacent obsidian, and a valid empty portal shape.
-    fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
+    /// Requires a portal-capable world, adjacent obsidian, and a valid empty portal shape
+    /// (vanilla or, with a [`crate::PortalShapeObserver`], any shape).
+    pub fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
         if !Self::in_portal_world(world) {
             return false;
         }

@@ -81,7 +81,7 @@ impl Player {
         }
 
         if let Some(world_log) = self.world_log()
-            && (world_log.item_used(self, packet.hand)
+            && (world_log.item_used(self, packet.hand, Some((&world, pos, direction)))
                 || (packet.hand == InteractionHand::MainHand
                     && world_log.block_clicked(self, &world, pos, direction, false)))
         {
