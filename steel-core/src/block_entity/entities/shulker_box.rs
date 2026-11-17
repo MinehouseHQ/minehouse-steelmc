@@ -31,7 +31,11 @@ use steel_registry::{sound_events, vanilla_game_events};
 
 use crate::{
     behavior::{ITEM_BEHAVIORS, blocks::ShulkerBoxBlock},
-    block_entity::container_name::{ContainerName, apply_container_component, contents_from_items},
+    block_entity::container_loot::ContainerLoot,
+    block_entity::container_name::{
+        ContainerName, apply_container_component, apply_container_loot_component,
+        collect_container_loot_component, contents_from_items,
+    },
     block_entity::container_openers::container_sound_pitch,
     block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter},
     entity::Entity as _,
@@ -85,6 +89,8 @@ pub struct ShulkerBoxBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<ShulkerBoxContainer>>,
     container_ref: ContainerRef,
+    /// Vanilla `RandomizableContainerBlockEntity` loot table.
+    loot: Arc<ContainerLoot>,
     animation: SyncMutex<ShulkerBoxAnimation>,
     open_count: AtomicI32,
     /// Vanilla `BaseContainerBlockEntity` custom name and lock.
@@ -126,8 +132,14 @@ impl ShulkerBoxBlockEntity {
         }));
         let shared_container: SharedContainer =
             Arc::<SyncMutex<ShulkerBoxContainer>>::clone(&container);
+        let loot = Arc::new(ContainerLoot::new());
         Self {
-            container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
+            container_ref: ContainerRef::owned_by_randomizable_block_entity(
+                shared_container,
+                Arc::clone(&base),
+                Arc::clone(&loot),
+            ),
+            loot,
             base,
             container,
             animation: SyncMutex::new(ShulkerBoxAnimation {
@@ -275,6 +287,12 @@ impl ShulkerBoxBlockEntity {
         !collision.has_block_collision(&lid_open_bounding_box)
     }
 
+    /// Vanilla `RandomizableContainer.unpackLootTable`: rolls a pending loot
+    /// table into the box, with `player`'s luck.
+    pub fn unpack_loot_table(&self, player: Option<&Player>) {
+        self.container_ref.unpack_loot_table(player);
+    }
+
     /// Checks if the block entity's container has any items
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -335,6 +353,9 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
+        if self.loot.load(nbt_view) {
+            return;
+        }
         let Some(items_list) = nbt_view.list("Items") else {
             return;
         };
@@ -358,6 +379,9 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.name.save(nbt);
+        if self.loot.save(nbt) {
+            return;
+        }
         let container = self.container.lock();
         let mut items: Vec<NbtCompound> = Vec::new();
         for (slot, item) in container.items().iter().enumerate() {
@@ -381,12 +405,14 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.name.apply_implicit_components(components);
         apply_container_component(components, &mut self.container.lock().items);
+        apply_container_loot_component(components, &self.loot);
     }
 
     /// Stores the block entity inventory in the container component
     fn collect_implicit_components(&self, components: &mut DataComponentMap) {
         self.name.collect_implicit_components(components);
         components.set(CONTAINER, Some(self.container_contents()));
+        collect_container_loot_component(components, &self.loot);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {
@@ -508,4 +534,67 @@ impl Container for ShulkerBoxContainer {
     }
 
     fn set_changed(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use simdnbt::owned::NbtCompound;
+    use steel_registry::{
+        data_components::vanilla_components::CONTAINER_LOOT, init_vanilla_registry, vanilla_blocks,
+    };
+    use steel_utils::{BlockPos, ChunkPos, Downcast as _, types::UpdateFlags};
+
+    use super::ShulkerBoxBlockEntity;
+    use crate::{
+        behavior::init_behaviors,
+        block_entity::init_block_entities,
+        test_support::{fresh_test_world, insert_ready_full_chunk},
+    };
+
+    #[test]
+    fn shulker_box_keeps_and_rolls_vanilla_loot_tables() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+        let fixture = fresh_test_world("shulker_box_loot");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let pos = BlockPos::new(1, 64, 1);
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::SHULKER_BOX.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let block_entity = world
+            .get_block_entity(pos)
+            .expect("a placed shulker box has a block entity");
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
+        nbt.insert("LootTableSeed", 7_i64);
+        block_entity
+            .load_with_owned_components(&nbt)
+            .expect("test NBT must load");
+        let shulker_box = block_entity
+            .downcast_ref::<ShulkerBoxBlockEntity>()
+            .expect("the block entity is a shulker box");
+
+        // The pending table survives a save and travels on the dropped item.
+        let saved = block_entity.save_without_metadata();
+        assert_eq!(
+            saved.string("LootTable").map(ToString::to_string),
+            Some("minecraft:chests/simple_dungeon".to_owned())
+        );
+        assert_eq!(saved.long("LootTableSeed"), Some(7));
+        assert!(saved.list("Items").is_none());
+        assert!(shulker_box.is_empty());
+        let item = shulker_box.shulker_box_as_item(vanilla_blocks::SHULKER_BOX.default_state());
+        assert!(item.get(CONTAINER_LOOT).is_some());
+
+        // Breaking the box rolls the table into it first.
+        shulker_box.unpack_loot_table(None);
+        assert!(!shulker_box.is_empty());
+        let saved = block_entity.save_without_metadata();
+        assert!(saved.string("LootTable").is_none());
+        assert!(saved.list("Items").is_some());
+    }
 }

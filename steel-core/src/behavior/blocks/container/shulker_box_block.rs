@@ -168,7 +168,7 @@ impl BlockBehavior for ShulkerBoxBlock {
             let item = shulker_box_block_entity.shulker_box_as_item(state);
             world.pop_resource(pos, item);
         } else {
-            // TODO: maybe? shulkerBoxBlockEntity.unpackLootTable(player);
+            shulker_box_block_entity.unpack_loot_table(Some(player));
         }
 
         state
