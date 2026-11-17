@@ -24,7 +24,7 @@ use super::{
     },
     argument::{
         CriteriaValue, DisplaySlotValue, HexColorValue, OperationValue, StyleValue, TeamColorValue,
-        TeamValue,
+        TeamValue, UuidValue,
     },
     scoreboard_arguments::ScoreOperation,
     selector::EntitySelector,
@@ -69,6 +69,7 @@ use steel_utils::{
 };
 use steel_worldgen::structure::StructureMirror;
 use text_components::TextComponent;
+use uuid::Uuid;
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
@@ -340,6 +341,11 @@ where
     pub(crate) fn style(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
         self.typed_argument::<StyleValue>(name)
             .map(|value| &value.0)
+    }
+
+    /// Vanilla `UuidArgument.getUuid`.
+    pub(crate) fn uuid(&self, name: &str) -> Result<Uuid, CommandSyntaxError> {
+        self.typed_argument::<UuidValue>(name).map(|value| value.0)
     }
 
     /// Vanilla `HexColorArgument.getHexColor`.

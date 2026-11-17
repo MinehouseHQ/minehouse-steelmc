@@ -6,6 +6,8 @@ use thiserror::Error;
 use tokio::time::{Duration, sleep};
 use uuid::Uuid;
 
+use steel_registry::game_profile::{GameProfile, ProfileProperty};
+
 use super::known_players::KnownPlayer;
 
 const DEFAULT_PROFILE_SERVER: &str =
@@ -136,9 +138,71 @@ async fn parse_profile_response(
     Ok(KnownPlayer::new(uuid, profile.name))
 }
 
+/// Vanilla `YggdrasilMinecraftSessionService` profile endpoint.
+const SESSION_PROFILE_SERVER: &str = "https://sessionserver.mojang.com/session/minecraft/profile";
+
+#[derive(Deserialize)]
+struct SessionProfileResponse {
+    id: String,
+    name: String,
+    #[serde(default)]
+    properties: Vec<SessionProfileProperty>,
+}
+
+#[derive(Deserialize)]
+struct SessionProfileProperty {
+    name: String,
+    value: String,
+    signature: Option<String>,
+}
+
+/// Vanilla `SessionService.fetchProfile(id, true)`: the full profile with
+/// signed textures, or `None` when it is unknown or the service fails.
+pub async fn fetch_session_profile(client: &reqwest::Client, id: Uuid) -> Option<GameProfile> {
+    let url = session_profile_url(id);
+    let response = client
+        .get(url)
+        .timeout(PROFILE_LOOKUP_REQUEST_TIMEOUT)
+        .send()
+        .await
+        .inspect_err(|error| log::warn!("Profile fetch for {id} failed: {error}"))
+        .ok()?;
+    if response.status() != StatusCode::OK {
+        return None;
+    }
+    let profile = response
+        .json::<SessionProfileResponse>()
+        .await
+        .inspect_err(|error| log::warn!("Invalid profile response for {id}: {error}"))
+        .ok()?;
+    let properties = profile
+        .properties
+        .into_iter()
+        .filter_map(|property| {
+            ProfileProperty::new(property.name, property.value, property.signature).ok()
+        })
+        .collect();
+    let id = Uuid::parse_str(&profile.id).ok()?;
+    GameProfile::new(id, profile.name, properties).ok()
+}
+
+fn session_profile_url(id: Uuid) -> String {
+    format!("{SESSION_PROFILE_SERVER}/{}?unsigned=false", id.simple())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::profile_lookup_url;
+    use super::{profile_lookup_url, session_profile_url};
+
+    #[test]
+    fn session_profile_url_asks_for_signed_textures() {
+        let id = uuid::Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        assert_eq!(
+            session_profile_url(id),
+            "https://sessionserver.mojang.com/session/minecraft/profile/\
+             0123456789abcdef0123456789abcdef?unsigned=false"
+        );
+    }
 
     #[test]
     fn profile_lookup_url_uses_mojangs_default_endpoint() {

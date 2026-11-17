@@ -57,7 +57,9 @@ pub(crate) use lifecycle::ResetReason;
 pub use movement::PlayerInput;
 use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
-pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
+pub(crate) use profile::{
+    GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, fetch_session_profile, lookup_online_profile,
+};
 pub use profile::{
     GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
 };

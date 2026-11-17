@@ -80,6 +80,7 @@ use steel_utils::{
     types::GameType,
 };
 use text_components::TextComponent;
+use uuid::Uuid;
 
 /// Axes selected by vanilla's coordinate swizzle argument.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -358,6 +359,11 @@ impl SteelArgumentType {
     /// Vanilla `HexColorArgument.hexColor`.
     pub(crate) fn hex_color() -> Self {
         Self::new(HexColorParser)
+    }
+
+    /// Vanilla `UuidArgument.uuid`.
+    pub(crate) fn uuid() -> Self {
+        Self::new(UuidParser)
     }
 
     pub(crate) fn int_range() -> Self {
@@ -726,6 +732,7 @@ argument_value_wrapper!(StyleValue(TextComponent), "steel:command/value/style");
 argument_value_wrapper!(TeamValue(Box<str>), "steel:command/value/team");
 argument_value_wrapper!(TeamColorValue(TeamColor), "steel:command/value/team_color");
 argument_value_wrapper!(HexColorValue(i32), "steel:command/value/hex_color");
+argument_value_wrapper!(UuidValue(Uuid), "steel:command/value/uuid");
 argument_value_wrapper!(DomainValue(Box<str>), "steel:command/value/domain");
 argument_value_wrapper!(
     EntityTypeValue(EntityTypeRef),
@@ -1248,6 +1255,16 @@ unit_argument_parser!(
     suggest | _context,
     builder | { suggest_team_colors(builder) },
     protocol(ProtocolArgumentType::Color, None)
+);
+unit_argument_parser!(
+    UuidParser,
+    "steel:command/parser/uuid",
+    UuidValue,
+    parse | reader,
+    _source | { parse_uuid(reader).map(UuidValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Uuid, None)
 );
 unit_argument_parser!(
     HexColorParser,
@@ -2518,4 +2535,43 @@ fn parse_hex_color(reader: &mut StringReader<'_>) -> Result<i32, CommandSyntaxEr
         return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
     };
     Ok((0xFF00_0000 | (red << 16) | (green << 8) | blue) as i32)
+}
+
+/// Vanilla `UuidArgument.parse`: the leading hex digits and dashes, read
+/// with Java's `UUID.fromString`.
+fn parse_uuid(reader: &mut StringReader<'_>) -> Result<Uuid, CommandSyntaxError> {
+    let remaining = reader.remaining();
+    let length = remaining
+        .find(|c: char| !(c == '-' || c.is_ascii_hexdigit()))
+        .unwrap_or(remaining.len());
+    let Some(uuid) = java_uuid_from_string(&remaining[..length]) else {
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            TextComponent::from(&translations::ARGUMENT_UUID_INVALID),
+        ))));
+    };
+    reader.advance_bytes(length);
+    Ok(uuid)
+}
+
+/// Java `UUID.fromString`: five dash-separated hex groups whose values are
+/// masked to 32, 16, 16, 16 and 48 bits.
+fn java_uuid_from_string(text: &str) -> Option<Uuid> {
+    if text.is_empty() || text.len() > 36 {
+        return None;
+    }
+    let groups: Vec<&str> = text.split('-').collect();
+    let [time_low, time_mid, time_high, clock_seq, node] = groups.as_slice() else {
+        return None;
+    };
+    let parse = |group: &str| {
+        if group.is_empty() {
+            return None;
+        }
+        u64::from_str_radix(group, 16).ok()
+    };
+    let most = ((parse(time_low)? & 0xFFFF_FFFF) << 32)
+        | ((parse(time_mid)? & 0xFFFF) << 16)
+        | (parse(time_high)? & 0xFFFF);
+    let least = ((parse(clock_seq)? & 0xFFFF) << 48) | (parse(node)? & 0xFFFF_FFFF_FFFF);
+    Some(Uuid::from_u64_pair(most, least))
 }
