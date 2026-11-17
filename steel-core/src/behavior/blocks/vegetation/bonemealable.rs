@@ -6,11 +6,42 @@ use rand::{Rng, RngExt};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
+use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureRef};
+use steel_utils::ChunkPos;
+use steel_utils::random::RandomSource;
+use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::worldgen_random::WorldgenRandom;
+
 use crate::{
     behavior::BLOCK_BEHAVIORS,
     behavior::blocks::vegetation::crop_block::CropLike,
     world::{LevelReader, World},
+    worldgen::feature::FeatureDecorationRunner,
+    worldgen::region::WorldGenRegion,
 };
+
+/// Vanilla `ConfiguredFeature.place(level, generator, random, pos)` as the
+/// bonemeal feature placers call it, on a live region over the loaded world.
+pub(crate) fn place_bonemeal_feature(
+    world: &Arc<World>,
+    feature: &'static ConfiguredFeature,
+    rng: &mut dyn Rng,
+    pos: BlockPos,
+) -> bool {
+    let mut region = WorldGenRegion::new_live(
+        &world.chunk_map.world_gen_context,
+        Arc::clone(world),
+        ChunkPos::from_block_pos(pos),
+        RandomSource::Legacy(LegacyRandom::from_seed(rng.random())),
+    );
+    let mut random = WorldgenRandom::from_seed(rng.random());
+    FeatureDecorationRunner::place_feature_in_world(
+        &mut region,
+        &ConfiguredFeatureRef::Reference(feature),
+        &mut random,
+        pos,
+    )
+}
 
 /// Blocks that react to bonemeal.
 pub trait Bonemealable {
