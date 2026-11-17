@@ -18,7 +18,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_custom_stats,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _, translations};
+use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _, WorldAabb, translations};
 use text_components::TextComponent;
 
 use super::anger_nearby_piglins;
@@ -33,6 +33,8 @@ use crate::behavior::weathering::get_weather_state;
 use crate::block_entity::container_name::{ContainerName, block_center, check_container_locks};
 use crate::block_entity::entities::ChestBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
+use crate::entity::TamableAnimal;
+use crate::entity::entities::CatEntity;
 use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::chest_halves;
@@ -371,8 +373,21 @@ pub fn connected_direction(state: BlockStateId) -> Direction {
 #[must_use]
 pub fn is_chest_blocked_at(world: &World, pos: BlockPos) -> bool {
     let above = pos.above();
-    // TODO: Cats sitting on the chest block it too (isCatSittingOnChest); Steel has no cats yet.
     is_redstone_conductor(world, world.get_block_state(above), above)
+        || is_cat_sitting_on_chest(world, pos)
+}
+
+/// Vanilla `ChestBlock.isCatSittingOnChest`: a sitting cat in the block space above the chest.
+fn is_cat_sitting_on_chest(world: &World, pos: BlockPos) -> bool {
+    let (x, y, z) = (f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+    let above = WorldAabb::new(x, y + 1.0, z, x + 1.0, y + 2.0, z + 1.0);
+    !world
+        .get_entities_in_aabb_matching(&above, |entity| {
+            entity
+                .downcast_ref::<CatEntity>()
+                .is_some_and(TamableAnimal::is_in_sitting_pose)
+        })
+        .is_empty()
 }
 
 /// A copper chest block's oxidation and whether it is waxed, from Vanilla
@@ -889,5 +904,42 @@ mod tests {
         let copper = CopperChestBlock::new(&vanilla_blocks::WAXED_COPPER_CHEST).chest();
         assert!(copper.chest_can_connect_to(vanilla_blocks::OXIDIZED_COPPER_CHEST.default_state()));
         assert!(!copper.chest_can_connect_to(vanilla_blocks::CHEST.default_state()));
+    }
+
+    #[test]
+    fn a_sitting_cat_on_top_blocks_the_chest() {
+        use std::sync::Arc;
+
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+
+        use crate::entity::{SharedEntity, init_entities, next_entity_id};
+
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+        init_block_entities();
+        let fixture = fresh_test_world("chest_blocked_by_cat");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(POS));
+        world.set_block(
+            POS,
+            vanilla_blocks::CHEST.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        let cat = Arc::new(CatEntity::new(
+            &vanilla_entities::CAT,
+            next_entity_id(),
+            DVec3::new(8.5, 65.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        let shared: SharedEntity = Arc::<CatEntity>::clone(&cat);
+        world
+            .try_add_entity(shared)
+            .expect("the cat joins the loaded chunk");
+
+        assert!(!is_chest_blocked_at(world, POS), "a standing cat does not");
+        cat.set_in_sitting_pose(true);
+        assert!(is_chest_blocked_at(world, POS));
     }
 }
