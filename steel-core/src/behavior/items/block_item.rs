@@ -2,14 +2,18 @@
 
 use steel_macros::item_behavior;
 use steel_registry::{
+    REGISTRY,
+    block_entity_type::BlockEntityTypeRef,
     blocks::{BlockRef, block_state_ext::BlockStateExt, shapes::OffsetVoxelShape},
+    data_components::vanilla_components::{BLOCK_ENTITY_DATA, BLOCK_STATE},
     sound_event::SoundEventRef,
-    vanilla_blocks, vanilla_game_events,
+    vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::items::bundle::on_container_destroyed;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ItemBehavior};
+use crate::block_entity::load_item_block_entity_data;
 use crate::entity::Entity;
 use crate::entity::entities::ItemEntity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
@@ -20,6 +24,7 @@ use crate::{
     behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext},
     player::Player,
 };
+use std::ptr;
 use std::sync::Arc;
 use steel_registry::ItemStackTemplate;
 use steel_registry::data_components::components::ItemContainerContents;
@@ -153,6 +158,8 @@ impl BlockItem {
             );
         }
         if placed_state.get_block() == new_state.get_block() {
+            let placed_state = Self::update_block_state_from_tag(&context, place_pos, placed_state);
+            update_custom_block_entity_tag(context.world, context.player(), place_pos, &context);
             Self::update_block_entity_components(&context, place_pos);
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
@@ -188,6 +195,34 @@ impl BlockItem {
     /// Places this block using an already constructed placement context.
     pub fn place(&self, context: BlockPlaceContext<'_>) -> InteractionResult {
         self.place_with(context, Self::place_block)
+    }
+
+    /// Vanilla `updateBlockStateFromTag`: the stack's block state component
+    /// sets the properties it names on the placed block.
+    fn update_block_state_from_tag(
+        context: &BlockPlaceContext<'_>,
+        pos: BlockPos,
+        placed_state: BlockStateId,
+    ) -> BlockStateId {
+        let modified = context.with_item(|stack| {
+            stack.get(BLOCK_STATE).map_or(placed_state, |properties| {
+                properties
+                    .properties()
+                    .iter()
+                    .fold(placed_state, |state, (name, value)| {
+                        REGISTRY
+                            .blocks
+                            .try_set_property_by_name(state, name, value)
+                            .unwrap_or(state)
+                    })
+            })
+        });
+        if modified != placed_state {
+            context
+                .world
+                .set_block(pos, modified, UpdateFlags::UPDATE_CLIENTS);
+        }
+        modified
     }
 
     fn update_block_entity_components(context: &BlockPlaceContext<'_>, pos: BlockPos) {
@@ -349,4 +384,43 @@ impl ItemBehavior for GameMasterBlockItem {
     fn can_fit_inside_container_items(&self) -> bool {
         self.base.can_fit_inside_container_items()
     }
+}
+
+/// Vanilla `BlockEntityType.OP_ONLY_CUSTOM_DATA`: block entities whose item
+/// data only game masters may place.
+const OP_ONLY_CUSTOM_DATA: [BlockEntityTypeRef; 6] = [
+    &vanilla_block_entity_types::COMMAND_BLOCK,
+    &vanilla_block_entity_types::LECTERN,
+    &vanilla_block_entity_types::SIGN,
+    &vanilla_block_entity_types::HANGING_SIGN,
+    &vanilla_block_entity_types::MOB_SPAWNER,
+    &vanilla_block_entity_types::TRIAL_SPAWNER,
+];
+
+/// Vanilla `BlockItem.updateCustomBlockEntityTag`: merges the stack's block
+/// entity data into the placed block entity of the same type. Returns
+/// whether it changed anything.
+pub(crate) fn update_custom_block_entity_tag(
+    world: &World,
+    player: Option<&Player>,
+    pos: BlockPos,
+    context: &BlockPlaceContext<'_>,
+) -> bool {
+    let Some(data) = context.with_item(|stack| stack.get(BLOCK_ENTITY_DATA).cloned()) else {
+        return false;
+    };
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return false;
+    };
+    let block_entity_type = block_entity.get_type();
+    if !ptr::eq(block_entity_type, data.block_entity_type()) {
+        return false;
+    }
+    let op_only = OP_ONLY_CUSTOM_DATA
+        .iter()
+        .any(|op_only| ptr::eq(*op_only, block_entity_type));
+    if op_only && !player.is_some_and(Player::can_use_game_master_blocks) {
+        return false;
+    }
+    load_item_block_entity_data(block_entity.as_ref(), &data.data().copy_tag())
 }
