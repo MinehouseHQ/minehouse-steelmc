@@ -70,7 +70,7 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
 impl Player {
     /// Returns the player hitbox dimensions for a given pose (sleeping,
     /// swimming, sneaking, dying, or the default standing size).
-    pub(super) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
+    pub(crate) const fn dimensions_for_pose(pose: EntityPose) -> EntityDimensions {
         match pose {
             EntityPose::Sleeping => PLAYER_SLEEPING_DIMENSIONS,
             EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => {
