@@ -30,8 +30,8 @@ use crate::entity::entities::mobs::villagers::villager_data::villager_type_at;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::entities::{CowEntity, VillagerEntity};
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingEntity, Mob, MobEffectInstance, SharedEntity, SpawnGroupData,
-    init_entities, next_entity_id,
+    Entity, EntitySpawnReason, LivingEntity, Mob, MobEffectInstance, RemovalReason, SharedEntity,
+    SpawnGroupData, init_entities, next_entity_id,
 };
 use crate::inventory::container::Container as _;
 use crate::inventory::equipment::EquipmentSlot;
@@ -1144,4 +1144,71 @@ fn a_zombie_with_a_spear_charges_and_stabs_its_target() {
 
     assert!(lowered_spear, "the zombie lowers its spear to charge");
     assert!(stabbed, "the charge stabs the cow");
+}
+
+/// Spawns `attempts` husks on open ground for `spawn_reason` and counts the
+/// ones that end up driving a camel husk with a parched behind them.
+fn camel_husk_riders(spawn_reason: EntitySpawnReason, attempts: usize) -> usize {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+    let fixture = fresh_test_world("husk_camel_husk_rider");
+    let world = &fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let mut riders = 0;
+    for _ in 0..attempts {
+        let husk = add(
+            world,
+            HuskEntity::new(
+                &vanilla_entities::HUSK,
+                next_entity_id(),
+                DVec3::new(8.5, 100.0, 8.5),
+                Arc::downgrade(world),
+            ),
+        );
+        let husk_ref = husk.downcast_ref::<HuskEntity>().expect("husk is concrete");
+        husk_ref.finalize_spawn(world, spawn_reason, None);
+        Arc::clone(&husk).tick();
+        // Baby husks may ride a chicken instead.
+        let Some(camel_husk) = husk
+            .vehicle()
+            .filter(|vehicle| vehicle.entity_type() == &vanilla_entities::CAMEL_HUSK)
+        else {
+            continue;
+        };
+        let passengers = camel_husk.passengers();
+        assert_eq!(
+            passengers.len(),
+            2,
+            "the husk drives and a parched sits behind"
+        );
+        assert_eq!(passengers[0].id(), husk.id(), "the husk is seated first");
+        assert_eq!(passengers[1].entity_type(), &vanilla_entities::PARCHED);
+        assert!(
+            husk_ref
+                .living_base
+                .equipment()
+                .lock()
+                .get_ref(EquipmentSlot::MainHand)
+                .is(&vanilla_items::IRON_SPEAR)
+        );
+        for entity in [&husk, &passengers[1], &camel_husk] {
+            entity.set_removed(RemovalReason::Discarded);
+        }
+        riders += 1;
+    }
+    riders
+}
+
+#[test]
+fn natural_husk_may_ride_a_camel_husk_with_a_parched() {
+    assert!(
+        camel_husk_riders(EntitySpawnReason::Natural, 200) > 0,
+        "about one natural husk in ten rides a camel husk"
+    );
+}
+
+#[test]
+fn spawner_husk_never_rides_a_camel_husk() {
+    assert_eq!(camel_husk_riders(EntitySpawnReason::Spawner, 40), 0);
 }

@@ -49,6 +49,7 @@ use crate::entity::mob::spawn_equipment::{
     populate_default_equipment_enchantments, populate_default_equipment_slots,
 };
 use crate::entity::spawn::create_entity_instance;
+use crate::entity::spawn_placements::spawn_aabb;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
@@ -56,7 +57,7 @@ use crate::entity::{
     SpawnRule, sync_dirty_mob_effects,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::MoveResult;
+use crate::physics::{MoveResult, WorldCollisionProvider, has_collision};
 use crate::player::Player;
 use crate::world::{DifficultyInstance, ServerLevelAccessor, World};
 
@@ -83,6 +84,8 @@ const BREAK_DOOR_CHANCE: f32 = 0.1;
 const BABY_SPAWN_CHANCE: f32 = 0.05;
 const CHICKEN_JOCKEY_CHANCE: f64 = 0.05;
 const PICK_UP_LOOT_CHANCE: f32 = 0.55;
+/// Vanilla `Husk.finalizeSpawn`: chance a natural husk rides a camel husk.
+const CAMEL_HUSK_RIDER_CHANCE: f32 = 0.1;
 const WEAPON_CHANCE_HARD: f32 = 0.05;
 const WEAPON_CHANCE: f32 = 0.01;
 const HALLOWEEN_PUMPKIN_CHANCE: f32 = 0.25;
@@ -304,6 +307,9 @@ struct ZombieState {
     /// Vanilla calls `startRiding` inside `finalizeSpawn`, before the zombie
     /// joins the level; Steel can only link riders that are already in it.
     pending_jockey_mount: Option<SharedEntity>,
+    /// A camel husk a natural husk mounts on its first tick, with the parched
+    /// that vanilla seats behind it once the husk is riding.
+    pending_camel_husk_mount: Option<(SharedEntity, Option<SharedEntity>)>,
     /// Vanilla `Drowned.searchingForLand`.
     searching_for_land: bool,
     /// Vanilla `Drowned.rangedAttackUncertainty`; negative uses the default.
@@ -317,6 +323,7 @@ impl ZombieState {
             in_water_time: 0,
             conversion_time: 0,
             pending_jockey_mount: None,
+            pending_camel_husk_mount: None,
             searching_for_land: false,
             ranged_attack_uncertainty: -1.0,
         }
@@ -883,6 +890,18 @@ macro_rules! impl_zombie_traits {
                     && !mount.is_removed()
                 {
                     let _ = self.start_riding(&mount, false);
+                }
+                let camel_husk_mount = self.zombie_state.lock().pending_camel_husk_mount.take();
+                if let Some((camel_husk, parched)) = camel_husk_mount
+                    && !camel_husk.is_removed()
+                {
+                    // Vanilla seats the husk first so it drives, then the parched.
+                    let _ = self.start_riding(&camel_husk, true);
+                    if let Some(parched) = parched
+                        && !parched.is_removed()
+                    {
+                        let _ = parched.start_riding(&camel_husk, false);
+                    }
                 }
                 let entity = Arc::clone(&self).into_shared_entity();
                 if let Some(living) = entity.as_living_entity() {
@@ -1529,8 +1548,8 @@ impl_zombie_traits!(
 
 impl HuskEntity {
     /// Vanilla `Husk.finalizeSpawn`: the zombie spawn, then a second loot
-    /// pickup roll. Vanilla also tries a camel husk mount with a parched
-    /// rider for natural spawns; camel husks are not implemented in Steel yet.
+    /// pickup roll, then a camel husk mount with a parched rider for
+    /// natural spawns.
     fn finalize_spawn_husk(
         &self,
         world: &Arc<World>,
@@ -1547,7 +1566,65 @@ impl HuskEntity {
                 random.next_f32() < PICK_UP_LOOT_CHANCE * difficulty_modifier,
             );
         }
+        // Vanilla wraps the zombie data in `HuskGroupData`, which has only
+        // tried for a camel husk unless this is a natural spawn.
+        if spawn_reason == EntitySpawnReason::Natural
+            && matches!(group_data, Some(SpawnGroupData::Zombie(_)))
+        {
+            self.try_spawn_camel_husk_mount(world, &mut random, spawn_reason);
+        }
         group_data
+    }
+
+    /// Vanilla `Husk.finalizeSpawn`: where a camel husk fits, a natural husk
+    /// sometimes takes an iron spear and rides one, with a parched behind it.
+    fn try_spawn_camel_husk_mount(
+        &self,
+        world: &Arc<World>,
+        random: &mut impl Random,
+        spawn_reason: EntitySpawnReason,
+    ) {
+        let pos = self.block_position();
+        let camel_box = spawn_aabb(
+            &vanilla_entities::CAMEL_HUSK,
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        );
+        if has_collision(&WorldCollisionProvider::new(world), camel_box)
+            || random.next_f32() >= CAMEL_HUSK_RIDER_CHANCE
+        {
+            return;
+        }
+        let _ = self.living_base.equipment().lock().set(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::IRON_SPEAR),
+        );
+        let Ok(camel_husk) =
+            create_entity_instance(world, &vanilla_entities::CAMEL_HUSK, self.position())
+        else {
+            return;
+        };
+        if let Some(camel_mob) = camel_husk.as_mob() {
+            let _ = camel_mob.finalize_spawn(world, spawn_reason, None);
+        }
+        if world.try_add_entity(Arc::clone(&camel_husk)).is_err() {
+            return;
+        }
+        let parched = create_entity_instance(world, &vanilla_entities::PARCHED, self.position())
+            .ok()
+            .and_then(|parched| {
+                let (yaw, _) = self.rotation();
+                parched.set_rotation((yaw, 0.0));
+                if let Some(parched_mob) = parched.as_mob() {
+                    let _ = parched_mob.finalize_spawn(world, spawn_reason, None);
+                }
+                world
+                    .try_add_entity(Arc::clone(&parched))
+                    .is_ok()
+                    .then_some(parched)
+            });
+        self.zombie_state.lock().pending_camel_husk_mount = Some((camel_husk, parched));
     }
 }
 
