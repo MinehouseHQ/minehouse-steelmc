@@ -399,14 +399,16 @@ impl BlockEntity for BeaconBlockEntity {
         }
 
         if scan_complete {
-            // TODO: Trigger the CONSTRUCT_BEACON criterion for nearby players on activation once
-            //       Steel's shared advancement foundations exist.
-            let sound = match (previous_levels > 0, levels > 0) {
-                (false, true) => &sound_events::BLOCK_BEACON_ACTIVATE,
-                (true, false) => &sound_events::BLOCK_BEACON_DEACTIVATE,
-                _ => return,
-            };
-            Self::play_sound(world, pos, sound);
+            match (previous_levels > 0, levels > 0) {
+                (false, true) => {
+                    Self::play_sound(world, pos, &sound_events::BLOCK_BEACON_ACTIVATE);
+                    trigger_construct_beacon(world, pos, levels);
+                }
+                (true, false) => {
+                    Self::play_sound(world, pos, &sound_events::BLOCK_BEACON_DEACTIVATE);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -419,5 +421,19 @@ impl BlockEntity for BeaconBlockEntity {
             self.get_block_pos(),
             &sound_events::BLOCK_BEACON_DEACTIVATE,
         );
+    }
+}
+
+/// Vanilla `CONSTRUCT_BEACON` for every player in
+/// `new AABB(x, y, z, x, y - 4, z).inflate(10, 5, 10)`.
+fn trigger_construct_beacon(world: &World, pos: BlockPos, levels: i32) {
+    let (x, y, z) = (f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+    let area = WorldAabb::from_min_max(DVec3::new(x, y - 4.0, z), DVec3::new(x, y, z))
+        .inflate_xyz(10.0, 5.0, 10.0);
+    let players = world.get_entities_in_aabb_matching(&area, |entity| entity.as_player().is_some());
+    for player in &players {
+        if let Some(player) = player.as_player() {
+            player.trigger_construct_beacon(levels);
+        }
     }
 }

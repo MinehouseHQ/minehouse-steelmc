@@ -94,12 +94,12 @@ impl BlockBehavior for TargetBlock {
         hit: &ClipHitResult,
         projectile: &dyn Projectile,
     ) {
-        let _strength = self.update_redstone_output(world, state, hit, projectile);
+        let strength = self.update_redstone_output(world, state, hit, projectile);
         if let Some(owner) = projectile.projectile_owner()
             && let Some(player) = owner.as_player()
         {
             player.award_custom_stat(&vanilla_custom_stats::TARGET_HIT);
-            // TODO: The advancement criterion awaits Steel's shared advancement foundations.
+            player.trigger_target_block_hit(projectile, strength);
         }
     }
 

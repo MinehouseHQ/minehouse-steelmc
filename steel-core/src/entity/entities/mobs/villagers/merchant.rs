@@ -146,12 +146,24 @@ pub(crate) fn record_trade(
     mob: &dyn Mob,
     offers: &mut MerchantOffers,
     offer: usize,
-) -> Option<(i32, bool)> {
+) -> Option<(i32, bool, ItemStack)> {
     let offer = offers.get_mut(offer)?;
     offer.increase_uses();
     mob.mob_base()
         .set_ambient_sound_time(-mob.ambient_sound_interval());
-    Some((offer.xp(), offer.should_reward_exp()))
+    Some((
+        offer.xp(),
+        offer.should_reward_exp(),
+        offer.result().clone(),
+    ))
+}
+
+/// The end of vanilla `AbstractVillager.notifyTrade`: `TRADE` for the
+/// trading player, after the trade xp.
+pub(crate) fn trigger_trade(merchant: &dyn Merchant, result: &ItemStack) {
+    if let Some(player) = trading_player_of(merchant) {
+        player.trigger_trade(merchant, result);
+    }
 }
 
 /// Vanilla `AbstractVillager.notifyTradeUpdated`: says yes or no to the

@@ -9,7 +9,7 @@ mod wandering_trader;
 pub use merchant::Merchant;
 pub(crate) use merchant::{
     open_trading_screen, play_trade_updated_sound, record_trade, send_merchant_offers,
-    spawn_trade_experience, trading_player_of,
+    spawn_trade_experience, trading_player_of, trigger_trade,
 };
 pub use villager::VillagerEntity;
 pub use wandering_trader::WanderingTraderEntity;

@@ -384,7 +384,10 @@ impl Player {
 }
 
 /// An optional loot condition on a context: missing conditions pass.
-fn test_context(predicate: Option<&ContextPredicate>, context: &ConditionContext<'_>) -> bool {
+pub(super) fn test_context(
+    predicate: Option<&ContextPredicate>,
+    context: &ConditionContext<'_>,
+) -> bool {
     predicate.is_none_or(|predicate| predicate.test(context))
 }
 

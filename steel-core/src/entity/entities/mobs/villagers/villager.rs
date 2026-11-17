@@ -53,7 +53,7 @@ use super::{
 };
 use super::{
     Merchant, open_trading_screen, play_trade_updated_sound, record_trade, send_merchant_offers,
-    spawn_trade_experience, trading_player_of,
+    spawn_trade_experience, trading_player_of, trigger_trade,
 };
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::memory::MemoryModuleType;
@@ -1116,10 +1116,11 @@ impl Merchant for VillagerEntity {
     }
 
     fn notify_trade(&self, offer: usize) {
-        // Vanilla also fires the `TRADE` advancement trigger; Steel has no advancements.
-        if let Some((xp, reward_exp)) = self.with_offers(|offers| record_trade(self, offers, offer))
+        if let Some((xp, reward_exp, result)) =
+            self.with_offers(|offers| record_trade(self, offers, offer))
         {
             self.reward_trade_xp(xp, reward_exp);
+            trigger_trade(self, &result);
         }
     }
 

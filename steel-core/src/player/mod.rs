@@ -37,6 +37,7 @@ mod title;
 pub mod warden_spawn_tracker;
 
 use crate::player::advancement::criteria;
+use crate::player::advancement::criteria::USING_ITEM;
 use crate::player::advancement::criteria::{ENTITY_KILLED_PLAYER, PLAYER_KILLED_ENTITY};
 use crate::player::player_inventory::Prediction;
 use crate::scoreboard::{CriteriaUpdate, CustomCriteria, ObjectiveCriteria, ScoreHolder};
@@ -554,6 +555,8 @@ impl Player {
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
+        // Vanilla `ServerPlayer.updateUsingItem`.
+        self.trigger_item_criteria(&USING_ITEM, &item);
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
         self.inventory.lock().write_use_item(hand, item);

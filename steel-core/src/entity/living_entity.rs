@@ -24,6 +24,7 @@ use crate::inventory::slot_range::{
     BODY_SLOT, CHEST_SLOT, FEET_SLOT, HEAD_SLOT, LEGS_SLOT, MAINHAND_SLOT, OFFHAND_SLOT,
     SADDLE_SLOT,
 };
+use crate::player::advancement::criteria::USED_TOTEM;
 use crate::world::waypoints;
 use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::damage_type::DamageType;
@@ -1482,7 +1483,7 @@ pub trait LivingEntity: Entity {
 
         if let Some(player) = self.as_player() {
             player.award_stat(&vanilla_stat_types::ITEM_USED, protection_item.item());
-            // TODO: trigger the `used_totem` advancement criterion once advancements exist.
+            player.trigger_item_criteria(&USED_TOTEM, &protection_item);
             if protection_item
                 .get(USE_EFFECTS)
                 .is_some_and(|effects| effects.interact_vibrations)
