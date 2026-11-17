@@ -279,7 +279,24 @@ impl World {
         if updated && rule.key() == ADVANCE_TIME.key() {
             self.broadcast_time_sync();
         }
+        if updated && rule.key() == vanilla_game_rules::LOCATOR_BAR.key() {
+            self.on_locator_bar_changed();
+        }
         updated
+    }
+
+    /// Vanilla `MinecraftServer.onGameRuleChanged` for `locator_bar`: connect
+    /// every player again, or drop every connection.
+    fn on_locator_bar_changed(&self) {
+        let manager = self.waypoint_manager();
+        if self.get_game_rule(&vanilla_game_rules::LOCATOR_BAR) {
+            self.players.iter_players(|_, player| {
+                manager.update_player(player.id());
+                true
+            });
+        } else {
+            manager.break_all_connections();
+        }
     }
 
     /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
@@ -306,6 +323,9 @@ impl World {
             .set_erased(rule, value, &REGISTRY.game_rules);
         if updated && rule.key() == ADVANCE_TIME.key() {
             self.broadcast_time_sync();
+        }
+        if updated && rule.key() == vanilla_game_rules::LOCATOR_BAR.key() {
+            self.on_locator_bar_changed();
         }
         updated
     }

@@ -286,7 +286,7 @@ fn channel(value: f64) -> i32 {
 }
 
 /// Vanilla `ExtraCodecs.RGB_COLOR_CODEC`: an int, or three float channels.
-fn rgb_color(tag: &NbtTag) -> DecodeResult<RgbColor> {
+pub(crate) fn rgb_color(tag: &NbtTag) -> DecodeResult<RgbColor> {
     if let Some(raw) = tag.codec_i32() {
         return Ok(RgbColor::new(raw));
     }

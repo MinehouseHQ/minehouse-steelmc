@@ -70,6 +70,7 @@ mod title;
 mod transfer;
 mod trigger;
 mod version;
+mod waypoint;
 mod weather;
 mod worldborder;
 
@@ -174,6 +175,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(time::registration())?;
     builder.register(title::registration())?;
     builder.register(version::registration())?;
+    builder.register(waypoint::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
@@ -299,6 +301,7 @@ mod tests {
                 "time",
                 "title",
                 "version",
+                "waypoint",
                 "weather",
                 "worldborder",
                 "invsee",

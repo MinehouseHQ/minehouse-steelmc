@@ -21,7 +21,10 @@ use std::{
     },
 };
 
-use steel_protocol::packets::game::{CResetScore, CSetScore, NumberFormat, ObjectiveRenderType};
+use crate::entity::Entity as _;
+use steel_protocol::packets::game::{
+    CResetScore, CSetScore, NumberFormat, ObjectiveRenderType, TeamMethod,
+};
 use steel_utils::locks::{AsyncMutex, SyncMutex, SyncRwLock};
 use steel_utils::translations;
 use text_components::{Modifier as _, TextComponent, interactivity::HoverEvent};
@@ -406,9 +409,44 @@ impl Scoreboard {
             return;
         }
         let viewers = self.viewers.lock().online();
-        for player in viewers {
+        for player in &viewers {
             for packet in packets {
-                packet.send_to(&player);
+                packet.send_to(player);
+            }
+        }
+        let mut holders = Vec::new();
+        for packet in packets {
+            let ScoreboardPacket::Team(team) = packet else {
+                continue;
+            };
+            match &team.method {
+                TeamMethod::Join(players) | TeamMethod::Leave(players) => {
+                    holders.extend(players.iter().cloned());
+                }
+                TeamMethod::Change(_) => {
+                    if let Some(team) = self.state.read().teams.get(&team.name) {
+                        holders.extend(team.players.iter().cloned());
+                    }
+                }
+                TeamMethod::Add(..) | TeamMethod::Remove => {}
+            }
+        }
+        Self::remake_waypoints(&viewers, &holders);
+    }
+
+    /// Vanilla `ServerScoreboard.updatePlayerWaypoint` and
+    /// `updateTeamWaypoints`: a team color change recolors the holders'
+    /// locator bar icons.
+    fn remake_waypoints(viewers: &[Arc<Player>], holders: &[String]) {
+        if holders.is_empty() {
+            return;
+        }
+        for player in viewers {
+            if holders.contains(&player.scoreboard_name()) {
+                player
+                    .get_world()
+                    .waypoint_manager()
+                    .remake_connections(player.id());
             }
         }
     }
@@ -1017,16 +1055,17 @@ impl Scoreboard {
 
     /// Vanilla `removePlayerTeam`.
     pub fn remove_team(&self, name: &str) {
-        self.mutate(|state, packets| {
+        let holders = self.mutate(|state, packets| {
             let Some(team) = state.teams.remove(name) else {
-                return ((), false);
+                return (Vec::new(), false);
             };
             for player in &team.players {
                 state.teams_by_player.remove(player);
             }
             packets.push(team_remove_packet(name));
-            ((), true)
+            (team.players.into_iter().collect::<Vec<_>>(), true)
         });
+        Self::remake_waypoints(&self.viewers.lock().online(), &holders);
     }
 
     /// Vanilla's team setters with `ServerScoreboard.onTeamChanged`.

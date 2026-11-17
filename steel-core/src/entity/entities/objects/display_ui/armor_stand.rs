@@ -641,6 +641,7 @@ impl Entity for ArmorStandEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
+        self.load_waypoint_icon(nbt);
         let flag = |name: &str| nbt.byte(name).is_some_and(|value| value != 0);
         self.set_invisible(flag("Invisible"));
         self.set_small(flag("Small"));

@@ -23,7 +23,8 @@ use super::{
         WorldClockValue,
     },
     argument::{
-        CriteriaValue, DisplaySlotValue, OperationValue, StyleValue, TeamColorValue, TeamValue,
+        CriteriaValue, DisplaySlotValue, HexColorValue, OperationValue, StyleValue, TeamColorValue,
+        TeamValue,
     },
     scoreboard_arguments::ScoreOperation,
     selector::EntitySelector,
@@ -339,6 +340,12 @@ where
     pub(crate) fn style(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
         self.typed_argument::<StyleValue>(name)
             .map(|value| &value.0)
+    }
+
+    /// Vanilla `HexColorArgument.getHexColor`.
+    pub(crate) fn hex_color(&self, name: &str) -> Result<i32, CommandSyntaxError> {
+        self.typed_argument::<HexColorValue>(name)
+            .map(|value| value.0)
     }
 
     /// Vanilla `TeamColorArgument.getTeamColor`.

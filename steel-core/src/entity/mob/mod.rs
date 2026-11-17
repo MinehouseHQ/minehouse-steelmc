@@ -1221,6 +1221,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
+        self.load_waypoint_icon(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
         *self.mob_base().persistence_required().lock() = nbt
             .byte("PersistenceRequired")

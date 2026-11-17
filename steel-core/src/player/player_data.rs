@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rustc_hash::FxHashSet;
+use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;
@@ -32,7 +33,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 12;
+pub const PLAYER_DATA_VERSION: i32 = 13;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -159,6 +160,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla `recipeBook`.
     pub recipe_book: ServerRecipeBook,
+
+    /// Vanilla `locator_bar_icon`.
+    pub locator_bar_icon: WaypointIcon,
 
     /// When this snapshot was taken, from [`next_capture_order`]. Not saved:
     /// storage uses it to never overwrite a newer snapshot with an older
@@ -340,6 +344,7 @@ impl PersistentPlayerData {
             raid_omen_position: player.raid_omen_position(),
             warden_spawn_tracker: player.warden_spawn_tracker(),
             recipe_book: player.recipe_book(),
+            locator_bar_icon: player.waypoint_icon(),
             capture_order: next_capture_order(),
         }
     }
@@ -595,6 +600,7 @@ impl PersistentPlayerData {
         player.restore_raid_omen_position(self.raid_omen_position);
         player.set_warden_spawn_tracker(self.warden_spawn_tracker);
         player.set_recipe_book(self.recipe_book.clone());
+        player.set_waypoint_icon(self.locator_bar_icon.clone());
 
         // Statistics
         {

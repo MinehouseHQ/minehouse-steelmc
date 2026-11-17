@@ -6,6 +6,7 @@ use glam::DVec3;
 use steel_utils::{ChunkPos, WorldAabb};
 
 use super::EntityMoveError;
+use crate::entity::Entity as _;
 use crate::scoreboard::ScoreHolder;
 use crate::world::World;
 use crate::world::game_event::DynamicListenerAction;
@@ -180,6 +181,14 @@ impl EntityLevelCallback for PlayerEntityCallback {
             }
         }
 
+        // Vanilla `Entity.setPosRaw` waypoint step.
+        if let Some(player) = world.players.get_by_entity_id(self.entity_id)
+            && !player.is_first_tick()
+        {
+            world.waypoint_manager().update_waypoint(self.entity_id);
+            world.waypoint_manager().update_player(self.entity_id);
+        }
+
         Ok(())
     }
 
@@ -270,6 +279,16 @@ impl EntityLevelCallback for EntityChunkCallback {
                     world.update_dynamic_game_event_listeners(&entity, DynamicListenerAction::Move);
                 }
             }
+        }
+
+        // Vanilla `Entity.setPosRaw` waypoint step.
+        if world.waypoint_manager().has_entity_waypoints()
+            && world
+                .entity_manager()
+                .get_by_id(self.entity_id)
+                .is_some_and(|entity| !entity.is_first_tick())
+        {
+            world.waypoint_manager().update_waypoint(self.entity_id);
         }
 
         Ok(())

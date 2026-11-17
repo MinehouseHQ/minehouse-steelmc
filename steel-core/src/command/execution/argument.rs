@@ -355,6 +355,11 @@ impl SteelArgumentType {
         Self::new(TeamColorParser)
     }
 
+    /// Vanilla `HexColorArgument.hexColor`.
+    pub(crate) fn hex_color() -> Self {
+        Self::new(HexColorParser)
+    }
+
     pub(crate) fn int_range() -> Self {
         Self::new(IntRangeParser)
     }
@@ -720,6 +725,7 @@ argument_value_wrapper!(
 argument_value_wrapper!(StyleValue(TextComponent), "steel:command/value/style");
 argument_value_wrapper!(TeamValue(Box<str>), "steel:command/value/team");
 argument_value_wrapper!(TeamColorValue(TeamColor), "steel:command/value/team_color");
+argument_value_wrapper!(HexColorValue(i32), "steel:command/value/hex_color");
 argument_value_wrapper!(DomainValue(Box<str>), "steel:command/value/domain");
 argument_value_wrapper!(
     EntityTypeValue(EntityTypeRef),
@@ -1242,6 +1248,16 @@ unit_argument_parser!(
     suggest | _context,
     builder | { suggest_team_colors(builder) },
     protocol(ProtocolArgumentType::Color, None)
+);
+unit_argument_parser!(
+    HexColorParser,
+    "steel:command/parser/hex_color",
+    HexColorValue,
+    parse | reader,
+    _source | { parse_hex_color(reader).map(HexColorValue) },
+    suggest | _context,
+    builder | { suggest_list(builder, ["F00", "FF0000"]) },
+    protocol(ProtocolArgumentType::HexColor, None)
 );
 unit_argument_parser!(
     IntRangeParser,
@@ -2480,4 +2496,26 @@ fn suggest_time_units(builder: &mut SuggestionsBuilder<'_>) {
 
 fn java_round(value: f32) -> i32 {
     (value + 0.5).floor() as i32
+}
+
+/// Vanilla `HexColorArgument.parse`: `RGB` or `RRGGBB`, opaque.
+fn parse_hex_color(reader: &mut StringReader<'_>) -> Result<i32, CommandSyntaxError> {
+    let text = reader.read_unquoted_string();
+    let digits: Option<Vec<u32>> = text.chars().map(|c| c.to_digit(16)).collect();
+    let channels = match (text.len(), digits) {
+        (3, Some(digits)) => Some([digits[0] * 17, digits[1] * 17, digits[2] * 17]),
+        (6, Some(digits)) => Some([
+            digits[0] * 16 + digits[1],
+            digits[2] * 16 + digits[3],
+            digits[4] * 16 + digits[5],
+        ]),
+        _ => None,
+    };
+    let Some([red, green, blue]) = channels else {
+        let message = translations::ARGUMENT_HEXCOLOR_INVALID
+            .message([text.to_owned()])
+            .component();
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
+    };
+    Ok((0xFF00_0000 | (red << 16) | (green << 8) | blue) as i32)
 }

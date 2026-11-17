@@ -153,6 +153,7 @@ pub(crate) mod tick_pool;
 pub mod tick_scheduler;
 pub(crate) mod ticking_world;
 mod village;
+pub mod waypoints;
 mod weather;
 mod world_entities;
 
@@ -335,6 +336,8 @@ pub struct World {
     entity_tracker: EntityTracker,
     /// Runtime IDs for pathfinder mobs currently visible to the active world.
     navigating_mobs: NavigatingMobTracker,
+    /// Vanilla `ServerLevel.waypointManager`.
+    waypoint_manager: waypoints::WaypointManager,
     /// Vanilla `ServerLevel.pathTypesByPosCache`, shared by every mob's pathfinding.
     /// Pathfinding only `try_lock`s it and runs uncached when it is busy, which gives the
     /// same paths because the cache only memoizes block-derived path types.
@@ -533,6 +536,7 @@ impl World {
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
+                waypoint_manager: waypoints::WaypointManager::new(),
                 path_type_cache: SyncMutex::new(PathTypeCache::new()),
                 weather: SyncMutex::new(weather),
                 redstone_torch_toggles: SyncMutex::new(
