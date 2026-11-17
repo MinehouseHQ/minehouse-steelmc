@@ -12,6 +12,7 @@ use steel_registry::data_components::vanilla_components::{
 };
 
 use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME};
+use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::item_stack_template::ItemStackTemplate;
 use steel_registry::items::ItemRef;
@@ -333,6 +334,12 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Returns this item behavior as a `MobBucketItem`.
     fn as_mob_bucket(&self) -> Option<&MobBucketItem> {
+        None
+    }
+
+    /// Vanilla `instanceof BucketItem bucket ? bucket.getContent()`: the fluid
+    /// of a bucket (mob buckets included), `None` for other items.
+    fn bucket_content(&self) -> Option<FluidRef> {
         None
     }
 

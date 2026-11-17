@@ -2393,3 +2393,147 @@ fn a_falling_anvil_wears_the_helmet_and_is_softened_by_it() {
         "the helmet takes a quarter off before armor"
     );
 }
+
+fn block_user(name: &'static str) -> (TestWorld, Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+    let (world, player, packets) = book_writer(name);
+    player.restore_game_modes(GameType::Survival, None);
+    (world, player, packets)
+}
+
+/// Uses the main hand on `pos`'s `direction` face, from right next to it.
+fn use_item_on_face(player: &Arc<Player>, pos: BlockPos, direction: Direction) {
+    use steel_protocol::packets::game::SUseItemOn;
+    use steel_registry::items::item::BlockHitResult;
+
+    let center = DVec3::new(
+        f64::from(pos.x()) + 0.5,
+        f64::from(pos.y()) + 0.5,
+        f64::from(pos.z()) + 0.5,
+    );
+    let (dx, dy, dz) = direction.offset();
+    let face = center + DVec3::new(f64::from(dx), f64::from(dy), f64::from(dz)) * 0.5;
+    player.handle_use_item_on(SUseItemOn {
+        hand: InteractionHand::MainHand,
+        block_hit: BlockHitResult {
+            location: face,
+            direction,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        },
+        sequence: 1,
+    });
+}
+
+/// The system chat packets that carry `translation_key`.
+fn messages_with(packets: &SyncMutex<Vec<EncodedPacket>>, translation_key: &str) -> usize {
+    use steel_registry::packets::play::C_SYSTEM_CHAT;
+
+    packets
+        .lock()
+        .iter()
+        .filter(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            let id = VarInt::read(&mut cursor)
+                .and_then(|_| VarInt::read(&mut cursor))
+                .map(|id| id.0);
+            id.is_ok_and(|id| id == C_SYSTEM_CHAT)
+                && packet
+                    .encoded_data
+                    .windows(translation_key.len())
+                    .any(|window| window == translation_key.as_bytes())
+        })
+        .count()
+}
+
+#[test]
+fn using_an_item_below_the_world_reports_the_bottom_build_limit() {
+    let (world, player, packets) = block_user("use_item_below_world");
+    let min_y = world.world.get_min_y();
+    player
+        .base()
+        .set_position_local(DVec3::new(0.5, f64::from(min_y), 0.5));
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::STONE));
+
+    use_item_on_face(&player, BlockPos::new(0, min_y - 1, 0), Direction::Up);
+
+    assert_eq!(messages_with(&packets, "build.tooLow"), 1);
+    assert_eq!(messages_with(&packets, "build.tooHigh"), 0);
+}
+
+#[test]
+fn a_bucket_on_top_of_the_world_reports_the_top_build_limit_twice_like_vanilla() {
+    let (world, player, packets) = block_user("bucket_on_world_top");
+    let max_y = world.world.get_max_y();
+    let top = BlockPos::new(0, max_y, 0);
+    insert_ready_full_chunk(&world.world, ChunkPos::from_block_pos(top));
+    assert!(world.world.set_block(
+        top,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL
+    ));
+    player
+        .base()
+        .set_position_local(DVec3::new(0.5, f64::from(max_y) - 1.0, 1.5));
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::WATER_BUCKET));
+
+    use_item_on_face(&player, top, Direction::Up);
+
+    // A bucket passes on blocks (vanilla `Item.useOn`), so vanilla
+    // `handleUseItemOn` reports the placement attempt, and checks it twice.
+    assert_eq!(messages_with(&packets, "build.tooHigh"), 2);
+    assert!(
+        player
+            .inventory
+            .lock()
+            .get_item(0)
+            .is(&vanilla_items::WATER_BUCKET)
+    );
+
+    // Stone fails to place instead, which consumes the action: no message.
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::STONE));
+    use_item_on_face(&player, top, Direction::Up);
+    assert_eq!(messages_with(&packets, "build.tooHigh"), 2);
+    assert_eq!(player.inventory.lock().get_item(0).count(), 1);
+}
+
+#[test]
+fn blocks_outside_the_world_border_cannot_be_used() {
+    let (world, player, packets) = block_user("use_item_outside_border");
+    let Ok(()) = world.world.set_world_border_size(16.0) else {
+        panic!("the border should shrink");
+    };
+    let outside = BlockPos::new(20, 64, 0);
+    insert_ready_full_chunk(&world.world, ChunkPos::from_block_pos(outside));
+    assert!(world.world.set_block(
+        outside,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL
+    ));
+    player
+        .base()
+        .set_position_local(DVec3::new(20.5, 65.0, 1.5));
+    player
+        .inventory
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::STONE));
+
+    assert!(!world.world.may_interact(&player, outside));
+    assert!(world.world.may_interact(&player, BlockPos::new(0, 64, 0)));
+    use_item_on_face(&player, outside, Direction::Up);
+
+    assert!(world.world.get_block_state(outside.above()).is_air());
+    assert_eq!(player.inventory.lock().get_item(0).count(), 1);
+    // Vanilla reports the top build limit for a refused interaction.
+    assert_eq!(messages_with(&packets, "build.tooHigh"), 1);
+}

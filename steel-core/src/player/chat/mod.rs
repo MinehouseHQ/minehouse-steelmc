@@ -368,11 +368,16 @@ impl Player {
         self.send_packet(CSystemChat::new(text, true, self));
     }
 
-    /// Sends vanilla's red upper build-height limit overlay.
-    pub(crate) fn send_build_limit_too_high_message(&self, limit: i32) {
-        let limit = TextComponent::plain(limit.to_string());
-        let message = translations::BUILD_TOO_HIGH
-            .message([limit])
+    /// Vanilla `ServerPlayer.sendBuildLimitMessage`: the red build-height
+    /// limit overlay, for the top limit when `too_high`, else the bottom one.
+    pub(crate) fn send_build_limit_message(&self, too_high: bool, limit: i32) {
+        let translation = if too_high {
+            &translations::BUILD_TOO_HIGH
+        } else {
+            &translations::BUILD_TOO_LOW
+        };
+        let message = translation
+            .message([TextComponent::plain(limit.to_string())])
             .color(Color::Red);
         self.send_overlay_message(&message);
     }

@@ -58,6 +58,10 @@ impl ItemBehavior for BucketItem {
         }
         use_filled_bucket(self.content, None, context)
     }
+
+    fn bucket_content(&self) -> Option<FluidRef> {
+        Some(self.content)
+    }
 }
 
 /// Vanilla `MobBucketItem`: a bucket holding a mob, and water unless `content` is empty.
@@ -164,6 +168,10 @@ impl ItemBehavior for MobBucketItem {
 
     fn as_mob_bucket(&self) -> Option<&MobBucketItem> {
         Some(self)
+    }
+
+    fn bucket_content(&self) -> Option<FluidRef> {
+        Some(self.content)
     }
 }
 

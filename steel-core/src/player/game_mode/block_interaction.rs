@@ -65,17 +65,18 @@ impl Player {
 
         let world = self.get_world();
 
-        if pos.y() >= world.max_build_height() {
-            self.send_build_limit_too_high_message(world.get_max_y());
-            self.send_block_updates(pos, direction);
+        let (max_y, min_y) = (world.get_max_y(), world.get_min_y());
+        if pos.y() > max_y {
+            self.send_build_limit_message(true, max_y);
             return;
         }
-        if self.is_awaiting_teleport() {
-            self.send_block_updates(pos, direction);
+        if pos.y() < min_y {
+            self.send_build_limit_message(false, min_y);
             return;
         }
-
-        if !world.may_interact(self, pos) {
+        if self.is_awaiting_teleport() || !world.may_interact(self, pos) {
+            // Vanilla reports the top build limit for every refused interaction.
+            self.send_build_limit_message(true, max_y);
             self.send_block_updates(pos, direction);
             return;
         }
@@ -91,23 +92,77 @@ impl Player {
         }
 
         let animation = self.interact_animation(packet.hand);
-        let held_item = self.inventory.lock().get_item_in_hand(packet.hand).item();
+        let used_stack = self.inventory.lock().get_item_in_hand(packet.hand).clone();
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
         if result.consumes_action() {
             // Vanilla passes the stack it read before the use, which the use
             // shrinks in place; a stack swapped out of the hand was used up.
             let held = self.inventory.lock().get_item_in_hand(packet.hand).clone();
-            let used = if held.item() == held_item {
+            let used = if held.item() == used_stack.item() {
                 held
             } else {
                 ItemStack::empty()
             };
             self.trigger_item_used_on_location(&ANY_BLOCK_USE, pos, &used);
         }
-        self.swing_after_interaction(packet.hand, animation, result);
+        self.report_use_item_on_result(
+            packet.hand,
+            animation,
+            result,
+            (pos, direction),
+            &used_stack,
+        );
 
         self.send_block_updates(pos, direction);
         self.broadcast_inventory_changes_and_trigger();
+    }
+
+    /// The tail of vanilla `handleUseItemOn`: a block placement that did not
+    /// happen at a build limit reports it, and a swinging success swings. Vanilla
+    /// runs this check twice, so a success swings twice and the top-limit
+    /// message comes twice.
+    fn report_use_item_on_result(
+        &self,
+        hand: InteractionHand,
+        animation: SwingAnimation,
+        result: InteractionResult,
+        (pos, direction): (BlockPos, Direction),
+        used_stack: &ItemStack,
+    ) {
+        let world = self.get_world();
+        let (max_y, min_y) = (world.get_max_y(), world.get_min_y());
+        let placement_failed =
+            !result.consumes_action() && self.was_block_placement_attempt(used_stack);
+        if direction == Direction::Up && placement_failed && pos.y() >= max_y {
+            self.send_build_limit_message(true, max_y);
+        } else {
+            self.swing_after_interaction(hand, animation, result);
+        }
+
+        if placement_failed {
+            if direction == Direction::Up && pos.y() >= max_y {
+                self.send_build_limit_message(true, max_y);
+            } else if direction == Direction::Down && pos.y() <= min_y {
+                self.send_build_limit_message(false, min_y);
+            }
+        } else {
+            self.swing_after_interaction(hand, animation, result);
+        }
+    }
+
+    /// Vanilla `wasBlockPlacementAttempt`: a block item or a filled bucket
+    /// that is not cooling down.
+    fn was_block_placement_attempt(&self, stack: &ItemStack) -> bool {
+        if stack.is_empty() {
+            return false;
+        }
+        let item = stack.item();
+        (REGISTRY.items.is_block_item(item)
+            || ITEM_BEHAVIORS
+                .get_behavior(item)
+                .bucket_content()
+                .is_some_and(|fluid| !fluid.is_empty))
+            && !self.is_item_on_cooldown(stack)
     }
 
     /// Handles a player action packet (block breaking, item dropping, etc.).
