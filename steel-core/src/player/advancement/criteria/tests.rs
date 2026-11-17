@@ -613,7 +613,7 @@ mod triggers {
     }
 
     #[test]
-    fn travelling_through_the_nether_grants_fast_travel() {
+    fn traveling_through_the_nether_grants_fast_travel() {
         use glam::DVec3;
 
         let (_fixture, player) = movement_fixture("criteria_fast_travel");
