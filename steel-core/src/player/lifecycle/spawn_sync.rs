@@ -317,7 +317,7 @@ impl Player {
         }
 
         let (rain_level, thunder_level) = {
-            let weather = world.weather.lock();
+            let weather = world.weather.read();
             (weather.rain_level, weather.thunder_level)
         };
 

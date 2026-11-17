@@ -354,7 +354,7 @@ pub struct World {
     /// same paths because the cache only memoizes block-derived path types.
     pub(crate) path_type_cache: SyncMutex<PathTypeCache>,
     /// Weather Data needed for animating starting and stopping of rain clientside
-    pub weather: SyncMutex<Weather>,
+    pub weather: SyncRwLock<Weather>,
     /// Per-level recent toggle history used by vanilla redstone-torch burnout.
     redstone_torch_toggles: SyncMutex<redstone::RedstoneTorchToggleTracker>,
     /// World registration and sparse head index for chunk-owned scheduled ticks.
@@ -551,7 +551,7 @@ impl World {
                 navigating_mobs: NavigatingMobTracker::new(),
                 waypoint_manager: waypoints::WaypointManager::new(),
                 path_type_cache: SyncMutex::new(PathTypeCache::new()),
-                weather: SyncMutex::new(weather),
+                weather: SyncRwLock::new(weather),
                 redstone_torch_toggles: SyncMutex::new(
                     redstone::RedstoneTorchToggleTracker::default(),
                 ),
