@@ -6,13 +6,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rustc_hash::FxHashMap;
+use scc::hash_map::Entry;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::{
     CTrackedWaypoint, WaypointIcon, WaypointOperation, WaypointPosition,
 };
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_game_rules::LOCATOR_BAR;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::SyncRwLock;
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
@@ -46,20 +47,27 @@ struct Connection {
     kind: ConnectionKind,
 }
 
+/// Who transmits and who receives. Changes only when a waypoint or player
+/// comes or goes, so moves read it without blocking each other.
 #[derive(Default)]
-struct State {
+struct Registry {
     waypoints: FxHashMap<i32, SharedEntity>,
     players: FxHashMap<i32, Arc<Player>>,
-    /// Keyed by `(receiver, source)`, like vanilla's player-by-waypoint table.
-    connections: FxHashMap<(i32, i32), Connection>,
 }
 
 /// Vanilla `ServerWaypointManager`, one per world.
+///
+/// Connections are keyed by `(receiver, source)`, like vanilla's
+/// player-by-waypoint table. Each connection is locked on its own, so players
+/// moving on different islands update their connections in parallel; the
+/// packet for a connection is sent while it is locked, so the receiver sees
+/// that connection's changes in order.
 #[derive(Default)]
 pub struct WaypointManager {
-    state: SyncMutex<State>,
+    registry: SyncRwLock<Registry>,
+    connections: scc::HashMap<(i32, i32), Connection>,
     /// Tracked waypoints that are not players, so ordinary entity moves can
-    /// skip the lock while no mob transmits.
+    /// skip the manager while no mob transmits.
     entity_waypoints: AtomicUsize,
 }
 
@@ -72,8 +80,8 @@ impl WaypointManager {
 
     /// Vanilla `trackWaypoint`.
     pub fn track_waypoint(&self, waypoint: &SharedEntity) {
-        let mut state = self.state.lock();
-        if state
+        let mut registry = self.registry.write();
+        if registry
             .waypoints
             .insert(waypoint.id(), Arc::clone(waypoint))
             .is_none()
@@ -81,43 +89,36 @@ impl WaypointManager {
         {
             self.entity_waypoints.fetch_add(1, Ordering::Relaxed);
         }
-        let players: Vec<_> = state.players.values().cloned().collect();
-        for player in players {
-            state.create_connection(&player, waypoint);
+        for player in registry.players.values() {
+            self.create_connection(player, waypoint);
         }
     }
 
     /// Vanilla `updateWaypoint`, for an entity that moved.
     pub fn update_waypoint(&self, waypoint_id: i32) {
-        let mut state = self.state.lock();
-        let Some(waypoint) = state.waypoints.get(&waypoint_id).cloned() else {
+        let registry = self.registry.read();
+        let Some(waypoint) = registry.waypoints.get(&waypoint_id) else {
             return;
         };
-        let players: Vec<_> = state.players.values().cloned().collect();
-        for player in players {
-            if let Some(connection) = state.connections.get(&(player.id(), waypoint_id)).cloned() {
-                state.update_connection(&player, &waypoint, connection);
-            } else {
-                state.create_connection(&player, &waypoint);
-            }
+        for player in registry.players.values() {
+            self.refresh_connection(player, waypoint);
         }
     }
 
     /// Vanilla `untrackWaypoint`.
     pub fn untrack_waypoint(&self, waypoint_id: i32) {
-        let mut state = self.state.lock();
-        state.untrack(waypoint_id, &self.entity_waypoints);
+        let mut registry = self.registry.write();
+        self.untrack(&mut registry, waypoint_id);
     }
 
     /// Vanilla `addPlayer`: the player starts receiving, and transmitting when
     /// its range allows.
     pub fn add_player(&self, player: &Arc<Player>) {
         {
-            let mut state = self.state.lock();
-            state.players.insert(player.id(), Arc::clone(player));
-            let waypoints: Vec<_> = state.waypoints.values().cloned().collect();
-            for waypoint in waypoints {
-                state.create_connection(player, &waypoint);
+            let mut registry = self.registry.write();
+            registry.players.insert(player.id(), Arc::clone(player));
+            for waypoint in registry.waypoints.values() {
+                self.create_connection(player, waypoint);
             }
         }
         if is_transmitting(&**player) {
@@ -127,63 +128,51 @@ impl WaypointManager {
 
     /// Vanilla `updatePlayer`, for a receiver that moved or whose view changed.
     pub fn update_player(&self, player_id: i32) {
-        let mut state = self.state.lock();
-        let Some(player) = state.players.get(&player_id).cloned() else {
+        let registry = self.registry.read();
+        let Some(player) = registry.players.get(&player_id) else {
             return;
         };
-        let waypoints: Vec<_> = state.waypoints.values().cloned().collect();
-        for waypoint in waypoints {
-            if let Some(connection) = state.connections.get(&(player_id, waypoint.id())).cloned() {
-                state.update_connection(&player, &waypoint, connection);
-            } else {
-                state.create_connection(&player, &waypoint);
-            }
+        for waypoint in registry.waypoints.values() {
+            self.refresh_connection(player, waypoint);
         }
     }
 
     /// Vanilla `removePlayer`: drops what the player sees and its own
     /// waypoint.
     pub fn remove_player(&self, player_id: i32) {
-        let mut state = self.state.lock();
-        let keys: Vec<_> = state
-            .connections
-            .keys()
-            .filter(|(receiver_id, _)| *receiver_id == player_id)
-            .copied()
-            .collect();
-        for (receiver_id, source_id) in keys {
-            state.connections.remove(&(receiver_id, source_id));
-            state.disconnect(receiver_id, source_id);
+        let mut registry = self.registry.write();
+        for (receiver_id, source_id) in
+            self.remove_connections(|(receiver_id, _)| receiver_id == player_id)
+        {
+            disconnect(&registry, receiver_id, source_id);
         }
-        state.untrack(player_id, &self.entity_waypoints);
-        state.players.remove(&player_id);
+        self.untrack(&mut registry, player_id);
+        registry.players.remove(&player_id);
     }
 
     /// Vanilla `breakAllConnections`, when the `locator_bar` rule turns off.
     pub fn break_all_connections(&self) {
-        let mut state = self.state.lock();
-        let connections: Vec<_> = state.connections.drain().map(|(key, _)| key).collect();
-        for (receiver_id, source_id) in connections {
-            state.disconnect(receiver_id, source_id);
+        let registry = self.registry.read();
+        for (receiver_id, source_id) in self.remove_connections(|_| true) {
+            disconnect(&registry, receiver_id, source_id);
         }
     }
 
     /// Vanilla `remakeConnections`, after a team color change.
     pub fn remake_connections(&self, waypoint_id: i32) {
-        let mut state = self.state.lock();
-        let Some(waypoint) = state.waypoints.get(&waypoint_id).cloned() else {
+        let registry = self.registry.read();
+        let Some(waypoint) = registry.waypoints.get(&waypoint_id) else {
             return;
         };
-        let players: Vec<_> = state.players.values().cloned().collect();
-        for player in players {
-            state.create_connection(&player, &waypoint);
+        for player in registry.players.values() {
+            self.create_connection(player, waypoint);
         }
     }
 
     /// Vanilla `transmitters`: every tracked waypoint.
     #[must_use]
     pub fn transmitters(&self) -> Vec<SharedEntity> {
-        self.state.lock().waypoints.values().cloned().collect()
+        self.registry.read().waypoints.values().cloned().collect()
     }
 
     /// Whether any entity other than a player transmits.
@@ -191,76 +180,97 @@ impl WaypointManager {
     pub fn has_entity_waypoints(&self) -> bool {
         self.entity_waypoints.load(Ordering::Relaxed) > 0
     }
-}
 
-impl State {
-    /// Vanilla `untrackWaypoint`.
-    fn untrack(&mut self, waypoint_id: i32, entity_waypoints: &AtomicUsize) {
-        let keys: Vec<_> = self
-            .connections
-            .keys()
-            .filter(|(_, source_id)| *source_id == waypoint_id)
-            .copied()
-            .collect();
-        for (receiver_id, source_id) in keys {
-            self.connections.remove(&(receiver_id, source_id));
-            self.disconnect(receiver_id, source_id);
-        }
-        if let Some(waypoint) = self.waypoints.remove(&waypoint_id)
-            && waypoint.as_player().is_none()
-        {
-            entity_waypoints.fetch_sub(1, Ordering::Relaxed);
-        }
+    /// Removes the connections whose `(receiver, source)` key matches,
+    /// returning their keys.
+    fn remove_connections(&self, mut matches: impl FnMut((i32, i32)) -> bool) -> Vec<(i32, i32)> {
+        let mut removed = Vec::new();
+        self.connections.retain_sync(|&key, _| {
+            if matches(key) {
+                removed.push(key);
+                false
+            } else {
+                true
+            }
+        });
+        removed
     }
 
-    /// Vanilla `Connection.disconnect`: the receiver forgets the source.
-    fn disconnect(&self, receiver_id: i32, source_id: i32) {
-        if let (Some(receiver), Some(source)) = (
-            self.players.get(&receiver_id),
-            self.waypoints.get(&source_id),
-        ) {
-            receiver.send_packet(CTrackedWaypoint::remove(source.uuid()));
+    /// Vanilla `untrackWaypoint`.
+    fn untrack(&self, registry: &mut Registry, waypoint_id: i32) {
+        for (receiver_id, source_id) in
+            self.remove_connections(|(_, source_id)| source_id == waypoint_id)
+        {
+            disconnect(registry, receiver_id, source_id);
+        }
+        if let Some(waypoint) = registry.waypoints.remove(&waypoint_id)
+            && waypoint.as_player().is_none()
+        {
+            self.entity_waypoints.fetch_sub(1, Ordering::Relaxed);
         }
     }
 
     /// Vanilla `createConnection`.
-    fn create_connection(&mut self, player: &Arc<Player>, waypoint: &SharedEntity) {
+    fn create_connection(&self, player: &Arc<Player>, waypoint: &SharedEntity) {
         if player.id() == waypoint.id() || !is_locator_bar_enabled_for(player) {
             return;
         }
-        let key = (player.id(), waypoint.id());
-        if let Some(connection) = make_connection(waypoint, player) {
-            self.connections.insert(key, connection.clone());
-            send(player, waypoint, &connection, WaypointOperation::Track);
-        } else if self.connections.remove(&key).is_some() {
-            player.send_packet(CTrackedWaypoint::remove(waypoint.uuid()));
+        let entry = self.connections.entry_sync((player.id(), waypoint.id()));
+        match (make_connection(waypoint, player), entry) {
+            (Some(connection), Entry::Occupied(mut occupied)) => {
+                send(player, waypoint, &connection, WaypointOperation::Track);
+                occupied.insert(connection);
+            }
+            (Some(connection), Entry::Vacant(vacant)) => {
+                send(player, waypoint, &connection, WaypointOperation::Track);
+                vacant.insert_entry(connection);
+            }
+            (None, Entry::Occupied(occupied)) => {
+                player.send_packet(CTrackedWaypoint::remove(waypoint.uuid()));
+                let _ = occupied.remove();
+            }
+            (None, Entry::Vacant(_)) => {}
         }
     }
 
-    /// Vanilla `updateConnection`.
-    fn update_connection(
-        &mut self,
-        player: &Arc<Player>,
-        waypoint: &SharedEntity,
-        connection: Connection,
-    ) {
+    /// Vanilla `updateWaypoint`/`updatePlayer` for one pair: updates the
+    /// connection when there is one (vanilla `updateConnection`), creates it
+    /// otherwise.
+    fn refresh_connection(&self, player: &Arc<Player>, waypoint: &SharedEntity) {
         if player.id() == waypoint.id() || !is_locator_bar_enabled_for(player) {
             return;
         }
-        let key = (player.id(), waypoint.id());
-        if !is_broken(&connection, waypoint, player) {
-            if let Some(updated) = update(&connection, waypoint, player) {
-                self.connections.insert(key, updated);
+        match self.connections.entry_sync((player.id(), waypoint.id())) {
+            Entry::Vacant(vacant) => {
+                if let Some(connection) = make_connection(waypoint, player) {
+                    send(player, waypoint, &connection, WaypointOperation::Track);
+                    vacant.insert_entry(connection);
+                }
             }
-            return;
+            Entry::Occupied(mut occupied) => {
+                if !is_broken(occupied.get(), waypoint, player) {
+                    if let Some(updated) = update(occupied.get(), waypoint, player) {
+                        occupied.insert(updated);
+                    }
+                } else if let Some(replacement) = make_connection(waypoint, player) {
+                    send(player, waypoint, &replacement, WaypointOperation::Track);
+                    occupied.insert(replacement);
+                } else {
+                    player.send_packet(CTrackedWaypoint::remove(waypoint.uuid()));
+                    let _ = occupied.remove();
+                }
+            }
         }
-        if let Some(replacement) = make_connection(waypoint, player) {
-            send(player, waypoint, &replacement, WaypointOperation::Track);
-            self.connections.insert(key, replacement);
-        } else {
-            player.send_packet(CTrackedWaypoint::remove(waypoint.uuid()));
-            self.connections.remove(&key);
-        }
+    }
+}
+
+/// Vanilla `Connection.disconnect`: the receiver forgets the source.
+fn disconnect(registry: &Registry, receiver_id: i32, source_id: i32) {
+    if let (Some(receiver), Some(source)) = (
+        registry.players.get(&receiver_id),
+        registry.waypoints.get(&source_id),
+    ) {
+        receiver.send_packet(CTrackedWaypoint::remove(source.uuid()));
     }
 }
 
