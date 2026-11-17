@@ -5,7 +5,9 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
         InteractionResult, InventoryAccess, PlacementSource,
     },
-    entity::{Entity, ai::path::PathComputationType, damage::DamageSource, dismount_helper},
+    entity::{
+        Entity, LivingEntity, ai::path::PathComputationType, damage::DamageSource, dismount_helper,
+    },
     player::Player,
     world::{ExplosionInteraction, ExplosionOptions, LevelReader, ScheduledTickAccess, World},
 };
@@ -15,9 +17,11 @@ use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
-use steel_registry::{vanilla_blocks, vanilla_custom_stats, vanilla_damage_types};
+use steel_registry::{
+    vanilla_blocks, vanilla_custom_stats, vanilla_damage_types, vanilla_entities,
+};
 use steel_utils::{
-    BlockPos, BlockStateId, Direction, axis::Axis, translations, types::UpdateFlags,
+    BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis, translations, types::UpdateFlags,
 };
 
 const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
@@ -26,9 +30,6 @@ const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 const EXPLOSION_RADIUS: f32 = 5.0;
 
 /// Behavior for beds
-///
-/// TODO: Mirror vanilla `BedBlock.kickVillagerOutOfBed` once villager sleeping
-/// entities exist.
 #[block_behavior]
 pub struct BedBlock {
     pub(super) block: BlockRef,
@@ -354,12 +355,11 @@ impl BlockBehavior for BedBlock {
         }
 
         if head_state.get_value(OCCUPIED) {
-            // TODO: Mirror vanilla `kickVillagerOutOfBed`: find a sleeping
-            // villager in this bed AABB and call `stopSleeping` once villager
-            // sleeping exists.
-            player.send_overlay_message(
-                &translations::BLOCK_MINECRAFT_BED_OCCUPIED.msg().component(),
-            );
+            if !kick_villager_out_of_bed(world, head_pos) {
+                player.send_overlay_message(
+                    &translations::BLOCK_MINECRAFT_BED_OCCUPIED.msg().component(),
+                );
+            }
             return InteractionResult::SuccessServer;
         }
 
@@ -373,3 +373,35 @@ impl BlockBehavior for BedBlock {
         InteractionResult::SuccessServer
     }
 }
+
+/// Vanilla `AbstractBedBlock.kickVillagerOutOfBed`: wakes the first villager
+/// sleeping in the bed's head block. Returns whether one was woken.
+fn kick_villager_out_of_bed(world: &World, pos: BlockPos) -> bool {
+    let sleeper = world
+        .get_entities_in_aabb(&WorldAabb::new(
+            f64::from(pos.x()),
+            f64::from(pos.y()),
+            f64::from(pos.z()),
+            f64::from(pos.x() + 1),
+            f64::from(pos.y() + 1),
+            f64::from(pos.z() + 1),
+        ))
+        .into_iter()
+        .find(|entity| {
+            entity.entity_type() == &vanilla_entities::VILLAGER
+                && entity
+                    .as_living_entity()
+                    .is_some_and(LivingEntity::is_sleeping)
+        });
+    let Some(villager) = sleeper
+        .as_ref()
+        .and_then(|entity| entity.as_living_entity())
+    else {
+        return false;
+    };
+    villager.stop_sleeping();
+    true
+}
+
+#[cfg(test)]
+mod tests;
