@@ -1664,12 +1664,14 @@ pub trait LivingEntity: Entity {
         self.as_mob().map_or(0, Mob::base_experience_reward_mob)
     }
 
-    /// Returns the experience reward for this entity's death; currently
-    /// equal to the base reward (see TODO).
-    fn experience_reward(&self, _world: &World, _killer_entity: Option<&dyn Entity>) -> i32 {
-        // TODO: Apply EnchantmentHelper.processMobExperience once enchantment
-        // value-effect hooks can receive the killer/living-entity context.
-        self.base_experience_reward()
+    /// Vanilla `LivingEntity.getExperienceReward`: the base reward run through
+    /// the killer's `mob_experience` enchantment effects.
+    fn experience_reward(&self, _world: &World, killer_entity: Option<&dyn Entity>) -> i32 {
+        enchantment_helper::process_mob_experience(
+            killer_entity,
+            self.as_entity_event_source(),
+            self.base_experience_reward(),
+        )
     }
 
     /// Runs the currently implemented subset of vanilla `LivingEntity.dropAllDeathLoot`.
