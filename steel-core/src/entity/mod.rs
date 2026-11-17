@@ -830,6 +830,7 @@ mod leash;
 mod living_base;
 mod living_entity;
 mod living_reference;
+mod living_save_data;
 mod manager;
 mod mob;
 pub mod mob_effect;

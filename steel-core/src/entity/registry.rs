@@ -105,6 +105,9 @@ impl EntityRegistry {
         if let Some(living) = entity.as_living_entity() {
             living.set_y_head_rot(yaw);
             living.set_y_body_rot(yaw);
+            if entity.as_player().is_none() {
+                super::living_save_data::load_living_save_data(living, *nbt);
+            }
         }
 
         entity.load_additional(*nbt);
@@ -345,7 +348,8 @@ mod tests {
     use std::sync::Arc;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use simdnbt::owned::NbtCompound;
+    use simdnbt::owned::{NbtCompound, NbtTag};
+    use steel_registry::entity_data::EntityPose;
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
 
@@ -392,6 +396,58 @@ mod tests {
         assert_eq!(living_rotation.y_body_rot().to_bits(), 135.0_f32.to_bits());
         assert_eq!(living_rotation.y_head_rot_o().to_bits(), 0.0_f32.to_bits());
         assert_eq!(living_rotation.y_body_rot_o().to_bits(), 0.0_f32.to_bits());
+    }
+
+    fn load_registered_pig(nbt: &NbtCompound) -> SharedEntity {
+        init_vanilla_registry();
+        let mut registry = EntityRegistry::new();
+        register_entity_factories(&mut registry);
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
+            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+        registry
+            .create_and_load(
+                EntityLoadRequest {
+                    entity_type: &vanilla_entities::PIG,
+                    position: DVec3::ZERO,
+                    uuid: Uuid::from_u128(2),
+                    velocity: DVec3::ZERO,
+                    rotation: (0.0, 0.0),
+                    fall_distance: 0.0,
+                    fire_freeze: EntityFireFreezeState::new(),
+                    on_ground: false,
+                    save_data: EntityBaseSaveData::new(),
+                    world: Weak::new(),
+                },
+                &borrowed,
+            )
+            .unwrap_or_else(|| panic!("registered pig should load"))
+    }
+
+    #[test]
+    fn registered_living_load_reads_vanilla_living_data() {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("Health", 4.0_f32);
+        nbt.insert("HurtTime", 7_i16);
+        nbt.insert("sleeping_pos", NbtTag::IntArray(vec![1, 2, 3]));
+        let entity = load_registered_pig(&nbt);
+        let Some(living) = entity.as_living_entity() else {
+            panic!("registered pig should expose living behavior");
+        };
+        assert_eq!(living.get_health().to_bits(), 4.0_f32.to_bits());
+        assert_eq!(living.living_base().hurt_time(), 7);
+        assert_eq!(living.sleeping_pos(), Some(BlockPos::new(1, 2, 3)));
+        assert_eq!(entity.pose(), EntityPose::Sleeping);
+
+        let entity = load_registered_pig(&NbtCompound::new());
+        let Some(living) = entity.as_living_entity() else {
+            panic!("registered pig should expose living behavior");
+        };
+        assert_eq!(
+            living.get_health().to_bits(),
+            living.get_max_health().to_bits()
+        );
     }
 
     #[test]
