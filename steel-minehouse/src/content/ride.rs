@@ -43,7 +43,7 @@ use text_components::{Modifier as _, TextComponent, format::Color};
 use uuid::Uuid;
 
 use super::{
-    metro, minecart_names,
+    flight, metro, minecart_names,
     rail_graph::{self, Nav, Plan},
     speed, station_menu, stations,
     trains::{self, Decision, Moved},
@@ -217,6 +217,10 @@ impl MinecartObserver for Ride {
 
     fn drive(&self, cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut()) -> bool {
         speed::drive(cart, world, pass)
+    }
+
+    fn off_track(&self, cart: &dyn Entity, world: &Arc<World>) -> Option<f64> {
+        flight::off_track(cart, world)
     }
 
     fn removed(&self, cart: &dyn Entity, reason: RemovalReason) {
