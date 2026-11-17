@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use crate::player::advancement::criteria::ANY_BLOCK_USE;
 use crate::world::block_guard;
 
 impl Player {
@@ -89,7 +90,19 @@ impl Player {
         }
 
         let animation = self.interact_animation(packet.hand);
+        let held_item = self.inventory.lock().get_item_in_hand(packet.hand).item();
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
+        if result.consumes_action() {
+            // Vanilla passes the stack it read before the use, which the use
+            // shrinks in place; a stack swapped out of the hand was used up.
+            let held = self.inventory.lock().get_item_in_hand(packet.hand).clone();
+            let used = if held.item() == held_item {
+                held
+            } else {
+                ItemStack::empty()
+            };
+            self.trigger_item_used_on_location(&ANY_BLOCK_USE, pos, &used);
+        }
         self.swing_after_interaction(packet.hand, animation, result);
 
         self.send_block_updates(pos, direction);

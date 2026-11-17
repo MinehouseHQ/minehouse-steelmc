@@ -80,7 +80,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience, TeamVisibility};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
+use steel_registry::data_components::vanilla_components::{BLOCKS_ATTACKS, KINETIC_WEAPON};
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -113,7 +113,7 @@ use text_components::{content::Resolvable, custom::CustomData};
 use crate::behavior::items::synchronize_map_updates;
 use crate::behavior::{
     BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
-    ItemBehavior, apply_use_remainder, use_behavior_of,
+    ItemBehavior, apply_use_remainder, consumable_use_tick, use_behavior_of,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -559,7 +559,21 @@ impl Player {
         };
         // Vanilla `ServerPlayer.updateUsingItem`.
         self.trigger_item_criteria(&USING_ITEM, &item);
-        behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        // Vanilla `ItemStack.onUseTick`: a kinetic weapon stabs instead of
+        // running the item's own use tick.
+        if let Some(kinetic_weapon) = item.get(KINETIC_WEAPON).cloned() {
+            consumable_use_tick(&item, user, active.remaining_ticks());
+            if let Some(player) = world.players.get_by_entity_id(self.id()) {
+                player.kinetic_damage_entities(
+                    &kinetic_weapon,
+                    &item,
+                    hand,
+                    active.remaining_ticks(),
+                );
+            }
+        } else {
+            behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        }
         let use_on_release = behavior.use_on_release(&item);
         self.inventory.lock().write_use_item(hand, item);
 

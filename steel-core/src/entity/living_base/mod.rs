@@ -15,7 +15,7 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
-use steel_registry::data_components::vanilla_components::SwingAnimation;
+use steel_registry::data_components::vanilla_components::{KINETIC_WEAPON, SwingAnimation};
 use steel_registry::enchantment::EnchantmentRef;
 use steel_registry::enchantment_effect::EnchantmentLocationBasedEffect;
 use steel_registry::entity_data::ParticleList;
@@ -724,6 +724,9 @@ struct LivingEntityState {
     rotation: LivingRotationState,
     swing: LivingSwingState,
     active_item_use: Option<ActiveItemUseState>,
+    /// Vanilla `recentKineticEnemies`: entity id to the game time it was
+    /// stabbed, and whether it is a living entity.
+    recent_kinetic_enemies: Option<FxHashMap<i32, (i64, bool)>>,
     no_jump_delay: i32,
     no_action_time: i32,
     arrow_count: i32,
@@ -768,6 +771,7 @@ impl LivingEntityState {
             rotation: LivingRotationState::new(),
             swing: LivingSwingState::new(),
             active_item_use: None,
+            recent_kinetic_enemies: None,
             no_jump_delay: 0,
             no_action_time: 0,
             arrow_count: 0,
@@ -1026,12 +1030,51 @@ impl LivingEntityBase {
             return false;
         }
         state.active_item_use = Some(ActiveItemUseState::new(hand, item.item(), duration));
+        if item.has(KINETIC_WEAPON) {
+            state.recent_kinetic_enemies = Some(FxHashMap::default());
+        }
         true
     }
 
     /// Stops vanilla active item use without calling item hooks.
     pub fn stop_using_item(&self) -> Option<ActiveItemUseState> {
-        self.state.lock().active_item_use.take()
+        let mut state = self.state.lock();
+        state.recent_kinetic_enemies = None;
+        state.active_item_use.take()
+    }
+
+    /// Vanilla `LivingEntity.wasRecentlyStabbed`: whether `target` was stabbed
+    /// less than `allowed_time` ticks before `game_time`.
+    #[must_use]
+    pub fn was_recently_stabbed(&self, target_id: i32, allowed_time: i32, game_time: i64) -> bool {
+        self.state
+            .lock()
+            .recent_kinetic_enemies
+            .as_ref()
+            .and_then(|enemies| enemies.get(&target_id))
+            .is_some_and(|&(stabbed_at, _)| game_time - stabbed_at < i64::from(allowed_time))
+    }
+
+    /// Vanilla `LivingEntity.rememberStabbedEntity`.
+    pub fn remember_stabbed_entity(&self, target_id: i32, is_living: bool, game_time: i64) {
+        if let Some(enemies) = self.state.lock().recent_kinetic_enemies.as_mut() {
+            enemies.insert(target_id, (game_time, is_living));
+        }
+    }
+
+    /// Vanilla `LivingEntity.stabbedEntities(e -> e instanceof LivingEntity)`.
+    #[must_use]
+    pub fn stabbed_living_entities(&self) -> usize {
+        self.state
+            .lock()
+            .recent_kinetic_enemies
+            .as_ref()
+            .map_or(0, |enemies| {
+                enemies
+                    .values()
+                    .filter(|&&(_, is_living)| is_living)
+                    .count()
+            })
     }
 
     /// Decrements active-use remaining ticks and returns the updated state.

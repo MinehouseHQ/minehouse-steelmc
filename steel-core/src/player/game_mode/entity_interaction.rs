@@ -248,7 +248,11 @@ impl Player {
         )
     }
 
-    fn piercing_hit_entities(&self, item_stack: &ItemStack, world: &World) -> Vec<SharedEntity> {
+    pub(super) fn piercing_hit_entities(
+        &self,
+        item_stack: &ItemStack,
+        world: &World,
+    ) -> Vec<SharedEntity> {
         let look = self.look_angle();
         if look.length_squared() <= f64::EPSILON {
             return Vec::new();
@@ -310,6 +314,7 @@ impl Player {
         let mut hit_something = false;
         for target in self.piercing_hit_entities(item_stack, &world) {
             hit_something |= self.stab_attack(
+                InteractionHand::MainHand,
                 &target,
                 base_damage,
                 true,
@@ -331,8 +336,10 @@ impl Player {
         );
     }
 
-    fn stab_attack(
+    /// Vanilla `Player.stabAttack` with the weapon in `hand`.
+    pub(super) fn stab_attack(
         self: &Arc<Self>,
+        hand: InteractionHand,
         target: &SharedEntity,
         base_damage: f32,
         deals_damage: bool,
@@ -346,7 +353,7 @@ impl Player {
 
         let attacking_item = {
             let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+            let stack = inventory.get_item_in_hand(hand);
             stack.copy_with_count(stack.count())
         };
         let damage_source = self.attack_damage_source(&attacking_item);
@@ -362,11 +369,11 @@ impl Player {
         let mut base_damage = base_damage;
         // Vanilla scales by attack strength unless the hit comes from the
         // item being used in this hand (a kinetic charge).
-        let using_main_hand = self
+        let using_this_hand = self
             .living_base()
             .active_item_use()
-            .is_some_and(|active| active.hand() == InteractionHand::MainHand);
-        if !using_main_hand {
+            .is_some_and(|active| active.hand() == hand);
+        if !using_this_hand {
             let attack_strength_scale = self.attack_strength_scale(0.5);
             magic_boost *= attack_strength_scale;
             base_damage *= Self::base_damage_scale_factor(attack_strength_scale);
@@ -420,7 +427,7 @@ impl Player {
 
         self.attack_visual_effects(entity, false, false, deals_damage, true, magic_boost);
         self.set_last_hurt_mob(Some(target));
-        self.item_attack_interaction(target, &damage_source, was_hurt);
+        self.item_attack_interaction(hand, target, &damage_source, was_hurt);
         self.damage_stats_and_hearts(entity, old_entity_living_health);
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
@@ -587,7 +594,12 @@ impl Player {
                     magic_boost,
                 );
                 self.set_last_hurt_mob(Some(target));
-                self.item_attack_interaction(target, &damage_source, true);
+                self.item_attack_interaction(
+                    InteractionHand::MainHand,
+                    target,
+                    &damage_source,
+                    true,
+                );
                 self.damage_stats_and_hearts(entity, old_entity_living_health);
                 self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
             } else {
@@ -767,6 +779,7 @@ impl Player {
 
     fn item_attack_interaction(
         &self,
+        hand: InteractionHand,
         target: &SharedEntity,
         damage_source: &DamageSource,
         apply_to_target: bool,
@@ -779,7 +792,7 @@ impl Player {
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
         let (source_item, item_hurt_enemy) = {
             let mut inventory = self.inventory.lock();
-            inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+            inventory.mutate_item_in_hand(hand, |stack| {
                 if stack.is_empty() {
                     return (ItemStack::empty(), false);
                 }
@@ -811,18 +824,16 @@ impl Player {
         };
         let has_infinite_materials = self.has_infinite_materials();
         let mut change = None;
-        self.inventory
-            .lock()
-            .mutate_item_in_hand(InteractionHand::MainHand, |stack| {
-                if stack.is_empty() {
-                    return;
-                }
-                let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
-                behavior.post_hurt_enemy(stack, living_target, self);
-                if let Some(damage) = behavior.item_damage_per_attack(stack) {
-                    (_, change) = stack.hurt_and_break_tracked(damage, has_infinite_materials);
-                }
-            });
+        self.inventory.lock().mutate_item_in_hand(hand, |stack| {
+            if stack.is_empty() {
+                return;
+            }
+            let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+            behavior.post_hurt_enemy(stack, living_target, self);
+            if let Some(damage) = behavior.item_damage_per_attack(stack) {
+                (_, change) = stack.hurt_and_break_tracked(damage, has_infinite_materials);
+            }
+        });
         self.trigger_item_durability_changed(change);
     }
 

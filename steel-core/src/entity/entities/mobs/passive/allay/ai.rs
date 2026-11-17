@@ -27,6 +27,7 @@ use crate::entity::ai::brain::sensors::{
 };
 use crate::entity::ai::brain::{ActivityData, Sensor};
 use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::player::advancement::criteria::ALLAY_DROP_ITEM_ON_BLOCK;
 use crate::world::World;
 
 const SPEED_MULTIPLIER_WHEN_IDLING: f32 = 1.0;
@@ -259,6 +260,7 @@ fn throw_item_to(world: &Arc<World>, thrower: &AllayEntity, target_pos: DVec3) {
     if item.is_empty() {
         return;
     }
+    let thrown = item.clone();
     throw_item(
         thrower,
         item,
@@ -266,6 +268,12 @@ fn throw_item_to(world: &Arc<World>, thrower: &AllayEntity, target_pos: DVec3) {
         THROW_VELOCITY,
         0.2,
     );
+    if let Some(liked) = liked_player(thrower)
+        && let Some(player) = liked.as_player()
+    {
+        let below = BlockPos::containing(target_pos.x, target_pos.y, target_pos.z).below();
+        player.trigger_item_used_on_location(&ALLAY_DROP_ITEM_ON_BLOCK, below, &thrown);
+    }
     if world.game_time() % 7 == 0 && rand::random::<f64>() < 0.9 {
         let pitches = &super::THROW_SOUND_PITCHES;
         let pitch = pitches[rand::random_range(0..pitches.len())];
@@ -277,5 +285,92 @@ fn throw_item_to(world: &Arc<World>, thrower: &AllayEntity, target_pos: DVec3) {
             pitch,
             None,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{REGISTRY, vanilla_blocks, vanilla_entities, vanilla_items};
+    use steel_utils::types::UpdateFlags;
+    use steel_utils::{BlockPos, ChunkPos, Identifier};
+
+    use super::throw_item_to;
+    use crate::bootstrap::init_globals;
+    use crate::entity::Entity as _;
+    use crate::entity::ai::brain::memory_types::LIKED_PLAYER;
+    use crate::entity::entities::mobs::passive::allay::AllayEntity;
+    use crate::entity::{init_entities, next_entity_id};
+    use crate::player::advancement::criteria::init_criteria;
+    use crate::player::{Player, ResetReason};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    fn cake_delivery_done(player: &Player) -> bool {
+        let key = Identifier::vanilla_static("husbandry/allay_deliver_cake_to_note_block");
+        let advancement = REGISTRY
+            .advancements
+            .value_by_key(&key)
+            .expect("vanilla advancement exists");
+        player
+            .advancements
+            .lock()
+            .progress
+            .get_progress(advancement)
+            .is_some_and(|progress| progress.is_criterion_done("allay_deliver_cake_to_note_block"))
+    }
+
+    #[test]
+    fn an_allay_dropping_cake_on_a_note_block_credits_its_liked_player() {
+        init_globals();
+        init_entities();
+        init_criteria();
+        let fixture = fresh_test_world("allay_cake_note_block");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let note_block = BlockPos::new(8, 64, 8);
+        assert!(world.set_block(
+            note_block,
+            vanilla_blocks::NOTE_BLOCK.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let player =
+            TestPlayerBuilder::new(Arc::clone(world), "Friend".to_owned(), next_entity_id())
+                .build();
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        player
+            .teleport_to(DVec3::new(10.5, 65.0, 10.5))
+            .expect("player teleport");
+        let allay = Arc::new(AllayEntity::new(
+            &vanilla_entities::ALLAY,
+            next_entity_id(),
+            DVec3::new(8.5, 66.0, 10.5),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&allay) as _)
+            .expect("allay added");
+        allay
+            .brain()
+            .memories()
+            .lock()
+            .set(&LIKED_PLAYER, Some(player.uuid()));
+        let above_note_block = DVec3::new(8.5, 65.5, 8.5);
+
+        allay
+            .inventory
+            .lock()
+            .add_item(&ItemStack::new(&vanilla_items::DIAMOND));
+        throw_item_to(world, &allay, above_note_block);
+        assert!(!cake_delivery_done(&player), "only cake counts");
+
+        allay
+            .inventory
+            .lock()
+            .add_item(&ItemStack::new(&vanilla_items::CAKE));
+        throw_item_to(world, &allay, above_note_block);
+        assert!(cake_delivery_done(&player));
     }
 }

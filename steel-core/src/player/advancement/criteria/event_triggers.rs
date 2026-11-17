@@ -2,14 +2,15 @@
 //! `CriteriaTriggers` `PLAYER_SHEARED_EQUIPMENT`, `THROWN_ITEM_PICKED_UP_BY_ENTITY`,
 //! `THROWN_ITEM_PICKED_UP_BY_PLAYER`, `KILL_MOB_NEAR_SCULK_CATALYST`,
 //! `AVOID_VIBRATION`, `CURED_ZOMBIE_VILLAGER`, `HONEY_BLOCK_SLIDE`,
-//! `LIGHTNING_STRIKE` and `CHANNELED_LIGHTNING`).
+//! `LIGHTNING_STRIKE`, `CHANNELED_LIGHTNING`, `USED_ENDER_EYE` and
+//! `SPEAR_MOBS_TRIGGER`).
 
 use steel_registry::item_stack::ItemStack;
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use super::predicates::{ConditionContext, block_matches};
-use super::trigger;
 use super::triggers::test_context;
+use super::{DistanceField, trigger};
 use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity, SharedEntity};
 use crate::player::Player;
@@ -39,6 +40,12 @@ pub(crate) const LIGHTNING_STRIKE: Identifier = Identifier::vanilla_static("ligh
 /// Vanilla `CriteriaTriggers.CHANNELED_LIGHTNING`.
 pub(crate) const CHANNELED_LIGHTNING: Identifier =
     Identifier::vanilla_static("channeled_lightning");
+
+/// Vanilla `CriteriaTriggers.USED_ENDER_EYE`.
+pub(crate) const USED_ENDER_EYE: Identifier = Identifier::vanilla_static("used_ender_eye");
+
+/// Vanilla `CriteriaTriggers.SPEAR_MOBS_TRIGGER`.
+pub(crate) const SPEAR_MOBS: Identifier = Identifier::vanilla_static("spear_mobs");
 
 /// Vanilla `LivingEntity.onItemPickup` (and `ServerPlayer.onItemPickup`):
 /// `picker` takes `stack` from `item_entity`. A player thrower hears
@@ -125,5 +132,57 @@ impl Player {
                 .iter()
                 .all(|predicate| victims.iter().any(|victim| predicate.test(victim)))
         });
+    }
+
+    /// Vanilla `UsedEnderEyeTrigger.trigger(player, feature)`: the squared
+    /// horizontal distance to the structure the eye flies to.
+    pub(crate) fn trigger_used_ender_eye(&self, feature: BlockPos) {
+        let position = self.position();
+        let dx = position.x - f64::from(feature.x());
+        let dz = position.z - f64::from(feature.z());
+        let distance_sqr = dx * dx + dz * dz;
+        trigger(self, &USED_ENDER_EYE, |conditions| {
+            ender_eye_distance_matches(conditions.distance.as_ref(), distance_sqr)
+        });
+    }
+}
+
+impl Player {
+    /// Vanilla `SpearMobsTrigger.trigger(player, number)`: `count` living
+    /// entities stabbed during this charge.
+    pub(crate) fn trigger_spear_mobs(&self, count: usize) {
+        let count = i32::try_from(count).unwrap_or(i32::MAX);
+        trigger(self, &SPEAR_MOBS, |conditions| {
+            conditions.count.is_none_or(|required| count >= required)
+        });
+    }
+}
+
+/// Vanilla `UsedEnderEyeTrigger.TriggerInstance.matches`.
+fn ender_eye_distance_matches(distance: Option<&DistanceField>, distance_sqr: f64) -> bool {
+    match distance {
+        Some(DistanceField::Bounds(bounds)) => bounds.matches_sqr(distance_sqr),
+        // Vanilla bounds ignore unknown fields, so a distance predicate reads
+        // as no bounds at all.
+        Some(DistanceField::Distance(_)) | None => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::Conditions;
+    use super::ender_eye_distance_matches;
+
+    #[test]
+    fn ender_eye_bounds_compare_the_squared_horizontal_distance() {
+        let conditions: Conditions =
+            serde_json::from_str(r#"{"distance": {"min": 10.0, "max": 20.0}}"#)
+                .expect("ender eye bounds decode");
+        let distance = conditions.distance.as_ref();
+        assert!(!ender_eye_distance_matches(distance, 99.0));
+        assert!(ender_eye_distance_matches(distance, 100.0));
+        assert!(ender_eye_distance_matches(distance, 400.0));
+        assert!(!ender_eye_distance_matches(distance, 401.0));
+        assert!(ender_eye_distance_matches(None, 1.0e9));
     }
 }

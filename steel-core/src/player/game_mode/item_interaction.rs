@@ -140,6 +140,8 @@ pub fn use_item_on(
         if block_result.consumes_action() {
             if item_used {
                 player.trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &used_stack);
+            } else {
+                player.trigger_default_block_use(pos);
             }
             return block_result;
         }
