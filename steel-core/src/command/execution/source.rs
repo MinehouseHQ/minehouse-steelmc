@@ -386,13 +386,29 @@ impl CommandSource {
         player: Arc<Player>,
         pos: BlockPos,
     ) -> Self {
+        let mut source = Self::for_lectern(server, world, player, pos);
+        source.silent = true;
+        source
+    }
+
+    /// Vanilla `LecternBlockEntity.createCommandSourceStack` for `player`: a
+    /// source at the center of the lectern at `pos`, facing rotation zero,
+    /// with the player as its entity.
+    ///
+    /// Vanilla runs it with gamemaster permissions; like signs, Steel scopes
+    /// that to the lectern's own domain.
+    pub(crate) fn for_lectern(
+        server: Arc<Server>,
+        world: Arc<World>,
+        player: Arc<Player>,
+        pos: BlockPos,
+    ) -> Self {
         let mut source = Self::new(CommandSender::Player(player), server);
         source.authorization = CommandAuthorizationContext::within_domain(world.key.clone());
         source.world = world;
         let (x, y, z) = pos.get_center();
         source.position = DVec3::new(x, y, z);
         source.rotation = (0.0, 0.0);
-        source.silent = true;
         source
     }
 

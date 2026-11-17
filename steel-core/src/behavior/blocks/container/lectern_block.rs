@@ -24,6 +24,7 @@ use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::inventory::menu::kinds::lectern;
 use crate::player::Player;
+use crate::player::books::resolve_lectern_book;
 use crate::world::{LevelReader, SignalQueryContext, World};
 use steel_utils::types::InteractionHand;
 
@@ -64,7 +65,8 @@ impl LecternBlock {
             return;
         };
         let has_infinite_materials = player.has_infinite_materials();
-        let book = inv.with_item(|item| item.consume_and_return(1, has_infinite_materials));
+        let mut book = inv.with_item(|item| item.consume_and_return(1, has_infinite_materials));
+        resolve_lectern_book(&mut book, world, pos, player);
         lectern.set_book(book);
         lectern_reset_book_state(Some(player), world, pos, state, true);
         world.play_block_sound(&sound_events::ITEM_BOOK_PUT, pos, 1.0, 1.0, None);
