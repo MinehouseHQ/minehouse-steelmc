@@ -2360,3 +2360,36 @@ fn using_a_writable_book_does_not_send_the_open_book_packet() {
         1
     );
 }
+
+#[test]
+fn a_falling_anvil_wears_the_helmet_and_is_softened_by_it() {
+    init_vanilla_registry();
+    let world = hard_damage_test_world();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Anvil", next_entity_id()).build();
+    player.set_client_loaded(true);
+    player.inventory.lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::LEATHER_HELMET),
+    );
+    let health = player.get_health();
+
+    assert!(player.hurt_server(
+        world,
+        &DamageSource::environment(&vanilla_damage_types::FALLING_ANVIL),
+        8.0,
+    ));
+
+    let helmet_damage = player
+        .inventory
+        .lock()
+        .get_ref(EquipmentSlot::Head)
+        .get_damage_value();
+    assert!(
+        helmet_damage >= 2,
+        "the helmet took the hit and the armor pass"
+    );
+    assert!(
+        health - player.get_health() < 8.0 * 0.75 + 1e-3,
+        "the helmet takes a quarter off before armor"
+    );
+}

@@ -2362,6 +2362,10 @@ impl LivingEntity for Player {
         !self.has_client_loaded()
     }
 
+    fn hurt_helmet(&self, source: &DamageSource, damage: f32) {
+        self.do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
+    }
+
     fn hurt_armor(&self, source: &DamageSource, damage: f32) {
         self.do_hurt_equipment(
             source,

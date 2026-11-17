@@ -923,7 +923,7 @@ pub trait LivingEntity: Entity {
         {
             damage *= 5.0;
         }
-        // TODO: apply helmet damage once those equipment hooks exist.
+        damage = self.damage_after_helmet(source, damage);
         if !damage.is_finite() {
             damage = f32::MAX;
         }
@@ -1028,6 +1028,26 @@ pub trait LivingEntity: Entity {
 
     /// Damages equipment that participates in vanilla armor absorption.
     fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
+
+    /// Vanilla `hurtHelmet`: damages the helmet a falling block hit. Only players do.
+    fn hurt_helmet(&self, _source: &DamageSource, _damage: f32) {}
+
+    /// The `damages_helmet` step of vanilla `hurtServer`: a worn helmet takes the hit
+    /// through [`Self::hurt_helmet`] and softens it to three quarters.
+    fn damage_after_helmet(&self, source: &DamageSource, damage: f32) -> f32 {
+        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
+            return damage;
+        }
+        let mut wears_helmet = false;
+        self.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
+            wears_helmet = !item.is_empty();
+        });
+        if !wears_helmet {
+            return damage;
+        }
+        self.hurt_helmet(source, damage);
+        damage * 0.75
+    }
 
     /// Damages equipped items in the given slots that are eligible to absorb this damage source.
     fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
