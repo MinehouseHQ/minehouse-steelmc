@@ -15,6 +15,7 @@ mod follow_flock_leader;
 mod follow_mob;
 mod follow_parent;
 mod follow_player_ridden_entity;
+mod golem_village;
 mod hurt_by_target;
 mod illusioner_spells;
 mod interact;
@@ -75,6 +76,9 @@ pub(crate) use follow_flock_leader::FollowFlockLeaderGoal;
 pub(crate) use follow_mob::FollowMobGoal;
 pub(crate) use follow_parent::FollowParentGoal;
 pub(crate) use follow_player_ridden_entity::FollowPlayerRiddenEntityGoal;
+pub(crate) use golem_village::{
+    DefendVillageTargetGoal, GolemRandomStrollInVillageGoal, MoveBackToVillageGoal, OfferFlowerGoal,
+};
 pub(crate) use hurt_by_target::HurtByTargetGoal;
 pub(crate) use illusioner_spells::{BlindnessSpell, MirrorSpell};
 pub(crate) use interact::InteractGoal;

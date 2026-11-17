@@ -16,6 +16,7 @@ use super::{
 };
 use crate::behavior::blocks::next_pose;
 use crate::behavior::init_behaviors;
+use crate::block_entity::init_block_entities;
 use crate::entity::Entity;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -79,6 +80,7 @@ fn weather_state_and_wax_round_trip() {
 fn pumpkin_on_copper_builds_a_golem_and_leaves_a_copper_chest() {
     init_vanilla_registry();
     init_behaviors();
+    init_block_entities();
     let fixture = fresh_test_world("copper_golem_build");
     let world = &fixture.world;
     let copper_pos = BlockPos::new(4, 64, 4);

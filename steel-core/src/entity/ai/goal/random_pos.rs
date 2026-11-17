@@ -120,6 +120,36 @@ pub(crate) fn land_random_pos_weighted(
     best_pos.map(block_bottom_center)
 }
 
+/// Vanilla `LandRandomPos.getPosTowards`: a land position up to
+/// `horizontal_dist` toward `towards_pos`.
+pub(crate) fn land_random_pos_towards(
+    mob: &(impl PathfinderMob + ?Sized),
+    horizontal_dist: i32,
+    vertical_dist: i32,
+    towards_pos: DVec3,
+) -> Option<DVec3> {
+    let dir = towards_pos - mob.position();
+    let max_horizontal_dist = f64::from(horizontal_dist);
+    let restrict = mob_restricted(mob, max_horizontal_dist);
+    generate_random_pos(mob, || {
+        let direction = {
+            let mut random = LegacyRandom::from_seed(rand::random());
+            generate_random_direction_within_radians(
+                &mut random,
+                0.0,
+                max_horizontal_dist,
+                vertical_dist,
+                0,
+                dir.x,
+                dir.z,
+                FRAC_PI_2,
+            )
+        }?;
+        let pos = land_random_pos_toward_direction(mob, max_horizontal_dist, restrict, direction)?;
+        land_move_pos_up_out_of_solid(mob, pos)
+    })
+}
+
 /// Vanilla `LandRandomPos.getPosAway`: a land position up to
 /// `horizontal_dist` away from `avoid_pos`.
 pub(crate) fn land_random_pos_away(

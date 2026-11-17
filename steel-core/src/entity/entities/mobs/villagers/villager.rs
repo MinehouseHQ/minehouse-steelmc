@@ -611,7 +611,7 @@ impl VillagerEntity {
 
     /// Vanilla `wantsToSpawnGolem`: slept in the last day and has not seen a
     /// golem recently.
-    pub(super) fn wants_to_spawn_golem(&self, world: &World) -> bool {
+    pub(crate) fn wants_to_spawn_golem(&self, world: &World) -> bool {
         let memories = self.brain.memories().lock();
         memories
             .get(&LAST_SLEPT)
