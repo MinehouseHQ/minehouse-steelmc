@@ -70,6 +70,9 @@ struct TweaksConfig {
 pub struct MinecartConfig {
     /// The top speed of a fast cart, blocks a second (the Fabric `minehouse:minecart_speed`).
     pub max_speed: u32,
+    /// Whether a fast cart that runs out of rails flies on (the Fabric
+    /// `minehouse:minecart_flight`). Off unless set.
+    pub flight: bool,
 }
 
 impl MinecartConfig {
@@ -81,20 +84,35 @@ impl MinecartConfig {
 
 impl Default for MinecartConfig {
     fn default() -> Self {
-        Self { max_speed: 80 }
+        Self {
+            max_speed: 80,
+            flight: false,
+        }
     }
 }
 
-/// The top speed of a fast cart, blocks a second. Read once.
-pub(super) fn minecart_top_speed() -> f64 {
-    static SPEED: OnceLock<u32> = OnceLock::new();
-    f64::from(*SPEED.get_or_init(|| {
+/// The `[minecarts]` table of the config. Read once.
+fn minecarts() -> &'static MinecartConfig {
+    static MINECARTS: OnceLock<MinecartConfig> = OnceLock::new();
+    MINECARTS.get_or_init(|| {
         config::load::<TweaksConfig>(&config::path(CONFIG))
             .inspect_err(|error| log::error!("MineHouse tweaks: {error}, carts keep 80 blocks/s"))
             .map_or_else(|_| MinecartConfig::default(), |tweaks| tweaks.minecarts)
+    })
+}
+
+/// The top speed of a fast cart, blocks a second.
+pub(super) fn minecart_top_speed() -> f64 {
+    f64::from(
+        minecarts()
             .max_speed
-            .clamp(MinecartConfig::VANILLA_SPEED, MinecartConfig::HIGHEST_SPEED)
-    }))
+            .clamp(MinecartConfig::VANILLA_SPEED, MinecartConfig::HIGHEST_SPEED),
+    )
+}
+
+/// Whether a fast cart that runs out of rails flies on ([`super::flight`]).
+pub(super) fn minecart_flight() -> bool {
+    minecarts().flight
 }
 
 /// The `[cloud]` table of the config.

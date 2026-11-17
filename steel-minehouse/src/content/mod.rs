@@ -19,6 +19,7 @@ mod couplings;
 mod creative_tabs;
 mod end_lock;
 mod first_join;
+mod flight;
 pub mod herb_guides;
 mod herbs;
 mod leaf_decay;
