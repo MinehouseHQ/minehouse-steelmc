@@ -134,6 +134,11 @@ impl SmithingResultHandler {
 }
 
 impl ResultHandler for SmithingResultHandler {
+    /// Vanilla `SmithingMenu.onTake` counts the stack taken.
+    fn crafted_stat(&self) -> CraftedStat {
+        CraftedStat::TakenStack
+    }
+
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result_container))
     }

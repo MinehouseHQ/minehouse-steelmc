@@ -30,7 +30,7 @@ pub use grindstone_slots::*;
 pub use loom_slots::*;
 pub use normal_slot::NormalSlot;
 pub use restricted_slot::*;
-pub use result_handler::ResultHandler;
+pub use result_handler::{CraftedStat, ResultHandler};
 pub use result_slot::*;
 pub use slot::*;
 pub use smithing_slots::*;

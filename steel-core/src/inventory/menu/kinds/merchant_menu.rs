@@ -171,6 +171,11 @@ impl MerchantResultHandler {
 }
 
 impl ResultHandler for MerchantResultHandler {
+    /// Vanilla `MerchantResultSlot` counts the traded items taken.
+    fn crafted_stat(&self) -> CraftedStat {
+        CraftedStat::Trading
+    }
+
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result))
     }

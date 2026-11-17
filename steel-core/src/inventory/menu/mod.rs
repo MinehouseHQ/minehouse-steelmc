@@ -527,6 +527,7 @@ impl Menu {
                     unreachable!("the explicitly locked player inventory must be present");
                 };
                 inventory.set_item(inventory_slot, target_item.clone());
+                target_slot.on_swap_craft(target_item.count);
                 target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 take_into_inventory_slot(
                     &mut guard,

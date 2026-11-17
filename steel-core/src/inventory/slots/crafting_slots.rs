@@ -19,7 +19,7 @@ use crate::{
         container::Container,
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         recipe_manager,
-        slots::result_handler::ResultHandler,
+        slots::result_handler::{CraftedStat, ResultHandler},
     },
     player::Player,
 };
@@ -190,6 +190,11 @@ impl CraftingMenuAccess for CraftingHandler {
 }
 
 impl ResultHandler for CraftingHandler {
+    /// Vanilla `ResultSlot` counts the crafted items taken.
+    fn crafted_stat(&self) -> CraftedStat {
+        CraftedStat::Crafting
+    }
+
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result_container))
     }

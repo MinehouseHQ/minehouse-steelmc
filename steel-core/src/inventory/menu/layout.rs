@@ -98,6 +98,7 @@ impl MenuLayout {
         if !moved {
             return ItemStack::empty();
         }
+        behavior.slots()[slot_index].on_quick_craft(&remaining, &clicked, player);
 
         behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
 
