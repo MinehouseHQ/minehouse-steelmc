@@ -22,6 +22,7 @@ use uuid::Uuid;
 use super::{GameEventContext, GameEventListener};
 use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, SharedEntity};
+use crate::player::advancement::criteria::AVOID_VIBRATION;
 use crate::world::World;
 use crate::world::raycast::RaytraceAction;
 
@@ -458,8 +459,11 @@ pub trait VibrationUser: Send + Sync {
                     .game_events
                     .is_in_tag(event, &GameEventTag::IGNORE_VIBRATIONS_SNEAKING)
             {
-                // TODO(advancements): vanilla triggers AVOID_VIBRATION here
-                // when `can_trigger_avoid_vibration` and the source is a player.
+                if self.can_trigger_avoid_vibration()
+                    && let Some(player) = source.as_player()
+                {
+                    player.trigger_player_criteria(&AVOID_VIBRATION);
+                }
                 return false;
             }
             if source.dampens_vibrations() {

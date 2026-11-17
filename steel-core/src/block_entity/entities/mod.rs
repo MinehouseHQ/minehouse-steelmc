@@ -91,6 +91,8 @@ pub(crate) use lectern::{
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use sculk_catalyst::SculkCatalystBlockEntity;
+#[cfg(test)]
+pub(crate) use sculk_catalyst::trigger_kill_near_catalyst;
 pub use sculk_sensor::SculkSensorBlockEntity;
 pub use sculk_shrieker::SculkShriekerBlockEntity;
 pub(crate) use sculk_shrieker::try_get_player;

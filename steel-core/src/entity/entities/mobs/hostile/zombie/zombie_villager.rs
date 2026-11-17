@@ -368,8 +368,7 @@ impl ZombieVillagerEntity {
             if let Some(starter) = starter
                 && let Some(player) = world.players.get_by_uuid(&starter)
             {
-                // TODO(advancements): vanilla triggers
-                // CriteriaTriggers.CURED_ZOMBIE_VILLAGER here.
+                player.trigger_cured_zombie_villager(self, villager);
                 villager.on_reputation_event_from(
                     ReputationEventType::ZombieVillagerCured,
                     player.uuid(),

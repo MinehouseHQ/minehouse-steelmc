@@ -60,6 +60,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::{LevelReader as _, ServerLevelAccessor, World};
 
 const FOX_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -935,6 +936,7 @@ impl Mob for FoxEntity {
             world.spawn_item(self.position(), rest);
         }
         self.spit_out_item(world, self.main_hand());
+        on_item_pickup(self, item_entity, &item_stack);
         self.set_main_hand(item_stack.split(1));
         self.set_guaranteed_drop(EquipmentSlot::MainHand);
         world.broadcast_to_nearby(

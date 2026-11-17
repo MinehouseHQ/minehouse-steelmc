@@ -60,6 +60,7 @@ use crate::inventory::slot_access::SlotAccess;
 use crate::inventory::slot_range::MOB_INVENTORY_SLOT_OFFSET;
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::{LevelReader, ServerLevelAccessor, World};
 
 const XP_REWARD: i32 = 5;
@@ -589,8 +590,7 @@ impl Mob for PiglinEntity {
     }
 
     fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
-        // TODO(advancements): vanilla calls `onItemPickup` here first, which
-        // fires THROWN_ITEM_PICKED_UP_BY_ENTITY.
+        on_item_pickup(self, item_entity, &item_entity.get_item());
         self.pick_up_item_piglin(world, item_entity);
     }
 

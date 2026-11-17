@@ -37,11 +37,12 @@ mod triggers {
     use steel_utils::locks::IntoShared as _;
 
     use super::super::predicates::LocationPredicate;
-    use super::super::{TICK, init_criteria};
+    use super::super::{AVOID_VIBRATION, TICK, init_criteria};
     use crate::behavior::init_behaviors;
-    use crate::entity::Entity as _;
+    use crate::entity::entities::ItemEntity;
     use crate::entity::init_entities;
     use crate::entity::next_entity_id;
+    use crate::entity::{Entity, SharedEntity};
     use crate::inventory::container::{Container as _, SimpleContainer};
     use crate::inventory::menu::{MenuBuilder, kinds::BasicKind};
     use crate::player::Player;
@@ -50,6 +51,7 @@ mod triggers {
         TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
     };
     use crate::world::World;
+    use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::vanilla_blocks;
 
     fn setup() {
@@ -634,5 +636,168 @@ mod triggers {
             "travelled"
         ));
         assert!(player.movement_criteria.lock().entered_nether().is_none());
+    }
+
+    fn spawn_in(world: &Arc<World>, entity_type: EntityTypeRef) -> SharedEntity {
+        use glam::DVec3;
+
+        use crate::entity::create_entity_instance;
+
+        let entity = create_entity_instance(world, entity_type, DVec3::new(8.5, 64.0, 8.5))
+            .expect("the entity can be created");
+        world
+            .try_add_entity(Arc::clone(&entity))
+            .expect("the entity should attach to the loaded chunk");
+        entity
+    }
+
+    fn thrown_item(world: &Arc<World>, thrower: &dyn Entity, stack: ItemStack) -> ItemEntity {
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+
+        let item = ItemEntity::new(
+            &vanilla_entities::ITEM,
+            next_entity_id(),
+            DVec3::new(8.5, 64.0, 8.5),
+            Arc::downgrade(world),
+        );
+        item.set_item(stack);
+        item.set_thrower(thrower.uuid());
+        item.set_no_pickup_delay();
+        item
+    }
+
+    #[test]
+    fn picking_up_what_an_allay_threw_grants_its_delivery() {
+        use steel_registry::{vanilla_entities, vanilla_items};
+
+        let (fixture, player) = movement_fixture("criteria_allay_delivery");
+        let world = &fixture.world;
+        let allay = spawn_in(world, &vanilla_entities::ALLAY);
+        let item = thrown_item(
+            world,
+            allay.as_ref(),
+            ItemStack::new(&vanilla_items::COOKIE),
+        );
+
+        assert!(item.try_pickup(&player));
+        assert!(criterion_done(
+            &player,
+            "minecraft:husbandry/allay_deliver_item_to_player",
+            "allay_deliver_item_to_player"
+        ));
+    }
+
+    #[test]
+    fn a_piglin_taking_thrown_gold_grants_distract_piglin() {
+        use steel_registry::{vanilla_entities, vanilla_items};
+
+        let (fixture, player) = movement_fixture("criteria_distract_piglin");
+        let world = &fixture.world;
+        let piglin = spawn_in(world, &vanilla_entities::PIGLIN);
+        let item = thrown_item(
+            world,
+            player.as_ref(),
+            ItemStack::new(&vanilla_items::GOLD_INGOT),
+        );
+
+        piglin
+            .as_mob()
+            .expect("a piglin is a mob")
+            .pick_up_item(world, &item);
+        assert!(criterion_done(
+            &player,
+            "minecraft:nether/distract_piglin",
+            "distract_piglin"
+        ));
+    }
+
+    #[test]
+    fn shearing_wolf_armor_grants_shear_brilliance() {
+        use steel_registry::{vanilla_entities, vanilla_items};
+
+        let (fixture, player) = movement_fixture("criteria_wolf_armor");
+        let wolf = spawn_in(&fixture.world, &vanilla_entities::WOLF);
+        let cat = spawn_in(&fixture.world, &vanilla_entities::CAT);
+        let armor = ItemStack::new(&vanilla_items::WOLF_ARMOR);
+        let advancement = "minecraft:husbandry/remove_wolf_armor";
+
+        player.trigger_sheared_equipment(&armor, cat.as_ref());
+        assert!(!criterion_done(&player, advancement, "remove_wolf_armor"));
+        player.trigger_sheared_equipment(&armor, wolf.as_ref());
+        assert!(criterion_done(&player, advancement, "remove_wolf_armor"));
+    }
+
+    #[test]
+    fn sliding_down_honey_grants_sticky_situation() {
+        use steel_registry::vanilla_blocks;
+
+        let (_fixture, player) = movement_fixture("criteria_honey_slide");
+        let advancement = "minecraft:adventure/honey_block_slide";
+        player.trigger_slide_down_block(
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::SLIME_BLOCK),
+        );
+        assert!(!criterion_done(&player, advancement, "honey_block_slide"));
+        player.trigger_slide_down_block(
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::HONEY_BLOCK),
+        );
+        assert!(criterion_done(&player, advancement, "honey_block_slide"));
+    }
+
+    #[test]
+    fn killing_near_a_catalyst_credits_the_player_who_hurt_the_mob() {
+        use steel_registry::{vanilla_damage_types, vanilla_entities};
+
+        use crate::block_entity::entities::trigger_kill_near_catalyst;
+        use crate::entity::damage::DamageSource;
+
+        let (fixture, player) = movement_fixture("criteria_catalyst");
+        let world = &fixture.world;
+        let zombie = spawn_in(world, &vanilla_entities::ZOMBIE);
+        let zombie = zombie.as_living_entity().expect("a zombie is alive");
+        let advancement = "minecraft:adventure/kill_mob_near_sculk_catalyst";
+
+        trigger_kill_near_catalyst(zombie);
+        assert!(!criterion_done(
+            &player,
+            advancement,
+            "kill_mob_near_sculk_catalyst"
+        ));
+        let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+            .with_causing_entity(Arc::clone(&player) as SharedEntity)
+            .with_direct_entity(Arc::clone(&player) as SharedEntity);
+        assert!(zombie.hurt(world, &source, 1.0));
+        trigger_kill_near_catalyst(zombie);
+        assert!(criterion_done(
+            &player,
+            advancement,
+            "kill_mob_near_sculk_catalyst"
+        ));
+    }
+
+    #[test]
+    fn curing_and_sneaking_grant_their_advancements() {
+        use steel_registry::vanilla_entities;
+
+        let (fixture, player) = movement_fixture("criteria_cure_sneak");
+        let zombie = spawn_in(&fixture.world, &vanilla_entities::ZOMBIE_VILLAGER);
+        let villager = spawn_in(&fixture.world, &vanilla_entities::VILLAGER);
+
+        player.trigger_cured_zombie_villager(zombie.as_ref(), villager.as_ref());
+        assert!(criterion_done(
+            &player,
+            "minecraft:story/cure_zombie_villager",
+            "cured_zombie"
+        ));
+        player.trigger_player_criteria(&AVOID_VIBRATION);
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/avoid_vibration",
+            "avoid_vibration"
+        ));
     }
 }

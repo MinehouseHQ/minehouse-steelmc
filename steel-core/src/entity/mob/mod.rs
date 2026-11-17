@@ -4,6 +4,7 @@ mod pathfinder;
 pub(crate) mod spawn_equipment;
 
 use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, LeashData, Leashable};
+use crate::player::advancement::criteria::on_item_pickup;
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
@@ -836,9 +837,11 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         let count = equipped.count();
-        // TODO(advancements): vanilla calls LivingEntity.onItemPickup here, before
-        // the take packet, which fires the THROWN_ITEM_PICKED_UP_BY_ENTITY criterion.
-        // Add that once Steel has the advancement-criteria foundation.
+        on_item_pickup(
+            self.as_entity_event_source(),
+            item_entity,
+            &item_entity.get_item(),
+        );
         let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
         world.broadcast_to_nearby(
             chunk_pos,
