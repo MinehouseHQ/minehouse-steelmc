@@ -58,7 +58,7 @@ impl BlockBehavior for LightBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if player.abilities.lock().instabuild && player.is_operator() {
+        if player.can_use_game_master_blocks() {
             world.set_block(pos, Self::cycle_level(state), UpdateFlags::UPDATE_CLIENTS);
             InteractionResult::SuccessServer
         } else {

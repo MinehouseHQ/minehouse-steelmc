@@ -2,6 +2,9 @@ use super::autosave::AutosaveSchedule;
 use super::tick_overload::TickOverloadGuard;
 use super::tick_watchdog::{TickStep, TickStepTimes, TickWatchdog};
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
+use crate::behavior::blocks::run_command_block_tick;
+use crate::command::command_block::CommandBlockRunner;
+
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_REQUESTS_PER_TICK,
     COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos, ChunkSender,
@@ -293,6 +296,7 @@ impl Server {
                 cancel_token.cancel();
                 break;
             }
+            self.tick_command_blocks(&mut pending_command_executions);
             watchdog.enter(TickStep::Connections);
             self.tick_connections();
             player_info_ticks += 1;
@@ -480,6 +484,18 @@ impl Server {
         if let Some(signed_arguments) = signed_arguments {
             source = source.with_signing_context(signed_arguments);
         }
+        self.perform_prefixed_command(pending, owner, source, command);
+    }
+
+    /// Vanilla `Commands.performPrefixedCommand`: parses `command` for
+    /// `source` and runs it, keeping a suspended execution for later ticks.
+    pub(crate) fn perform_prefixed_command(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+        owner: CommandExecutionOwner,
+        source: CommandSource,
+        command: &str,
+    ) {
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
@@ -499,6 +515,23 @@ impl Server {
         if execution.run() == ExecutionStop::Suspended && !pending.push_suspended(owner, execution)
         {
             tracing::error!("suspended command execution could not be retained");
+        }
+    }
+
+    /// Runs the command block ticks the worlds queued this tick, in the
+    /// order each world queued them.
+    fn tick_command_blocks(
+        self: &Arc<Self>,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+    ) {
+        let mut runner = CommandBlockRunner {
+            server: self,
+            pending,
+        };
+        for world in self.worlds.values() {
+            for pos in world.drain_command_block_ticks() {
+                run_command_block_tick(world, pos, &mut runner);
+            }
         }
     }
 

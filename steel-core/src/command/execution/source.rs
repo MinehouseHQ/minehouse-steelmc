@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, ptr, sync::Arc};
 use crate::{
     command::{
         brigadier::CommandSyntaxError,
+        command_block::CommandBlockOutput,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
     },
@@ -241,6 +242,16 @@ impl CommandAuthorizationContext {
         }
     }
 
+    /// A source without player permissions confined to `world`'s domain.
+    fn within_domain(world: steel_utils::Identifier) -> Self {
+        let domain = world.namespace.to_string().into_boxed_str();
+        Self {
+            permission_context: PermissionContext::for_world(world),
+            player_permissions: None,
+            world_scope: CommandWorldScope::Domain(domain),
+        }
+    }
+
     const fn permission_context(&self) -> &PermissionContext {
         &self.permission_context
     }
@@ -307,7 +318,7 @@ impl CommandSource {
                 world.key.clone(),
                 server.command_permission_snapshot(player.gameprofile.id()),
             ),
-            CommandSender::Console | CommandSender::Rcon(_) => {
+            CommandSender::Console | CommandSender::Rcon(_) | CommandSender::CommandBlock(_) => {
                 CommandAuthorizationContext::unrestricted(world.key.clone())
             }
         };
@@ -340,6 +351,29 @@ impl CommandSource {
         source
     }
 
+    /// Vanilla `BaseCommandBlock.createCommandSourceStack`: a command block's
+    /// source at `position` in `world`.
+    ///
+    /// Vanilla runs it with gamemaster permissions; Steel has no permission
+    /// levels, so like functions it may run any command, but only within the
+    /// command block's own domain.
+    pub(crate) fn for_command_block(
+        server: Arc<Server>,
+        world: Arc<World>,
+        output: Arc<CommandBlockOutput>,
+        position: DVec3,
+        rotation: (f32, f32),
+        entity: Option<SharedEntity>,
+    ) -> Self {
+        let mut source = Self::new(CommandSender::CommandBlock(output), server);
+        source.authorization = CommandAuthorizationContext::within_domain(world.key.clone());
+        source.world = world;
+        source.position = position;
+        source.rotation = rotation;
+        source.entity = entity;
+        source
+    }
+
     /// Vanilla `CommandSourceStack.withSigningContext`.
     pub(crate) fn with_signing_context(&self, signing_context: Arc<SignedArguments>) -> Self {
         let mut source = self.clone();
@@ -355,7 +389,10 @@ impl CommandSource {
     /// Vanilla `CommandSourceStack.getDisplayName`.
     pub(crate) fn display_name(&self) -> TextComponent {
         self.entity.as_ref().map_or_else(
-            || TextComponent::plain(self.sender.to_string()),
+            || match &self.sender {
+                CommandSender::CommandBlock(output) => output.name(),
+                _ => TextComponent::plain(self.sender.to_string()),
+            },
             |entity| entity.display_name(),
         )
     }
@@ -379,10 +416,6 @@ impl CommandSource {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "source-aware runtime extensions need access to the original sender"
-    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
@@ -518,20 +551,30 @@ impl CommandSource {
             return;
         }
 
-        let accepts_success = self
-            .sender
-            .get_player()
-            .is_none_or(|player| player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK));
+        let (accepts_success, informs_admins) = match &self.sender {
+            CommandSender::Player(player) => (
+                player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK),
+                true,
+            ),
+            CommandSender::CommandBlock(output) => {
+                (output.accepts_success(), output.should_inform_admins())
+            }
+            CommandSender::Console | CommandSender::Rcon(_) => (true, true),
+        };
         if accepts_success {
             self.sender.send_message(message);
         }
-        if broadcast_to_admins {
+        if broadcast_to_admins && informs_admins {
             self.broadcast_to_admins(message);
         }
     }
 
     pub(crate) fn send_failure(&self, message: TextComponent) {
-        if !self.silent {
+        let accepts_failure = match &self.sender {
+            CommandSender::CommandBlock(output) => output.accepts_failure(),
+            _ => true,
+        };
+        if !self.silent && accepts_failure {
             self.sender.send_message(&message.color(Color::Red));
         }
     }
@@ -949,7 +992,10 @@ fn admin_broadcast_source_name(
     sender: &CommandSender,
 ) -> TextComponent {
     entity.map_or_else(
-        || TextComponent::plain(sender.to_string()),
+        || match sender {
+            CommandSender::CommandBlock(output) => output.name(),
+            _ => TextComponent::plain(sender.to_string()),
+        },
         |entity| TextComponent::plain(entity.plain_text_name()),
     )
 }

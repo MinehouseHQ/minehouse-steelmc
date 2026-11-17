@@ -571,6 +571,17 @@ impl World {
         mem::take(&mut *self.pending_world_changes.lock())
     }
 
+    /// Queues the command block tick at `pos` for the server, which runs
+    /// command block commands once every world has ticked.
+    pub(crate) fn queue_command_block_tick(&self, pos: BlockPos) {
+        self.command_block_ticks.lock().push(pos);
+    }
+
+    /// Takes the queued command block ticks in the order they were queued.
+    pub(crate) fn drain_command_block_ticks(&self) -> Vec<BlockPos> {
+        mem::take(&mut *self.command_block_ticks.lock())
+    }
+
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.
     ///
     /// Returns `None` if the entity is not live or is hidden in an inaccessible chunk.
