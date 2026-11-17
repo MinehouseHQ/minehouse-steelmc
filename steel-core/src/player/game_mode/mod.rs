@@ -56,6 +56,7 @@ mod kinetic;
 mod player_methods;
 mod structure_block_edit;
 mod swing;
+mod test_block_edit;
 
 pub(crate) use adventure_mode::can_break;
 pub(super) use block_breaking::BlockBreakingManager;

@@ -4875,6 +4875,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 }
 
 mod attribute_command;
+mod block_item_data;
 mod command_block;
 mod damage_history;
 mod data_command;
@@ -4894,6 +4895,7 @@ mod scoreboard_command;
 mod spectate_command;
 mod stopwatch_command;
 mod structure_block;
+mod test_block;
 mod waypoint_command;
 mod world_log;
 

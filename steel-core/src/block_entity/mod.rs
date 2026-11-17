@@ -64,6 +64,8 @@ pub(crate) use storage::{
     DetachedBlockEntity, LifecycleDispatchers,
 };
 
+use steel_utils::nbt::{merge_nbt_compounds, nbt_compounds_equal};
+
 use crate::block_entity::entities::Spawner;
 use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::lock::ContainerRef;
@@ -642,3 +644,29 @@ impl<T: BlockEntity + ?Sized> BlockEntityLifecycleExt for T {}
 
 /// A stable shared block entity without a whole-object mutex.
 pub type SharedBlockEntity = Arc<dyn BlockEntity>;
+
+/// Vanilla `TypedEntityData.loadInto`: merges an item's block entity data
+/// into `block_entity` and loads the result when it changed anything.
+pub(crate) fn load_item_block_entity_data(
+    block_entity: &dyn BlockEntity,
+    payload: &NbtCompound,
+) -> bool {
+    let before = block_entity.save_custom_only();
+    let mut merged = before.clone();
+    merge_nbt_compounds(&mut merged, payload);
+    if nbt_compounds_equal(&before, &merged) {
+        return false;
+    }
+    let mut bytes = Vec::new();
+    merged.write(&mut bytes);
+    let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(bytes.as_slice())) else {
+        log::warn!(
+            "failed to reborrow item block-entity data at {:?}",
+            block_entity.get_block_pos()
+        );
+        return false;
+    };
+    block_entity.load_additional(&borrowed);
+    block_entity.set_changed();
+    true
+}

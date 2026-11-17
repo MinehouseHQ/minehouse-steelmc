@@ -124,6 +124,7 @@ mod s_set_command_minecart;
 mod s_set_creative_mode_slot;
 mod s_set_jigsaw_block;
 mod s_set_structure_block;
+mod s_set_test_block;
 mod s_sign_update;
 mod s_spectator_action;
 mod s_use_item;
@@ -292,6 +293,7 @@ pub use s_set_jigsaw_block::SSetJigsawBlock;
 pub use s_set_structure_block::{
     SSetStructureBlock, StructureBlockMirror, StructureBlockUpdateType,
 };
+pub use s_set_test_block::SSetTestBlock;
 pub use s_sign_update::SSignUpdate;
 pub use s_spectator_action::SSpectatorAction;
 pub use s_use_item::SUseItem;

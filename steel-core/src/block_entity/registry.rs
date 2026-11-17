@@ -331,6 +331,11 @@ pub fn init_block_entities() {
         );
 
         registry.register(
+            &vanilla_block_entity_types::TEST_BLOCK,
+            |level, pos, state| Arc::new(TestBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
             &vanilla_block_entity_types::COMMAND_BLOCK,
             |level, pos, state| Arc::new(CommandBlockEntity::new(level, pos, state)),
         );
