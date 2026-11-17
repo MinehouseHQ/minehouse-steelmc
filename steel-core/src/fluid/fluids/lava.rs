@@ -67,8 +67,8 @@ impl LavaFluid {
             .ignited_by_lava
     }
 
-    /// Vanilla `LavaFluid.hasFlammableNeighbours`.
-    fn has_flammable_neighbours(world: &World, pos: BlockPos) -> bool {
+    /// Whether a block beside `pos` catches fire from lava, as in vanilla `LavaFluid`.
+    fn has_flammable_neighbors(world: &World, pos: BlockPos) -> bool {
         Direction::ALL
             .into_iter()
             .any(|direction| Self::is_flammable(world, pos.relative(direction)))
@@ -86,7 +86,7 @@ impl LavaFluid {
             }
             let state = world.get_block_state(test_pos);
             if state.is_air() {
-                if Self::has_flammable_neighbours(world, test_pos) {
+                if Self::has_flammable_neighbors(world, test_pos) {
                     world.set_block(
                         test_pos,
                         FireBlock::get_state(world.as_ref(), test_pos),
