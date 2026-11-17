@@ -470,10 +470,15 @@ impl WorldLog for BlockLog {
         true
     }
 
-    fn item_used(&self, player: &Arc<Player>, hand: InteractionHand) -> bool {
+    fn item_used(
+        &self,
+        player: &Arc<Player>,
+        hand: InteractionHand,
+        on: Option<(&Arc<World>, BlockPos, Direction)>,
+    ) -> bool {
         self.newbies
             .as_ref()
-            .is_some_and(|newbies| newbies.keeps_from_item(player, hand))
+            .is_some_and(|newbies| newbies.keeps_from_item(player, hand, on))
     }
 
     fn menu_opened(&self, player: &Player, menu: &Menu) {

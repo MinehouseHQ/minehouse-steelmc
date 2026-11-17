@@ -19,6 +19,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use steel_core::{
+    behavior::blocks::FireBlock,
     command::{
         CommandContext, CommandError, CommandNode, CommandRegistration, CommandRegistrationError,
         CommandRegistry, CommandSource, literal,
@@ -31,9 +32,10 @@ use steel_core::{
     world::World,
 };
 use steel_registry::{
-    item_stack::ItemStack, stat::vanilla_stat_types, vanilla_custom_stats, vanilla_items,
+    blocks::block_state_ext::BlockStateExt as _, item_stack::ItemStack, stat::vanilla_stat_types,
+    vanilla_blocks, vanilla_custom_stats, vanilla_items,
 };
-use steel_utils::{BlockPos, Identifier, locks::SyncMutex, types::InteractionHand};
+use steel_utils::{BlockPos, Direction, Identifier, locks::SyncMutex, types::InteractionHand};
 
 use super::store::{Actions, BREAK, Event, PLACE, Query, Store};
 use crate::{
@@ -185,6 +187,19 @@ fn is_hazard(stack: &ItemStack) -> bool {
     ]
     .into_iter()
     .any(|item| stack.is(item))
+}
+
+/// Whether flint and steel or a fire charge used on the `face` of the block at `pos` only
+/// lights a Nether portal: the block is obsidian and the fire would land in an empty cell
+/// of a closed frame (vanilla or any shape), where it turns into portal at once.
+fn lights_portal(stack: &ItemStack, world: &Arc<World>, pos: BlockPos, face: Direction) -> bool {
+    if !(stack.is(&vanilla_items::FLINT_AND_STEEL) || stack.is(&vanilla_items::FIRE_CHARGE))
+        || world.get_block_state(pos).get_block() != &vanilla_blocks::OBSIDIAN
+    {
+        return false;
+    }
+    let fire = pos.relative(face);
+    world.get_block_state(fire).is_air() && FireBlock::is_portal(world, fire, face)
 }
 
 impl Newbies {
@@ -477,11 +492,26 @@ impl Newbies {
     }
 
     /// A newbie is about to use an item: whether it is lava, fire or TNT, which they may not.
-    pub(super) fn keeps_from_item(&self, player: &Arc<Player>, hand: InteractionHand) -> bool {
-        if !self.config.no_lava_fire_tnt
-            || !is_hazard(player.inventory.lock().get_item_in_hand(hand))
-            || !self.is_newbie(player)
+    /// Fire that only lights a Nether portal is allowed.
+    pub(super) fn keeps_from_item(
+        &self,
+        player: &Arc<Player>,
+        hand: InteractionHand,
+        on: Option<(&Arc<World>, BlockPos, Direction)>,
+    ) -> bool {
+        if !self.config.no_lava_fire_tnt {
+            return false;
+        }
         {
+            let inventory = player.inventory.lock();
+            let stack = inventory.get_item_in_hand(hand);
+            if !is_hazard(stack)
+                || on.is_some_and(|(world, pos, face)| lights_portal(stack, world, pos, face))
+            {
+                return false;
+            }
+        }
+        if !self.is_newbie(player) {
             return false;
         }
         if self.may_notice(player) {

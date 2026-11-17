@@ -36,9 +36,15 @@ pub trait WorldLog: Send + Sync {
         hit: bool,
     ) -> bool;
 
-    /// A player is about to use the item in `hand`, in the air or on a block. Returning `true`
+    /// A player is about to use the item in `hand`, in the air (`on` is `None`) or on the
+    /// `face` of the block at `pos` (`on` is `Some((world, pos, face))`). Returning `true`
     /// refuses it: nothing is used or placed.
-    fn item_used(&self, _player: &Arc<Player>, _hand: InteractionHand) -> bool {
+    fn item_used(
+        &self,
+        _player: &Arc<Player>,
+        _hand: InteractionHand,
+        _on: Option<(&Arc<World>, BlockPos, Direction)>,
+    ) -> bool {
         false
     }
 
