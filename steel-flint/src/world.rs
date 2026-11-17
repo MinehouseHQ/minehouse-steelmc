@@ -19,7 +19,7 @@ use crate::convert::{
 use crate::player::SteelTestPlayer;
 use crate::runtime;
 use flint_core::Block;
-use flint_core::test_spec::{EntityNbt, GameruleValue};
+use flint_core::test_spec::{EntityNbt, GameruleValue, Weather};
 use flint_core::traits::EntityState;
 use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
 use glam::DVec3;
@@ -38,6 +38,7 @@ use steel_core::world::{LevelReader, World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::world_clock::WorldClockRef;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
@@ -47,6 +48,13 @@ use steel_utils::{BlockPos, ChunkPos, WorldAabb, types::UpdateFlags};
 use toml::Value;
 use toml::value::Table;
 use uuid::Uuid;
+
+/// Ticks in a Minecraft day.
+const TICKS_PER_DAY: i64 = 24_000;
+
+/// How long the weather a test sets holds: vanilla's longest default
+/// `/weather` duration (`ServerLevel.RAIN_DELAY` upper bound).
+const WEATHER_DURATION: i32 = 180_000;
 
 /// Test world implementation using the real steel-core World.
 ///
@@ -225,6 +233,14 @@ impl SteelTestWorld {
         panic!("chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
     }
 
+    /// The overworld's default clock, which `/time` uses.
+    fn default_clock(&self) -> anyhow::Result<WorldClockRef> {
+        self.world
+            .dimension_type
+            .default_clock
+            .ok_or_else(|| anyhow::anyhow!("The test dimension has no default clock"))
+    }
+
     fn entity_by_alias(&self, alias: &str) -> anyhow::Result<SharedEntity> {
         let uuid = self
             .entities
@@ -295,8 +311,47 @@ impl FlintWorld for SteelTestWorld {
         self.tick.load(Ordering::SeqCst)
     }
 
+    /// Vanilla `/time query daytime`: the default clock's ticks within the day.
     fn get_time(&self) -> Result<u64, anyhow::Error> {
-        Ok(self.world.game_time() as u64)
+        let clock = self.default_clock()?;
+        let total_ticks = self
+            .world
+            .clock_total_ticks(clock)
+            .ok_or_else(|| anyhow::anyhow!("The world has no clock '{}'", clock.key))?;
+        Ok(total_ticks.rem_euclid(TICKS_PER_DAY).cast_unsigned())
+    }
+
+    /// Vanilla `/time set <time>`: a tick count or a time marker of the
+    /// default clock.
+    fn set_time(&mut self, time: &str) -> anyhow::Result<()> {
+        let clock = self.default_clock()?;
+        if let Ok(total_ticks) = time.parse::<i64>() {
+            return self
+                .world
+                .set_clock_total_ticks(clock, total_ticks)
+                .ok_or_else(|| anyhow::anyhow!("The world has no clock '{}'", clock.key));
+        }
+        let marker = time
+            .parse::<Identifier>()
+            .map_err(|e| anyhow::anyhow!("Invalid time '{time}': {e}"))?;
+        match self.world.move_clock_to_time_marker(clock, &marker) {
+            Some(true) => Ok(()),
+            Some(false) => anyhow::bail!("Clock '{}' has no time marker '{marker}'", clock.key),
+            None => anyhow::bail!("The world has no clock '{}'", clock.key),
+        }
+    }
+
+    /// Vanilla `/weather <weather> <duration>` with the longest default
+    /// duration, so the weather holds for the whole test.
+    fn set_weather(&mut self, weather: Weather) -> anyhow::Result<()> {
+        let (clear_time, rain_time, raining, thundering) = match weather {
+            Weather::Clear => (WEATHER_DURATION, 0, false, false),
+            Weather::Rain => (0, WEATHER_DURATION, true, false),
+            Weather::Thunder => (0, WEATHER_DURATION, true, true),
+        };
+        self.world
+            .set_weather_parameters(clear_time, rain_time, raining, thundering);
+        Ok(())
     }
 
     fn get_block(

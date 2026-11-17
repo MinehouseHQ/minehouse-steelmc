@@ -8,8 +8,10 @@ use steel_registry::blocks::properties::{
 use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
+use steel_registry::level_events;
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::vanilla_damage_types;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, sound_events, vanilla_block_entity_types, vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_custom_stats, vanilla_fluids, vanilla_game_events,
@@ -21,6 +23,7 @@ use steel_utils::{
 
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
+use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::LevelReader;
 use crate::{
@@ -30,7 +33,10 @@ use crate::{
         context::BlockHitResult,
     },
     block_entity::{BLOCK_ENTITIES, BlockEntityTicker, entities::CampfireBlockEntity},
-    entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
+    entity::{
+        Entity, InsideBlockEffectCollector, LivingEntity, damage::DamageSource,
+        projectile::Projectile,
+    },
     world::{
         ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
     },
@@ -146,6 +152,43 @@ impl CampfireBlock {
     }
 }
 
+impl CampfireBlock {
+    /// The second half of vanilla `CampfireBlock.useItemOn`: an item in
+    /// `#douses_campfires` (shovels) puts out a lit campfire and takes 1
+    /// durability.
+    fn douse_with_item(
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        hand: InteractionHand,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let douses = inv.with_item(|stack| stack.item().has_tag(&ItemTag::DOUSES_CAMPFIRES));
+        if !douses || !state.get_value(LIT) {
+            return InteractionResult::TryEmptyHandInteraction;
+        }
+        world.level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
+        Self::douse(Some(player), world, pos);
+        world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
+        let has_infinite_materials = player.has_infinite_materials();
+        let (broken_item, change) = inv.with_item(|stack| {
+            let item = stack.item();
+            let (broke, change) = stack.hurt_and_break_tracked(1, has_infinite_materials);
+            (broke.then_some(item), change)
+        });
+        player.trigger_item_durability_changed(change);
+        if let Some(item) = broken_item {
+            let slot = match hand {
+                InteractionHand::MainHand => EquipmentSlot::MainHand,
+                InteractionHand::OffHand => EquipmentSlot::OffHand,
+            };
+            LivingEntity::on_equipped_item_broken(player, item, slot);
+        }
+        InteractionResult::Success
+    }
+}
+
 impl BlockBehavior for CampfireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let waterlogged = context.is_water_source();
@@ -155,11 +198,11 @@ impl BlockBehavior for CampfireBlock {
 
     fn use_item_on(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
-        _hand: InteractionHand,
+        hand: InteractionHand,
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
@@ -173,7 +216,7 @@ impl BlockBehavior for CampfireBlock {
                 .is_some()
         });
         if !accepted {
-            return InteractionResult::TryEmptyHandInteraction;
+            return Self::douse_with_item(state, world, pos, player, hand, inv);
         }
 
         let Some(block_entity) = world.get_block_entity(pos) else {

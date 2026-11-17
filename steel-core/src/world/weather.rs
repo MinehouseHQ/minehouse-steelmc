@@ -176,7 +176,7 @@ impl World {
     ///
     /// Vanilla owns this state at server scope. Steel intentionally owns
     /// it per world so multiple worlds in one domain can have independent weather.
-    pub(crate) fn set_weather_parameters(
+    pub fn set_weather_parameters(
         &self,
         clear_time: i32,
         rain_time: i32,

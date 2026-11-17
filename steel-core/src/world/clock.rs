@@ -275,11 +275,9 @@ impl World {
         self.broadcast_to_all(self.time_sync_packet());
     }
 
-    pub(crate) fn set_clock_total_ticks(
-        &self,
-        clock: WorldClockRef,
-        total_ticks: i64,
-    ) -> Option<()> {
+    /// Vanilla `clockManager().setTotalTicks`: sets `clock` to `total_ticks`
+    /// and syncs it to players. `None` when the world has no such clock.
+    pub fn set_clock_total_ticks(&self, clock: WorldClockRef, total_ticks: i64) -> Option<()> {
         self.modify_clock(clock, |manager| manager.set_total_ticks(clock, total_ticks))
     }
 
@@ -295,7 +293,10 @@ impl World {
         self.modify_clock(clock, |manager| manager.set_rate(clock, rate))
     }
 
-    pub(crate) fn move_clock_to_time_marker(
+    /// Vanilla `clockManager().moveToTimeMarker`: moves `clock` to `marker`
+    /// and syncs it to players. `Some(false)` when the clock has no such
+    /// marker, `None` when the world has no such clock.
+    pub fn move_clock_to_time_marker(
         &self,
         clock: WorldClockRef,
         marker: &Identifier,
