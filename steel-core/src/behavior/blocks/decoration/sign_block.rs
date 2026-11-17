@@ -2,7 +2,6 @@
 //!
 //! Handles sign placement and block entity creation for all sign types.
 
-use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -17,7 +16,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
 };
-use steel_registry::blocks::shapes::SupportType;
+use steel_registry::blocks::shapes::{self, SupportType};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     stat::vanilla_stat_types, vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
 };
@@ -30,55 +30,13 @@ use crate::behavior::block::{
     BlockBehavior, BlockEntityCreation, schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::behavior::{ITEM_BEHAVIORS, InventoryAccess, PlacementSource};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InventoryAccess, PlacementSource,
+};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
-
-/// Gets the nearest looking directions from the player's rotation.
-///
-/// Returns horizontal directions in order of how closely they match the player's look direction.
-fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec<Direction> {
-    // Build list of directions in order of preference
-    // Start with the opposite of the clicked face (most natural for wall signs)
-    // Then add directions based on player facing
-    let mut directions = Vec::with_capacity(4);
-
-    // Add horizontal directions in order of how closely they match player's look
-    let all_horizontal = [
-        Direction::North,
-        Direction::East,
-        Direction::South,
-        Direction::West,
-    ];
-
-    // Calculate angle for each direction and sort by distance to player's rotation
-    let mut scored: Vec<(Direction, f32)> = all_horizontal
-        .iter()
-        .map(|&dir| {
-            let dir_angle = dir.to_yaw();
-            (dir, wrap_degrees(rotation - dir_angle).abs())
-        })
-        .collect();
-
-    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-
-    for (dir, _) in scored {
-        directions.push(dir);
-    }
-
-    // If clicked face is horizontal, prefer placing on the opposite side
-    if clicked_face.is_horizontal() {
-        let opposite = clicked_face.opposite();
-        if let Some(pos) = directions.iter().position(|&d| d == opposite) {
-            directions.remove(pos);
-            directions.insert(0, opposite);
-        }
-    }
-
-    directions
-}
 
 /// Calculates which side of a sign the player is facing.
 ///
@@ -202,6 +160,38 @@ fn can_wall_hanging_sign_survive(
     };
 
     can_attach_clockwise || can_attach_counter
+}
+
+/// Vanilla `shouldTryToChainAnotherHangingSign` (minus the hit-face check,
+/// which differs per block): a hanging sign item passes through a sign that
+/// would not run click commands, so the item places another sign.
+fn should_try_to_chain_hanging_sign(
+    state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+    player: &Player,
+    inv: &InventoryAccess,
+) -> bool {
+    let Some(block_entity) = world.get_block_entity(pos) else {
+        return false;
+    };
+    let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
+        return false;
+    };
+    !sign.can_execute_click_commands(facing_text_slot(state, pos, player))
+        && inv.with_item(|item| {
+            ITEM_BEHAVIORS
+                .get_behavior(item.item())
+                .as_hanging_sign_item()
+                .is_some()
+        })
+}
+
+/// Vanilla `WallHangingSignBlock.isHittingEditableSide`.
+fn is_hitting_editable_side(state: BlockStateId, hit_result: &BlockHitResult) -> bool {
+    state
+        .try_get_value(HORIZONTAL_FACING)
+        .is_some_and(|facing| hit_result.direction.axis() == facing.axis())
 }
 
 fn try_apply_sign_item(
@@ -339,6 +329,7 @@ pub struct StandingSignBlock {
 const ATTACHED: &BoolProperty = &BlockStateProperties::ATTACHED;
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const ROTATION_16: &IntProperty = &BlockStateProperties::ROTATION_16;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl StandingSignBlock {
     /// Creates a new standing sign block behavior.
@@ -380,7 +371,12 @@ impl BlockBehavior for StandingSignBlock {
         // Vanilla: RotationSegment.convertToSegment(context.getRotation() + 180.0F)
         let rotation = convert_to_rotation_segment(context.rotation() + DEGREE_180);
 
-        Some(self.block.default_state().set_value(ROTATION_16, rotation))
+        Some(
+            self.block
+                .default_state()
+                .set_value(ROTATION_16, rotation)
+                .set_value(WATERLOGGED, context.is_water_source()),
+        )
     }
 
     fn new_block_entity(
@@ -483,19 +479,19 @@ impl BlockBehavior for WallSignBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation(), context.clicked_face());
-
-        for direction in directions {
-            // The sign faces the opposite direction of where it's attached
+        // Vanilla `WallSignBlock.getStateForPlacement`: try the horizontal
+        // looking directions in order, the sign faces away from its wall.
+        for direction in context.get_nearest_looking_directions() {
+            if !direction.is_horizontal() {
+                continue;
+            }
             let facing = direction.opposite();
-
-            // Check if sign can survive with this facing
             if can_wall_sign_survive(context.world, context.place_pos(), facing) {
                 return Some(
                     self.block
                         .default_state()
-                        .set_value(HORIZONTAL_FACING, facing),
+                        .set_value(HORIZONTAL_FACING, facing)
+                        .set_value(WATERLOGGED, context.is_water_source()),
                 );
             }
         }
@@ -605,58 +601,45 @@ impl BlockBehavior for CeilingHangingSignBlock {
             return None;
         }
 
-        let above_pos = BlockPos::new(
-            context.place_pos().x(),
-            context.place_pos().y() + 1,
-            context.place_pos().z(),
-        );
+        let above_pos = context.place_pos().above();
         let above_state = context.world.get_block_state(above_pos);
-
-        // Determine if we should attach to the middle or not based on block above
+        let is_below_hanging_sign = above_state
+            .get_block()
+            .has_tag(&BlockTag::ALL_HANGING_SIGNS);
         let direction = Direction::from_yaw(context.rotation());
-        let is_above_full = context.world.is_face_sturdy_for(
-            above_state,
-            above_pos,
-            Direction::Down,
-            SupportType::Full,
-        );
-
-        // Check if block above is also a hanging sign
-        let above_block = REGISTRY.blocks.by_state_id(above_state);
-        let is_below_hanging_sign =
-            above_block.is_some_and(|b| b.key.path.contains("hanging_sign"));
-
-        // Determine if attached to middle based on vanilla logic
-        let attached_to_middle = if is_below_hanging_sign {
-            // When below another hanging sign, check if we can chain
-            if let Some(above_facing) = above_state.try_get_value(HORIZONTAL_FACING) {
-                // Wall hanging sign above - check axis alignment
-                above_facing.axis() != direction.axis()
-            } else if let Some(above_rotation) = above_state.try_get_value(ROTATION_16) {
-                // Ceiling hanging sign above - check if we can align
-                let above_direction = rotation_to_direction(above_rotation);
-                above_direction.is_none_or(|d| d.axis() != direction.axis())
-            } else {
-                !is_above_full
+        let above_shape = BLOCK_BEHAVIORS
+            .get_behavior(above_state.get_block())
+            .get_collision_shape(
+                above_state,
+                context.world,
+                above_pos,
+                BlockCollisionContext::empty(),
+            );
+        let mut attached_to_middle = !shapes::is_face_full(above_shape, Direction::Down)
+            || context.is_secondary_use_active();
+        if is_below_hanging_sign && !context.is_secondary_use_active() {
+            let above_direction = above_state.try_get_value(HORIZONTAL_FACING).or_else(|| {
+                above_state
+                    .try_get_value(ROTATION_16)
+                    .and_then(rotation_to_direction)
+            });
+            if above_direction.is_some_and(|d| d.axis() == direction.axis()) {
+                attached_to_middle = false;
             }
-        } else {
-            !is_above_full
-        };
+        }
 
-        // Calculate rotation
         let rotation = if attached_to_middle {
-            // Attached to middle - use player rotation
             convert_to_rotation_segment(context.rotation() + DEGREE_180)
         } else {
-            // Attached to chains - align with direction
             convert_to_rotation_segment(direction.opposite().to_yaw())
         };
 
         Some(
             self.block
                 .default_state()
+                .set_value(ATTACHED, attached_to_middle)
                 .set_value(ROTATION_16, rotation)
-                .set_value(ATTACHED, attached_to_middle),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -688,9 +671,14 @@ impl BlockBehavior for CeilingHangingSignBlock {
         pos: BlockPos,
         player: &Player,
         _hand: InteractionHand,
-        _hit_result: &BlockHitResult,
+        hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
+        if hit_result.direction == Direction::Down
+            && should_try_to_chain_hanging_sign(state, world, pos, player, inv)
+        {
+            return InteractionResult::Pass;
+        }
         try_apply_sign_item(state, world, pos, player, inv)
     }
 
@@ -754,43 +742,31 @@ impl BlockBehavior for WallHangingSignBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        direction: Direction,
+        _direction: Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // Wall hanging signs break when blocks on the perpendicular axis are removed
-        // and they can no longer survive
-        if let Some(facing) = state.try_get_value(HORIZONTAL_FACING) {
-            // Check if the change is on the perpendicular axis (clockwise/counterclockwise)
-            if direction.axis() == facing.rotate_y_clockwise().axis()
-                && !can_wall_hanging_sign_survive(world, pos, facing)
-            {
-                return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
-            }
-        }
+        // Vanilla checks `canSurvive` on the side axis, which `SignBlock`
+        // leaves at the default `true`: a wall hanging sign never pops off.
+        // Attachment only matters at placement (`canPlace`).
         schedule_water_tick_if_waterlogged(state, world, pos);
         state
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation(), context.clicked_face());
-
-        for direction in directions {
-            // Wall hanging signs face perpendicular to the wall they're attached to
-            // Skip if the clicked face is on the same axis
-            if direction.axis() == context.clicked_face().axis() {
+        // Vanilla `WallHangingSignBlock.getStateForPlacement`: skip directions
+        // on the clicked face's axis, then check `canPlace`.
+        for direction in context.get_nearest_looking_directions() {
+            if !direction.is_horizontal() || direction.axis() == context.clicked_face().axis() {
                 continue;
             }
-
             let facing = direction.opposite();
-
-            // Check if sign can survive with this facing
             if can_wall_hanging_sign_survive(context.world, context.place_pos(), facing) {
                 return Some(
                     self.block
                         .default_state()
-                        .set_value(HORIZONTAL_FACING, facing),
+                        .set_value(HORIZONTAL_FACING, facing)
+                        .set_value(WATERLOGGED, context.is_water_source()),
                 );
             }
         }
@@ -827,9 +803,14 @@ impl BlockBehavior for WallHangingSignBlock {
         pos: BlockPos,
         player: &Player,
         _hand: InteractionHand,
-        _hit_result: &BlockHitResult,
+        hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
+        if !is_hitting_editable_side(state, hit_result)
+            && should_try_to_chain_hanging_sign(state, world, pos, player, inv)
+        {
+            return InteractionResult::Pass;
+        }
         try_apply_sign_item(state, world, pos, player, inv)
     }
 
@@ -873,8 +854,6 @@ mod tests {
     use crate::test_support::{
         TestLevel, TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk,
     };
-
-    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn standing_sign_only_schedules_water_when_support_survives() {
@@ -1059,3 +1038,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod placement_tests;
