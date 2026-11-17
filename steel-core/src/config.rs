@@ -79,6 +79,9 @@ pub struct RuntimeConfig {
     pub velocity_secret: Option<String>,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     pub allow_flight: bool,
+    /// Vanilla `force-gamemode`: players join, and `/defaultgamemode` moves
+    /// every online player, in their domain's default game mode.
+    pub force_gamemode: bool,
     /// The message of the day.
     pub motd: String,
     /// Whether to use a favicon.
@@ -121,6 +124,7 @@ impl Default for RuntimeConfig {
             encryption: true,
             velocity_secret: None,
             allow_flight: false,
+            force_gamemode: false,
             motd: "A Steel Server".to_owned(),
             use_favicon: true,
             favicon: "config/favicon.png".to_owned(),

@@ -250,16 +250,30 @@ impl Server {
         match &state.data {
             DomainPlayerData::SavedRestored { data } => {
                 data.apply_to_player(player);
+                Self::force_default_game_mode(player, &state.world);
             }
             DomainPlayerData::SavedWithoutLocation { data, spawn } => {
                 apply_default_spawn(player, &state.world, *spawn);
                 data.apply_to_player_without_location(player);
+                Self::force_default_game_mode(player, &state.world);
             }
             DomainPlayerData::FirstVisit { spawn } => {
                 player.reset_domain_data_for_first_visit();
                 apply_default_spawn(player, &state.world, *spawn);
             }
         }
+    }
+
+    /// Vanilla `ServerPlayer.calculateGameModeForNewPlayer` on a dedicated
+    /// server: with `force-gamemode`, a returning player's saved game mode is
+    /// replaced by the default one.
+    pub(super) fn force_default_game_mode(player: &Player, world: &World) {
+        if !player.config.force_gamemode {
+            return;
+        }
+        let forced = world.default_gamemode();
+        player.restore_game_modes(forced, player.previous_game_mode());
+        player.abilities.lock().update_for_game_mode(forced);
     }
 
     pub(super) fn prepare_domain_restores(

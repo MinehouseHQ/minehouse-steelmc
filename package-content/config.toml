@@ -26,6 +26,8 @@ online_mode = true
 encryption = true
 # Whether the server allows unauthorized client flight
 allow_flight = false
+# Whether players always join in their domain's default game mode
+force_gamemode = false
 # Message of the day displayed in server lists
 motd = "A Steel Server"
 

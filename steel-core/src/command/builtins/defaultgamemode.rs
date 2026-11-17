@@ -1,5 +1,8 @@
 //! Vanilla `/defaultgamemode` command setting the default game mode for a domain's worlds.
 
+use std::sync::Arc;
+
+use steel_utils::types::GameType;
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -12,6 +15,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use super::gamemode::game_mode_translation;
+use crate::world::World;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("defaultgamemode"), |_| command())
@@ -55,19 +59,37 @@ fn apply_default_game_mode(
     let game_mode = context.game_mode("gamemode")?;
     let worlds = context.source().server().worlds.worlds_in_domain(domain);
 
-    for world in worlds {
+    for world in &worlds {
         world.set_default_gamemode(game_mode);
     }
-
-    // TODO: Enforce the new game mode on online players when `force-gamemode=true` and return the
-    // count of updated players. This also needs to apply when saved players join, requiring a shared
-    // `force-gamemode` foundation.
+    let count = if context.source().server().config.force_gamemode {
+        enforce_game_mode(&worlds, game_mode)
+    } else {
+        0
+    };
 
     let message = translations::COMMANDS_DEFAULTGAMEMODE_SUCCESS
         .message([TextComponent::from(game_mode_translation(game_mode))])
         .component();
     context.source().send_success(&message, true);
-    Ok(0)
+    Ok(count)
+}
+
+/// Vanilla `MinecraftServer.enforceGameTypeForPlayers`: moves every player in
+/// `worlds` to `game_mode`, counting those whose mode changed.
+fn enforce_game_mode(worlds: &[Arc<World>], game_mode: GameType) -> i32 {
+    let mut players = Vec::new();
+    for world in worlds {
+        world.players.iter_players(|_, player| {
+            players.push(Arc::clone(player));
+            true
+        });
+    }
+    let changed = players
+        .iter()
+        .filter(|player| player.set_game_mode(game_mode))
+        .count();
+    i32::try_from(changed).unwrap_or(i32::MAX)
 }
 
 #[cfg(test)]

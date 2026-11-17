@@ -376,6 +376,10 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             .sample(quart_x, quart_y, quart_z)
     }
 
+    fn possible_biomes(&self) -> Vec<BiomeRef> {
+        self.biome_source.possible_biome_refs()
+    }
+
     fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
         self.biome_source.initial_spawn_search_origin()
     }

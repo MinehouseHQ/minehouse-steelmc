@@ -256,6 +256,10 @@ impl ChunkGenerator for FlatChunkGenerator {
         &vanilla_biomes::PLAINS
     }
 
+    fn possible_biomes(&self) -> Vec<BiomeRef> {
+        vec![&vanilla_biomes::PLAINS]
+    }
+
     fn spawn_height(&self, min_y: i32, height: i32) -> i32 {
         min_y + height.min(self.layers.len() as i32)
     }

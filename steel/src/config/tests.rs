@@ -67,6 +67,7 @@ fn packaged_config_matches_the_runtime_config_defaults() {
         encryption,
         velocity_secret,
         allow_flight,
+        force_gamemode,
         motd,
         use_favicon,
         favicon,
@@ -96,6 +97,7 @@ fn packaged_config_matches_the_runtime_config_defaults() {
     assert_eq!(encryption, defaults.encryption);
     assert_eq!(velocity_secret, defaults.velocity_secret);
     assert_eq!(allow_flight, defaults.allow_flight);
+    assert_eq!(force_gamemode, defaults.force_gamemode);
     assert_eq!(motd, defaults.motd);
     assert_eq!(use_favicon, defaults.use_favicon);
     assert_eq!(favicon, defaults.favicon);

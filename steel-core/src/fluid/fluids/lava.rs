@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use rand::RngExt as _;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -12,13 +13,16 @@ use steel_registry::items::ItemRef;
 use steel_registry::level_events;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
+use steel_utils::ChunkPos;
 use steel_utils::types::UpdateFlags;
 
+use crate::behavior::blocks::FireBlock;
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{
@@ -50,9 +54,97 @@ impl LavaFluid {
             NORMAL_LAVA_ENTITY_FLOW_SCALE
         }
     }
+
+    /// Vanilla `LavaFluid.isFlammable`: an unloaded position never catches.
+    fn is_flammable(world: &World, pos: BlockPos) -> bool {
+        if !world.is_outside_build_height(pos.y()) && !is_loaded(world, pos) {
+            return false;
+        }
+        world
+            .get_block_state(pos)
+            .get_block()
+            .config
+            .ignited_by_lava
+    }
+
+    /// Whether a block beside `pos` catches fire from lava, as in vanilla `LavaFluid`.
+    fn has_flammable_neighbors(world: &World, pos: BlockPos) -> bool {
+        Direction::ALL
+            .into_iter()
+            .any(|direction| Self::is_flammable(world, pos.relative(direction)))
+    }
+
+    /// Vanilla `randomTick`, upward branch: climbs one to two blocks and
+    /// lights the first air that touches something flammable.
+    fn ignite_above(world: &Arc<World>, pos: BlockPos, passes: i32) {
+        let mut rng = rand::rng();
+        let mut test_pos = pos;
+        for _ in 0..passes {
+            test_pos = test_pos.offset(rng.random_range(0..3) - 1, 1, rng.random_range(0..3) - 1);
+            if !is_loaded(world, test_pos) {
+                return;
+            }
+            let state = world.get_block_state(test_pos);
+            if state.is_air() {
+                if Self::has_flammable_neighbors(world, test_pos) {
+                    world.set_block(
+                        test_pos,
+                        FireBlock::get_state(world.as_ref(), test_pos),
+                        UpdateFlags::UPDATE_ALL,
+                    );
+                    return;
+                }
+            } else if state
+                .get_block()
+                .has_tag(&BlockTag::BLOCKS_LAVA_FIRE_SPREAD)
+            {
+                return;
+            }
+        }
+    }
+
+    /// Vanilla `randomTick`, level branch: three tries at setting fire on top
+    /// of a flammable block beside the lava.
+    fn ignite_beside(world: &Arc<World>, pos: BlockPos) {
+        let mut rng = rand::rng();
+        for _ in 0..3 {
+            let test_pos = pos.offset(rng.random_range(0..3) - 1, 0, rng.random_range(0..3) - 1);
+            if !is_loaded(world, test_pos) {
+                return;
+            }
+            if world.get_block_state(test_pos.above()).is_air()
+                && Self::is_flammable(world, test_pos)
+            {
+                world.set_block(
+                    test_pos.above(),
+                    FireBlock::get_state(world.as_ref(), test_pos),
+                    UpdateFlags::UPDATE_ALL,
+                );
+            }
+        }
+    }
+}
+
+/// Vanilla `Level.isLoaded`.
+fn is_loaded(world: &World, pos: BlockPos) -> bool {
+    world.has_full_chunk(ChunkPos::from_block_pos(pos))
 }
 
 impl FluidBehavior for LavaFluid {
+    /// Vanilla `LavaFluid.randomTick`: lava sets nearby flammable blocks on
+    /// fire when the fire tick game rule allows it.
+    fn random_tick(&self, world: &Arc<World>, pos: BlockPos) {
+        if !world.can_spread_fire_around(pos) {
+            return;
+        }
+        let passes = rand::rng().random_range(0..3);
+        if passes > 0 {
+            Self::ignite_above(world, pos, passes);
+        } else {
+            Self::ignite_beside(world, pos);
+        }
+    }
+
     fn pickup_sound(&self) -> Option<SoundEventRef> {
         Some(&sound_events::ITEM_BUCKET_FILL_LAVA)
     }
