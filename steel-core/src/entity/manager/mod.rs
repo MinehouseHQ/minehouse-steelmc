@@ -2140,7 +2140,7 @@ impl WorldEntityManager {
 
             // Vanilla deliberately has no same-tick de-duplication here. A relationship change
             // may make an entity tick once as a passenger and once from its later root-list slot.
-            self.tick_non_passenger(&entity, &mut dirty_chunks);
+            self.tick_non_passenger(&entity, entity_chunk.is_some(), &mut dirty_chunks);
         }
         dirty_chunks
     }
@@ -2334,11 +2334,23 @@ impl WorldEntityManager {
         }
     }
 
-    fn tick_non_passenger(&self, entity: &SharedEntity, dirty_chunks: &mut FxHashSet<ChunkPos>) {
+    /// Ticks a root entity. `manager_owned` comes from the tick context read
+    /// just before, so marking its chunk dirty needs no second manager lock.
+    fn tick_non_passenger(
+        &self,
+        entity: &SharedEntity,
+        manager_owned: bool,
+        dirty_chunks: &mut FxHashSet<ChunkPos>,
+    ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
         Arc::clone(entity).tick();
-        self.mark_dirty_after_tick(entity, dirty_chunks);
+        // Ownership never changes while an entity is live. An entity that left
+        // the manager during its own tick still marks its last chunk, which at
+        // worst saves that chunk once more.
+        if manager_owned {
+            dirty_chunks.insert(ChunkPos::from_entity_pos(entity.position()));
+        }
         self.tick_vehicle_passengers(entity.as_ref(), dirty_chunks);
     }
 
