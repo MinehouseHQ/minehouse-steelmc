@@ -6,11 +6,13 @@ use steel_registry::data_components::vanilla_components::{POTION_CONTENTS, Potio
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items, vanilla_potions};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, WorldAabb};
 
 use crate::behavior::dispense::{BlockSource, DispenseBehavior};
 use crate::behavior::init_behaviors;
 use crate::block_entity::entities::DispenserBlockEntity;
+use crate::block_entity::init_block_entities;
+use crate::entity::entities::ItemEntity;
 use crate::entity::init_entities;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::World;
@@ -22,6 +24,7 @@ fn world(name: &'static str) -> Arc<World> {
     init_vanilla_registry();
     init_behaviors();
     init_entities();
+    init_block_entities();
     let fixture = fresh_test_world(name);
     insert_ready_full_chunk(&fixture.world, ChunkPos::new(0, 0));
     Arc::clone(&fixture.world)
@@ -134,4 +137,60 @@ fn flint_and_steel_sets_fire_to_air_in_front() {
         &vanilla_blocks::FIRE
     );
     assert_eq!(rest.get_damage_value(), 1);
+}
+
+#[test]
+fn shears_harvest_a_full_beehive_in_front() {
+    let world = world("dispense_shears_beehive");
+    put_in_front(
+        &world,
+        vanilla_blocks::BEEHIVE
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL_HONEY, 5),
+    );
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::SHEARS));
+
+    assert_eq!(
+        world
+            .get_block_state(FRONT)
+            .get_value(&BlockStateProperties::LEVEL_HONEY),
+        0,
+        "the hive's honey is reset"
+    );
+    assert_eq!(rest.get_damage_value(), 1, "the shears wear down");
+    let honeycombs: i32 = world
+        .get_entities_in_aabb(&WorldAabb::new(4.0, 63.0, 3.0, 7.0, 66.0, 6.0))
+        .iter()
+        .filter_map(|entity| {
+            entity
+                .downcast_ref::<ItemEntity>()
+                .map(ItemEntity::get_item)
+        })
+        .filter(|item| item.is(&vanilla_items::HONEYCOMB))
+        .map(|item| item.count())
+        .sum();
+    assert_eq!(
+        honeycombs, 3,
+        "the harvest loot table drops three honeycombs"
+    );
+}
+
+#[test]
+fn shears_leave_a_beehive_that_is_not_full() {
+    let world = world("dispense_shears_beehive_not_full");
+    put_in_front(
+        &world,
+        vanilla_blocks::BEEHIVE
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL_HONEY, 4),
+    );
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::SHEARS));
+
+    assert_eq!(
+        world
+            .get_block_state(FRONT)
+            .get_value(&BlockStateProperties::LEVEL_HONEY),
+        4
+    );
+    assert_eq!(rest.get_damage_value(), 0, "a failed shear costs nothing");
 }

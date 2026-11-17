@@ -76,7 +76,6 @@ impl BlockBehavior for WeatheringLightningRodBlock {
         self.lightning_rod
             .get_direct_signal(state, world, pos, direction, context)
     }
-    //TODO: override onLightningStrike() once it gets implemented
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.lightning_rod.tick(state, world, pos);

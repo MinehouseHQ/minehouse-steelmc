@@ -1,6 +1,7 @@
 //! Dispenser behaviors that work on the block or entity in front: the glass
 //! bottle, glowstone, brush, honeycomb and water potion entries of Vanilla
-//! `DispenseItemBehavior.bootStrap`, and the powder snow bucket.
+//! `DispenseItemBehavior.bootStrap`, the powder snow bucket, and the beehive
+//! half of the shears.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -68,6 +69,43 @@ pub(super) fn glass_bottle(source: &BlockSource<'_>, stack: ItemStack) -> (ItemS
         return (take_liquid(source, stack, water), true);
     }
     (default_execute(source, stack), false)
+}
+
+/// Vanilla `ShearsDispenseItemBehavior.tryShearBeehive`: harvests the
+/// honeycomb of a full hive in front and releases its bees.
+pub(super) fn try_shear_beehive(source: &BlockSource<'_>, tool: &ItemStack) -> bool {
+    let world = source.world;
+    let target = source.target();
+    let state = world.get_block_state(target);
+    if !state.get_block().has_tag(&BlockTag::BEEHIVES)
+        || state
+            .try_get_value(&BlockStateProperties::LEVEL_HONEY)
+            .is_none_or(|level| level < FULL_HONEY_LEVEL)
+    {
+        return false;
+    }
+    world.play_sound(
+        &sound_events::BLOCK_BEEHIVE_SHEAR,
+        SoundSource::Blocks,
+        target,
+        1.0,
+        1.0,
+        None,
+    );
+    BeehiveBlock::drop_honeycomb(world, tool, state, target, None);
+    BeehiveBlock::release_bees_and_reset_honey_level(
+        world,
+        state,
+        target,
+        None,
+        BeeReleaseStatus::BeeReleased,
+    );
+    world.game_event(
+        &vanilla_game_events::SHEAR,
+        target,
+        &GameEventContext::new(None, None),
+    );
+    true
 }
 
 fn take_liquid(source: &BlockSource<'_>, stack: ItemStack, filled: ItemStack) -> ItemStack {

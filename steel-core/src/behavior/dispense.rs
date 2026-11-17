@@ -635,11 +635,12 @@ fn bone_meal(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool
     (stack, success)
 }
 
-/// Vanilla `ShearsDispenseItemBehavior`.
-// TODO: Harvest full beehives once beehive honey harvesting exists.
+/// Vanilla `ShearsDispenseItemBehavior`: shears a full hive in front, or
+/// else the first entity there that can be sheared.
 fn shears(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool) {
     let pos = source.target();
-    let success = shear_entity(source.world, pos, &stack);
+    let success = block_interactions::try_shear_beehive(source, &stack)
+        || shear_entity(source.world, pos, &stack);
     if success {
         stack.hurt_and_break(1, false);
     }
