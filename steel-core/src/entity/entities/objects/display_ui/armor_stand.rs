@@ -487,6 +487,11 @@ impl ArmorStandEntity {
 }
 
 impl Entity for ArmorStandEntity {
+    /// Vanilla `ArmorStand.getPickResult`.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::ARMOR_STAND))
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

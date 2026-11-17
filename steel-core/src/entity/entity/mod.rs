@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use crate::behavior::items::SpawnEggItem;
 use crate::block_entity::container_openers::ContainerUser;
 use crate::enchantment_helper;
 use crate::entity::damage::combat_tracker;
@@ -1844,6 +1845,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a mob when it has mob behavior.
     fn as_mob(&self) -> Option<&dyn Mob> {
         try_as_dyn::<Self, dyn Mob>(self)
+    }
+
+    /// Vanilla `getPickResult`: the item a pick-block on this entity gives.
+    ///
+    /// Mobs give their spawn egg; other entities give nothing unless they
+    /// override this.
+    fn pick_result(&self) -> Option<ItemStack> {
+        self.as_mob()?;
+        SpawnEggItem::by_entity_type(self.entity_type()).map(ItemStack::new)
     }
 
     /// Returns this entity as a mob that opens containers itself, Vanilla

@@ -372,6 +372,11 @@ impl BlockAttachedEntity for CushionEntity {
 }
 
 impl Entity for CushionEntity {
+    /// Vanilla `Cushion.getPickResult`: the cushion of this color.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(Self::cushion_item(self.color())))
+    }
+
     /// Vanilla `Cushion.thunderHit`: lightning breaks the cushion.
     fn thunder_hit(&self, _world: &World, lightning: &LightningBoltEntity) {
         if !self.is_removed() {

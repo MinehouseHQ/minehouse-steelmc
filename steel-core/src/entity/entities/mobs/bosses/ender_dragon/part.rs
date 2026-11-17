@@ -9,6 +9,7 @@ use std::sync::Weak;
 
 use glam::DVec3;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::item_stack::ItemStack;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
 use super::EnderDragonEntity;
@@ -87,6 +88,13 @@ impl Entity for EnderDragonPartEntity {
 
     fn is_pickable(&self) -> bool {
         true
+    }
+
+    /// Vanilla `EnderDragonPart.getPickResult`: the dragon's pick result.
+    fn pick_result(&self) -> Option<ItemStack> {
+        self.level()?
+            .get_entity_by_id(self.parent_id)?
+            .pick_result()
     }
 
     /// Vanilla `EnderDragonPart.hurtServer`: the dragon takes the hit for this

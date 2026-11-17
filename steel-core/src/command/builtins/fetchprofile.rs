@@ -6,7 +6,7 @@ use simdnbt::ToNbtTag as _;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::resolvable_profile::ResolvableProfile;
 use steel_utils::nbt::to_canonical_snbt;
-use steel_utils::{Identifier, translations};
+use steel_utils::{Downcast as _, Identifier, translations};
 use text_components::content::{Object, ObjectPlayer, PlayerProperties};
 use text_components::{
     Modifier as _, TextComponent, format::Color, interactivity::ClickEvent,
@@ -22,7 +22,8 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::Entity as _;
+use crate::entity::Entity;
+use crate::entity::entities::MannequinEntity;
 
 type Context = SteelCommandContext<CommandSource>;
 
@@ -96,23 +97,38 @@ fn resolve_id(context: &Context, id: Uuid) {
     });
 }
 
-/// Vanilla `printForEntity`: only players carry a profile.
+/// Vanilla `printForEntity`: only avatars (players and mannequins) carry a
+/// profile.
 fn print_for_entity(context: &Context) -> Result<i32, CommandSyntaxError> {
     let entity = context.entity("entity")?;
-    let Some(player) = entity.as_player() else {
-        return Err(CommandSyntaxError::dynamic(
+    if print_for_avatar(context.source(), entity.as_ref()) {
+        Ok(1)
+    } else {
+        Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_FETCHPROFILE_NO_PROFILE
                 .message([entity.display_name()])
                 .component(),
-        ));
+        ))
+    }
+}
+
+/// Vanilla `printForAvatar`: reports the profile of `entity` when it is an
+/// avatar (a player or a mannequin). Returns `false` for other entities.
+pub(crate) fn print_for_avatar(source: &CommandSource, entity: &dyn Entity) -> bool {
+    let profile = if let Some(player) = entity.as_player() {
+        ResolvableProfile::from(player.gameprofile.clone())
+    } else if let Some(mannequin) = entity.downcast_ref::<MannequinEntity>() {
+        mannequin.profile()
+    } else {
+        return false;
     };
     report_resolved_profile(
-        context.source(),
+        source,
         &translations::COMMANDS_FETCHPROFILE_ENTITY_SUCCESS,
-        player.display_name(),
-        &ResolvableProfile::from(player.gameprofile.clone()),
+        entity.display_name(),
+        &profile,
     );
-    Ok(1)
+    true
 }
 
 /// Vanilla `reportResolvedProfile`: the profile as SNBT behind buttons that

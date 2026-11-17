@@ -509,6 +509,16 @@ impl ItemFrame for ItemFrameEntity {
 }
 
 impl Entity for ItemFrameEntity {
+    /// Vanilla `ItemFrame.getPickResult`: the framed item, or the frame itself when empty.
+    fn pick_result(&self) -> Option<ItemStack> {
+        let item = self.item();
+        Some(if item.is_empty() {
+            self.frame_item_with_data()
+        } else {
+            item
+        })
+    }
+
     /// Vanilla `ItemFrame.getSlot`: slot 0 is the framed item.
     fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
         (slot == 0).then(|| SlotAccess::of(|| self.item(), |stack| self.set_item(stack)))

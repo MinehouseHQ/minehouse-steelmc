@@ -166,6 +166,11 @@ impl LeashFenceKnotEntity {
 }
 
 impl Entity for LeashFenceKnotEntity {
+    /// Vanilla `LeashFenceKnotEntity.getPickResult`.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::LEAD))
+    }
+
     /// Vanilla `BlockAttachedEntity.thunderHit` ignores lightning.
     fn thunder_hit(&self, _world: &World, _lightning: &LightningBoltEntity) {}
 

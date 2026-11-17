@@ -8,6 +8,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::{AbstractBoatEntityData, VehicleEntityData};
 use steel_registry::vanilla_game_events;
@@ -440,6 +441,11 @@ macro_rules! boat_entity {
     (@entity_methods) => {
         fn base(&self) -> &EntityBase {
             &self.base
+        }
+
+        /// Vanilla `AbstractBoat.getPickResult`: the boat's drop item.
+        fn pick_result(&self) -> Option<ItemStack> {
+            Some(ItemStack::new(VehicleEntity::drop_item(self)))
         }
 
         fn entity_type(&self) -> EntityTypeRef {

@@ -77,6 +77,7 @@ mod weather;
 mod worldborder;
 
 pub(crate) use difficulty::player_can_change_difficulty;
+pub(crate) use fetchprofile::print_for_avatar;
 pub(crate) use gamerule::{game_rule_values, player_can_request_game_rule_values};
 
 use super::{

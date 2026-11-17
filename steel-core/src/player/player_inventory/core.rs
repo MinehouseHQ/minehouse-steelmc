@@ -386,34 +386,31 @@ impl PlayerInventory {
             .map(|i| i as u8)
     }
 
-    /// Swaps items between selected hotbar slot and the given slot.
-    /// Used for pick block when item is in main inventory but not hotbar.
+    /// Vanilla `Inventory.pickSlot`: selects the suitable hotbar slot and
+    /// swaps it with `slot`. Used by pick block when the item is in the main
+    /// inventory.
     pub fn pick_slot(&mut self, slot: u8) {
-        let slot = slot as usize;
-        if slot >= Self::INVENTORY_SIZE {
+        if usize::from(slot) >= Self::INVENTORY_SIZE {
             return;
         }
-        let selected = self.selected as usize;
-        self.items.swap(selected, slot);
+        self.set_selected_slot(self.get_suitable_hotbar_slot());
+        self.items
+            .swap(usize::from(self.selected), usize::from(slot));
         self.set_changed();
     }
 
-    /// Adds an item to the hotbar (for creative pick block) and selects it.
-    /// Returns true if successful.
-    pub fn add_and_pick_item(&mut self, stack: ItemStack) -> bool {
-        // Find first empty hotbar slot
-        for i in 0..Self::SELECTION_SIZE {
-            let j = usize::from(i);
-            if self.items[j].is_empty() {
-                self.items[j] = stack;
-                self.selected = i;
-                self.set_changed();
-                return true;
-            }
+    /// Vanilla `Inventory.addAndPickItem`: selects the suitable hotbar slot,
+    /// moves what it holds to the first free slot if there is one, and puts
+    /// `stack` there. Used by creative pick block.
+    pub fn add_and_pick_item(&mut self, stack: ItemStack) {
+        self.set_selected_slot(self.get_suitable_hotbar_slot());
+        let selected = usize::from(self.selected);
+        if !self.items[selected].is_empty()
+            && let Some(free_slot) = self.get_free_slot()
+        {
+            self.items[usize::from(free_slot)] = self.items[selected].clone();
         }
-        // No empty slot, replace current slot
-        self.items[self.selected as usize] = stack;
+        self.items[selected] = stack;
         self.set_changed();
-        true
     }
 }

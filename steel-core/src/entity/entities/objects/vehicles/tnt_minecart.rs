@@ -10,6 +10,7 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -262,6 +263,11 @@ fn horizontal_distance_sqr(velocity: DVec3) -> f64 {
 }
 
 impl Entity for TntMinecartEntity {
+    /// Vanilla `MinecartTNT.getPickResult`.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::TNT_MINECART))
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

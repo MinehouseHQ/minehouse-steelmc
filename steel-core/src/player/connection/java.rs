@@ -17,11 +17,12 @@ use steel_protocol::packets::game::{
     SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SEditBook, SInteract, SJigsawGenerate, SMovePlayer, SMovePlayerPos,
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
-    SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
-    SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
-    SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSetJigsawBlock,
-    SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SPickItemFromBlock, SPickItemFromEntity, SPlaceRecipe, SPlayerAbilities, SPlayerAction,
+    SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings,
+    SRecipeBookSeenRecipe, SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade,
+    SSetBeacon, SSetCarriedItem, SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot,
+    SSetJigsawBlock, SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction,
+    STeleportToEntity, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -126,9 +127,11 @@ enum ScheduledPlayPacketKind {
     Punch(SPunch),
     PlayerAction(SPlayerAction),
     PickItemFromBlock(SPickItemFromBlock),
+    PickItemFromEntity(SPickItemFromEntity),
     SignUpdate(SSignUpdate),
     EditBook(SEditBook),
     SpectatorAction(SSpectatorAction),
+    TeleportToEntity(STeleportToEntity),
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
@@ -246,6 +249,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SetTestBlock(_)
             | ScheduledPlayPacketKind::JigsawGenerate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
+            | ScheduledPlayPacketKind::PickItemFromEntity(_)
+            | ScheduledPlayPacketKind::TeleportToEntity(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_)
             | ScheduledPlayPacketKind::UpdateSelectedTab(_) => ScheduledPacketExecution::Serialized,
@@ -364,6 +369,12 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::PickItemFromBlock(packet) => {
                 player.handle_pick_item_from_block(packet);
+            }
+            ScheduledPlayPacketKind::PickItemFromEntity(packet) => {
+                player.handle_pick_item_from_entity(&packet, server);
+            }
+            ScheduledPlayPacketKind::TeleportToEntity(packet) => {
+                player.handle_teleport_to_entity(&packet, server);
             }
             ScheduledPlayPacketKind::SignUpdate(packet) => player.handle_sign_update(packet),
             ScheduledPlayPacketKind::SetCommandBlock(packet) => {
@@ -896,6 +907,11 @@ impl JavaConnection {
             play::S_PICK_ITEM_FROM_BLOCK => scheduled(ScheduledPlayPacketKind::PickItemFromBlock(
                 SPickItemFromBlock::read_packet(data)?,
             )),
+            play::S_PICK_ITEM_FROM_ENTITY => {
+                scheduled(ScheduledPlayPacketKind::PickItemFromEntity(
+                    SPickItemFromEntity::read_packet(data)?,
+                ))
+            }
             play::S_SIGN_UPDATE => scheduled(ScheduledPlayPacketKind::SignUpdate(
                 SSignUpdate::read_packet(data)?,
             )),
@@ -922,6 +938,9 @@ impl JavaConnection {
             )),
             play::S_SPECTATOR_ACTION => scheduled(ScheduledPlayPacketKind::SpectatorAction(
                 SSpectatorAction::read_packet(data)?,
+            )),
+            play::S_TELEPORT_TO_ENTITY => scheduled(ScheduledPlayPacketKind::TeleportToEntity(
+                STeleportToEntity::read_packet(data)?,
             )),
             play::S_CLIENT_COMMAND => scheduled(ScheduledPlayPacketKind::ClientCommand(
                 SClientCommand::read_packet(data)?,
