@@ -75,6 +75,9 @@ impl Player {
         *self.advancements.lock() = old_player.advancements.lock().clone();
         *self.seen_credits.lock() = *old_player.seen_credits.lock();
         self.set_warden_spawn_tracker(old_player.warden_spawn_tracker());
+        self.movement_criteria
+            .lock()
+            .restore_from(&old_player.movement_criteria.lock());
         self.set_recipe_book(old_player.recipe_book());
         self.set_waypoint_icon(old_player.waypoint_icon());
         self.set_shoulder_entity_left(old_player.shoulder_entity_left());

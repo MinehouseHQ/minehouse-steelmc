@@ -23,6 +23,8 @@ undescore = "undescore"
 convertable = "convertable"
 # Vanilla block name: OCHRE_FROGLIGHT.
 OCHRE = "OCHRE"
+# Vanilla criterion name in minecraft:nether/fast_travel.
+travelled = "travelled"
 
 [default.extend-identifiers]
 player_mode_customisation = "player_mode_customisation"

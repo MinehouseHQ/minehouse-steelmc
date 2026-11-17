@@ -38,6 +38,7 @@ use crate::permission::PermissionSubjectIndex;
 use crate::permission::PermissionSubjectState;
 use crate::player::KnownPlayers;
 use crate::player::Player;
+use crate::player::advancement::criteria::SavedMovementPositions;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::memory_storage::MemoryPlayerDataStorage;
 use crate::player::recipe_book::ServerRecipeBook;
@@ -50,7 +51,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 16;
+const PLAYER_STORAGE_VERSION: u16 = 17;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -126,6 +127,10 @@ struct PlayerDataFile {
     /// Vanilla `locator_bar_icon` as compound NBT bytes; empty for the
     /// default icon.
     locator_bar_icon: Vec<u8>,
+    /// Vanilla `entered_nether_pos`; empty or one `[x, y, z]`.
+    entered_nether_pos: Vec<[f64; 3]>,
+    /// Vanilla `last_explosion_impact_pos`; empty or one `[x, y, z]`.
+    last_explosion_impact_pos: Vec<[f64; 3]>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -407,6 +412,7 @@ impl PlayerDataStorage {
 
 impl PlayerDataFile {
     fn from_persistent(data: &PersistentPlayerData) -> io::Result<Self> {
+        let positions = data.movement_positions;
         let mut inventory = Vec::with_capacity(data.inventory.len());
         for slot in &data.inventory {
             inventory.push(SlotFile {
@@ -500,6 +506,8 @@ impl PlayerDataFile {
             } else {
                 Vec::new()
             },
+            entered_nether_pos: positions.entered_nether_pos.into_iter().collect(),
+            last_explosion_impact_pos: positions.last_explosion_impact_pos.into_iter().collect(),
         })
     }
 
@@ -592,6 +600,10 @@ impl PlayerDataFile {
                 &self.locator_bar_icon,
             ))
             .unwrap_or_default(),
+            movement_positions: SavedMovementPositions {
+                entered_nether_pos: self.entered_nether_pos.first().copied(),
+                last_explosion_impact_pos: self.last_explosion_impact_pos.first().copied(),
+            },
             capture_order: next_capture_order(),
         })
     }
@@ -712,21 +724,26 @@ fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
     // fields are appended empty before decoding: (storage version, data version, missing).
     let legacy = match stored_version(bytes) {
         // Before shoulder entities, active effects, the raid omen position,
-        // the warden spawn tracker, the recipe book and the locator bar icon.
-        Some(10) => Some((10, 7, 7)),
+        // the warden spawn tracker, the recipe book, the locator bar icon and
+        // the movement trigger positions.
+        Some(10) => Some((10, 7, 9)),
         // Before active effects, the raid omen position, the warden spawn
-        // tracker, the recipe book and the locator bar icon.
-        Some(11) => Some((11, 8, 5)),
+        // tracker, the recipe book, the locator bar icon and the movement
+        // trigger positions.
+        Some(11) => Some((11, 8, 7)),
         // Before the raid omen position, the warden spawn tracker, the
-        // recipe book and the locator bar icon.
-        Some(12) => Some((12, 9, 4)),
-        // Before the warden spawn tracker, the recipe book and the locator
-        // bar icon.
-        Some(13) => Some((13, 10, 3)),
-        // Before the recipe book and the locator bar icon.
-        Some(14) => Some((14, 11, 2)),
-        // Before the locator bar icon.
-        Some(15) => Some((15, 12, 1)),
+        // recipe book, the locator bar icon and the movement trigger positions.
+        Some(12) => Some((12, 9, 6)),
+        // Before the warden spawn tracker, the recipe book, the locator bar
+        // icon and the movement trigger positions.
+        Some(13) => Some((13, 10, 5)),
+        // Before the recipe book, the locator bar icon and the movement
+        // trigger positions.
+        Some(14) => Some((14, 11, 4)),
+        // Before the locator bar icon and the movement trigger positions.
+        Some(15) => Some((15, 12, 3)),
+        // Before `entered_nether_pos` and `last_explosion_impact_pos`.
+        Some(16) => Some((16, 13, 2)),
         _ => None,
     };
     let Some((storage_version, data_version, missing_fields)) = legacy else {

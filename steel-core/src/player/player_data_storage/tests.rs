@@ -18,6 +18,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use steel_protocol::packets::game::{RecipeBookType, WaypointIcon};
+
+use crate::player::advancement::criteria::SavedMovementPositions;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_custom_stats, vanilla_items,
@@ -82,6 +84,8 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         warden_spawn_tracker: Vec::new(),
         recipe_book: Vec::new(),
         locator_bar_icon: Vec::new(),
+        entered_nether_pos: Vec::new(),
+        last_explosion_impact_pos: Vec::new(),
     }
 }
 
@@ -548,7 +552,13 @@ fn player_files_with_shoulders_but_without_effects_still_load() {
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
     payload.truncate(
-        payload.len() - icon.len() - effects.len() - omen.len() - tracker.len() - book.len(),
+        payload.len()
+            - icon.len()
+            - movement_positions_len(&file)
+            - effects.len()
+            - omen.len()
+            - tracker.len()
+            - book.len(),
     );
     let encoded = encode_file(PLAYER_MAGIC, 11, Ok(payload)).expect("v11 file should encode");
 
@@ -993,7 +1003,14 @@ fn player_files_without_raid_omen_position_still_load() {
     let tracker = wincode::serialize(&file.warden_spawn_tracker).expect("tracker should serialize");
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len() - omen.len() - tracker.len() - book.len());
+    payload.truncate(
+        payload.len()
+            - icon.len()
+            - movement_positions_len(&file)
+            - omen.len()
+            - tracker.len()
+            - book.len(),
+    );
     let encoded = encode_file(PLAYER_MAGIC, 12, Ok(payload)).expect("v12 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 12 file should decode");
@@ -1029,7 +1046,9 @@ fn player_files_without_warden_spawn_tracker_still_load() {
     let tracker = wincode::serialize(&file.warden_spawn_tracker).expect("tracker should serialize");
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len() - tracker.len() - book.len());
+    payload.truncate(
+        payload.len() - icon.len() - movement_positions_len(&file) - tracker.len() - book.len(),
+    );
     let encoded = encode_file(PLAYER_MAGIC, 13, Ok(payload)).expect("v13 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 13 file should decode");
@@ -1064,7 +1083,7 @@ fn player_files_without_recipe_book_still_load() {
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len() - book.len());
+    payload.truncate(payload.len() - icon.len() - movement_positions_len(&file) - book.len());
     let encoded = encode_file(PLAYER_MAGIC, 14, Ok(payload)).expect("v14 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 14 file should decode");
@@ -1227,12 +1246,55 @@ fn player_files_without_locator_bar_icon_still_load() {
     let file = sample_player_file(12);
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len());
+    payload.truncate(payload.len() - icon.len() - movement_positions_len(&file));
     let encoded = encode_file(PLAYER_MAGIC, 15, Ok(payload)).expect("v15 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 15 file should decode");
     assert_eq!(decoded.data_version, PLAYER_DATA_VERSION);
     assert_eq!(decoded.locator_bar_icon, Vec::<u8>::new());
+}
+
+/// Encoded length of the trailing movement trigger positions (storage v17).
+fn movement_positions_len(file: &PlayerDataFile) -> usize {
+    wincode::serialize(&file.entered_nether_pos)
+        .expect("nether entry should serialize")
+        .len()
+        + wincode::serialize(&file.last_explosion_impact_pos)
+            .expect("explosion impact should serialize")
+            .len()
+}
+
+#[test]
+fn player_files_without_movement_positions_still_load() {
+    // Storage version 16 is the current layout without the trailing positions.
+    let file = sample_player_file(13);
+    let mut payload = wincode::serialize(&file).expect("player file should serialize");
+    payload.truncate(payload.len() - movement_positions_len(&file));
+    let encoded = encode_file(PLAYER_MAGIC, 16, Ok(payload)).expect("v16 file should encode");
+
+    let decoded = decode_player_file(&encoded).expect("a storage version 16 file should decode");
+    assert_eq!(decoded.data_version, PLAYER_DATA_VERSION);
+    assert_eq!(decoded.entered_nether_pos, Vec::<[f64; 3]>::new());
+    assert_eq!(decoded.last_explosion_impact_pos, Vec::<[f64; 3]>::new());
+}
+
+#[test]
+fn movement_positions_roundtrip() {
+    init_vanilla_registry();
+    let mut persistent = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+    persistent.movement_positions = SavedMovementPositions {
+        entered_nether_pos: Some([1.5, 64.0, -2.5]),
+        last_explosion_impact_pos: Some([3.0, 70.25, 4.0]),
+    };
+    let file = PlayerDataFile::from_persistent(&persistent).expect("player file should build");
+    let encoded = encode_player_file(&file).expect("player file should encode");
+    let decoded = decode_player_file(&encoded)
+        .expect("player file should decode")
+        .into_persistent()
+        .expect("player file should convert");
+    assert_eq!(decoded.movement_positions, persistent.movement_positions);
 }
 
 #[test]

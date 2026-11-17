@@ -21,6 +21,7 @@ use super::{
     Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
     player_inventory::PlayerInventory,
 };
+use crate::player::advancement::criteria::SavedMovementPositions;
 use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
@@ -33,7 +34,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 13;
+pub const PLAYER_DATA_VERSION: i32 = 14;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -163,6 +164,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla `locator_bar_icon`.
     pub locator_bar_icon: WaypointIcon,
+
+    /// Vanilla `entered_nether_pos` and `last_explosion_impact_pos`.
+    pub movement_positions: SavedMovementPositions,
 
     /// When this snapshot was taken, from [`next_capture_order`]. Not saved:
     /// storage uses it to never overwrite a newer snapshot with an older
@@ -345,6 +349,7 @@ impl PersistentPlayerData {
             warden_spawn_tracker: player.warden_spawn_tracker(),
             recipe_book: player.recipe_book(),
             locator_bar_icon: player.waypoint_icon(),
+            movement_positions: player.movement_criteria.lock().saved(),
             capture_order: next_capture_order(),
         }
     }
@@ -601,6 +606,10 @@ impl PersistentPlayerData {
         player.set_warden_spawn_tracker(self.warden_spawn_tracker);
         player.set_recipe_book(self.recipe_book.clone());
         player.set_waypoint_icon(self.locator_bar_icon.clone());
+        player
+            .movement_criteria
+            .lock()
+            .restore_saved(self.movement_positions);
 
         // Statistics
         {

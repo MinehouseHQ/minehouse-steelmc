@@ -2,6 +2,19 @@ use super::*;
 use steel_registry::init_vanilla_registry;
 
 #[test]
+fn distance_fields_decode_as_predicates_or_bounds() {
+    let predicate: Conditions = serde_json::from_str(r#"{"distance": {"y": {"min": 50.0}}}"#)
+        .expect("a distance predicate decodes");
+    assert!(matches!(
+        predicate.distance,
+        Some(DistanceField::Distance(_))
+    ));
+    let bounds: Conditions =
+        serde_json::from_str(r#"{"distance": {"min": 2.0}}"#).expect("ender eye bounds decode");
+    assert!(matches!(bounds.distance, Some(DistanceField::Bounds(_))));
+}
+
+#[test]
 fn every_vanilla_criterion_decodes() {
     init_vanilla_registry();
     let mut failures = Vec::new();
@@ -27,12 +40,15 @@ mod triggers {
     use super::super::{TICK, init_criteria};
     use crate::behavior::init_behaviors;
     use crate::entity::Entity as _;
+    use crate::entity::init_entities;
     use crate::entity::next_entity_id;
     use crate::inventory::container::{Container as _, SimpleContainer};
     use crate::inventory::menu::{MenuBuilder, kinds::BasicKind};
     use crate::player::Player;
     use crate::player::ResetReason;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{
+        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+    };
     use crate::world::World;
     use steel_registry::vanilla_blocks;
 
@@ -489,5 +505,134 @@ mod triggers {
                 .get_damage_value(),
             2
         );
+    }
+
+    fn movement_fixture(name: &'static str) -> (TestWorld, Arc<Player>) {
+        use glam::DVec3;
+        use steel_utils::ChunkPos;
+
+        setup();
+        init_entities();
+        let fixture = fresh_test_world(name);
+        insert_ready_full_chunk(
+            &fixture.world,
+            ChunkPos::from_entity_pos(DVec3::new(8.5, 64.0, 8.5)),
+        );
+        let player = player_in(&fixture.world, "Mover");
+        (fixture, player)
+    }
+
+    #[test]
+    fn levitating_fifty_blocks_grants_levitate() {
+        use glam::DVec3;
+        use steel_registry::vanilla_mob_effects;
+
+        use crate::entity::{LivingEntity as _, MobEffectInstance};
+
+        let (_fixture, player) = movement_fixture("criteria_levitate");
+        player
+            .teleport_to(DVec3::new(8.5, 64.0, 8.5))
+            .expect("the player can move");
+        assert!(player.add_mob_effect(MobEffectInstance::with_duration(
+            vanilla_mob_effects::LEVITATION,
+            200,
+            0
+        )));
+        player
+            .teleport_to(DVec3::new(8.5, 110.0, 8.5))
+            .expect("the player can move");
+        player.tick_movement_criteria();
+        assert!(!criterion_done(
+            &player,
+            "minecraft:end/levitate",
+            "levitated"
+        ));
+
+        player
+            .teleport_to(DVec3::new(8.5, 114.5, 8.5))
+            .expect("the player can move");
+        player.tick_movement_criteria();
+        assert!(criterion_done(
+            &player,
+            "minecraft:end/levitate",
+            "levitated"
+        ));
+    }
+
+    #[test]
+    fn falling_from_build_height_to_bedrock_grants_the_fall() {
+        use glam::DVec3;
+
+        let (_fixture, player) = movement_fixture("criteria_fall_from_height");
+        let advancement = "minecraft:adventure/fall_from_world_height";
+        player
+            .teleport_to(DVec3::new(8.5, 330.0, 8.5))
+            .expect("the player can move");
+        player.set_fall_distance(1.0);
+        player.tick_movement_criteria();
+        player
+            .teleport_to(DVec3::new(8.5, -60.0, 8.5))
+            .expect("the player can move");
+        player.reset_fall_distance();
+        assert!(criterion_done(
+            &player,
+            advancement,
+            "fall_from_world_height"
+        ));
+    }
+
+    #[test]
+    fn a_wind_charge_launch_grants_who_needs_rockets() {
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+
+        use crate::entity::create_entity_instance;
+
+        let (fixture, player) = movement_fixture("criteria_who_needs_rockets");
+        let advancement = "minecraft:adventure/who_needs_rockets";
+        let charge = create_entity_instance(
+            &fixture.world,
+            &vanilla_entities::WIND_CHARGE,
+            DVec3::new(8.5, 64.0, 8.5),
+        )
+        .expect("the wind charge can be created");
+        fixture
+            .world
+            .try_add_entity(Arc::clone(&charge))
+            .expect("the wind charge should attach to the loaded chunk");
+        player
+            .teleport_to(DVec3::new(8.5, 64.0, 8.5))
+            .expect("the player can move");
+        player.on_explosion_hit(Some(charge.as_ref()));
+        player
+            .teleport_to(DVec3::new(8.5, 72.0, 8.5))
+            .expect("the player can move");
+        player.set_fall_distance(0.5);
+        player.tick_movement_criteria();
+        assert!(criterion_done(&player, advancement, "who_needs_rockets"));
+    }
+
+    #[test]
+    fn traveling_through_the_nether_grants_fast_travel() {
+        use glam::DVec3;
+
+        let (_fixture, player) = movement_fixture("criteria_fast_travel");
+        let overworld = Identifier::vanilla_static("overworld");
+        let nether = Identifier::vanilla_static("the_nether");
+        player
+            .teleport_to(DVec3::new(8.5, 64.0, 8.5))
+            .expect("the player can move");
+        player.note_dimension_leaving(&overworld, &nether);
+        player.trigger_nether_travel(&overworld, &nether);
+        player
+            .teleport_to(DVec3::new(7020.5, 64.0, 8.5))
+            .expect("the player can move");
+        player.trigger_nether_travel(&nether, &overworld);
+        assert!(criterion_done(
+            &player,
+            "minecraft:nether/fast_travel",
+            "travelled"
+        ));
+        assert!(player.movement_criteria.lock().entered_nether().is_none());
     }
 }
