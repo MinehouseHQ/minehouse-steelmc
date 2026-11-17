@@ -1,12 +1,14 @@
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::{mem, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
     inventory::{
         lock::{ContainerLockGuard, ContainerRef},
-        slots::{ResultHandler, Slot, SlotStorage},
+        slots::{CraftedStat, ResultHandler, Slot, SlotStorage},
     },
     player::Player,
 };
@@ -15,6 +17,8 @@ use crate::{
 pub struct ResultSlot {
     handler: Arc<dyn ResultHandler + Send + Sync>,
     storage: SlotStorage,
+    /// Vanilla `removeCount`: the results taken since the crafted stat was last awarded.
+    remove_count: AtomicI32,
 }
 
 // SAFETY: This key uniquely identifies Steel's `ResultSlot`.
@@ -31,7 +35,32 @@ impl ResultSlot {
         Self {
             handler: Arc::new(handler),
             storage,
+            remove_count: AtomicI32::new(0),
         }
+    }
+
+    /// Whether this result counts the items taken, like vanilla `ResultSlot` and
+    /// `MerchantResultSlot`.
+    fn counts_removed(&self) -> bool {
+        matches!(
+            self.handler.crafted_stat(),
+            CraftedStat::Crafting | CraftedStat::Trading
+        )
+    }
+
+    /// The crafted-stat part of vanilla `checkTakeAchievements`, awarding `ITEM_CRAFTED` for
+    /// `carried` as the handler's [`CraftedStat`] says.
+    fn award_crafted(&self, carried: &ItemStack, player: &Player) {
+        let count = match self.handler.crafted_stat() {
+            CraftedStat::None => return,
+            CraftedStat::TakenStack => carried.count(),
+            CraftedStat::Crafting => match self.remove_count.swap(0, Ordering::Relaxed) {
+                0 => return,
+                count => count,
+            },
+            CraftedStat::Trading => self.remove_count.swap(0, Ordering::Relaxed),
+        };
+        player.award_stat_with_count(&vanilla_stat_types::ITEM_CRAFTED, carried.item(), count);
     }
 
     /// Returns the result container this slot derived from its handler.
@@ -93,7 +122,7 @@ impl Slot for ResultSlot {
         stack: &mut ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Track the crafted count and award ITEM_CRAFTED once stats are tracked per take.
+        self.award_crafted(stack, player);
         self.handler.on_crafted_by(stack, player);
         self.handler.on_result_taken(guard, player)
     }
@@ -102,8 +131,27 @@ impl Slot for ResultSlot {
         self.handler.on_crafted_by(stack, player);
     }
 
-    fn remove(&self, guard: &mut ContainerLockGuard, _amount: i32) -> ItemStack {
-        mem::take(self.get_item_mut(guard))
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        let taken = mem::take(self.get_item_mut(guard));
+        if !taken.is_empty() && self.counts_removed() {
+            self.remove_count
+                .fetch_add(amount.min(taken.count()), Ordering::Relaxed);
+        }
+        taken
+    }
+
+    fn on_quick_craft_count(&self, picked: &ItemStack, count: i32, player: &Player) {
+        if self.counts_removed() {
+            self.remove_count.fetch_add(count, Ordering::Relaxed);
+            self.award_crafted(picked, player);
+        }
+    }
+
+    /// Vanilla `ResultSlot.onSwapCraft`; a trade's result slot does not count swaps.
+    fn on_swap_craft(&self, count: i32) {
+        if self.handler.crafted_stat() == CraftedStat::Crafting {
+            self.remove_count.fetch_add(count, Ordering::Relaxed);
+        }
     }
 
     fn is_fake(&self) -> bool {

@@ -7,6 +7,19 @@ use crate::{
     player::Player,
 };
 
+/// How a result slot awards vanilla's `ITEM_CRAFTED` stat when its result is taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CraftedStat {
+    /// The result is not a craft, like an anvil's or a grindstone's.
+    None,
+    /// Vanilla `ResultSlot`: the items taken since the last award, when there are any.
+    Crafting,
+    /// Vanilla `MerchantResultSlot`: the items taken since the last award, even none.
+    Trading,
+    /// Vanilla stonecutter and smithing results: the size of the stack taken.
+    TakenStack,
+}
+
 /// A trait for recipe handlers that update slots in containers according to recipes
 pub trait ResultHandler: Send + Sync {
     /// The container the result is written to and read from.
@@ -31,6 +44,11 @@ pub trait ResultHandler: Send + Sync {
     /// nothing.
     fn on_crafted_by(&self, _stack: &mut ItemStack, _player: &Player) {}
 
+    /// How taking the result awards vanilla's `ITEM_CRAFTED` stat.
+    fn crafted_stat(&self) -> CraftedStat {
+        CraftedStat::None
+    }
+
     /// Consume inputs when the result is taken. Return overflow remainders.
     fn on_result_taken(&self, guard: &mut ContainerLockGuard, player: &Player)
     -> Option<ItemStack>;
@@ -54,6 +72,10 @@ impl<T: ResultHandler + ?Sized> ResultHandler for Arc<T> {
 
     fn on_crafted_by(&self, stack: &mut ItemStack, player: &Player) {
         (**self).on_crafted_by(stack, player);
+    }
+
+    fn crafted_stat(&self) -> CraftedStat {
+        (**self).crafted_stat()
     }
 
     fn on_result_taken(

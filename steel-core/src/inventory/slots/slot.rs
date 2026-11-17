@@ -185,6 +185,23 @@ pub trait Slot: ErasedType + Send + Sync {
     /// vanilla quick-move handlers make on a result stack before moving it.
     fn prepare_quick_move(&self, _stack: &mut ItemStack, _player: &Player) {}
 
+    /// Vanilla `Slot.onQuickCraft(picked, original)`: a shift-click moved
+    /// `original.count - picked.count` items out of this slot.
+    fn on_quick_craft(&self, picked: &ItemStack, original: &ItemStack, player: &Player) {
+        let count = original.count() - picked.count();
+        if count > 0 {
+            self.on_quick_craft_count(original, count, player);
+        }
+    }
+
+    /// Vanilla `Slot.onQuickCraft(picked, count)`: result slots count the `count` items a
+    /// shift-click crafted. Most slots do nothing.
+    fn on_quick_craft_count(&self, _picked: &ItemStack, _count: i32, _player: &Player) {}
+
+    /// Vanilla `Slot.onSwapCraft`: a hotbar swap took `count` items out of this slot. Most
+    /// slots do nothing.
+    fn on_swap_craft(&self, _count: i32) {}
+
     /// Takes items with all checks and callbacks. Returns the items taken.
     fn safe_take(
         &self,

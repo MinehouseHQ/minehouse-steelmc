@@ -206,6 +206,9 @@ impl MenuKind for FurnaceMenuKind {
         if !moved {
             return Some(ItemStack::empty());
         }
+        if self.result.contains(slot_index) {
+            behavior.slots()[slot_index].on_quick_craft(&remaining, &clicked, player);
+        }
         behavior.update_quick_move_source(guard, slot_index, &remaining, &clicked);
         if remaining.count() == clicked.count() {
             return Some(ItemStack::empty());
@@ -339,5 +342,45 @@ mod tests {
 
             assert!(menu.behavior().slots()[0].may_place(&stack));
         }
+    }
+
+    #[test]
+    fn taken_and_shift_clicked_results_count_the_items_smelted() {
+        use std::sync::Arc;
+
+        use steel_registry::stat::vanilla_stat_types::ITEM_CRAFTED;
+
+        use crate::behavior::init_behaviors;
+        use crate::inventory::click::{Click, MouseButton};
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+
+        init_vanilla_registry();
+        init_behaviors();
+        let world_fixture = fresh_test_world("furnace_menu_items_crafted");
+        let player = TestPlayerBuilder::new(Arc::clone(&world_fixture.world), "Smelter", 1).build();
+        let container = SimpleContainer::new(3).into_shared();
+        let mut menu = furnace_menu(
+            Arc::clone(&player.inventory),
+            1,
+            ContainerRef::from(Arc::clone(&container)),
+            FurnaceKind::Furnace,
+        );
+        let smelted = || player.stat(ITEM_CRAFTED.get(&vanilla_items::IRON_INGOT));
+
+        container
+            .lock()
+            .set_item(2, ItemStack::with_count(&vanilla_items::IRON_INGOT, 5));
+        menu.clicked(
+            Click::Pickup {
+                slot: 2,
+                button: MouseButton::Right,
+            },
+            &player,
+        );
+        assert_eq!(smelted(), 3, "half the output, rounded up, was taken");
+
+        menu.clicked(Click::QuickMove { slot: 2 }, &player);
+        assert_eq!(smelted(), 5, "the shift-clicked rest counts too");
+        assert!(container.lock().get_item(2).is_empty());
     }
 }

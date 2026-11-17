@@ -121,6 +121,11 @@ impl StonecutterResultHandler {
 }
 
 impl ResultHandler for StonecutterResultHandler {
+    /// Vanilla stonecutter result `onTake` counts the stack taken.
+    fn crafted_stat(&self) -> CraftedStat {
+        CraftedStat::TakenStack
+    }
+
     fn result_container(&self) -> ContainerRef {
         ContainerRef::from(Arc::clone(&self.result_container))
     }

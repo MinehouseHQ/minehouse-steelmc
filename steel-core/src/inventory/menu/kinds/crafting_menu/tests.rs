@@ -288,3 +288,58 @@ fn taking_a_crafted_result_unlocks_its_recipe_and_limited_crafting_needs_it() {
     let mut menu = crafting(Arc::clone(&player.inventory), 3, pos);
     assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
 }
+
+/// The player's vanilla `ITEM_CRAFTED` count for oak planks.
+fn planks_crafted(player: &Player) -> i32 {
+    use steel_registry::stat::vanilla_stat_types::ITEM_CRAFTED;
+    player.stat(ITEM_CRAFTED.get(&vanilla_items::OAK_PLANKS))
+}
+
+#[test]
+fn taking_and_shift_clicking_results_count_the_items_crafted() {
+    use crate::inventory::click::SwapTarget;
+
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("crafting_menu_items_crafted");
+    let world = &world_fixture.world;
+    let pos = BlockPos::new(0, 64, 0);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::CRAFTING_TABLE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
+    player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
+    let mut menu = crafting(Arc::clone(&player.inventory), 1, pos);
+
+    assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
+    menu.clicked(
+        Click::Pickup {
+            slot: 0,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+    assert_eq!(planks_crafted(&player), 4, "a picked-up result counts");
+
+    *menu.behavior_mut().carried_mut() = ItemStack::empty();
+    assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
+    menu.clicked(Click::QuickMove { slot: 0 }, &player);
+    assert_eq!(planks_crafted(&player), 8, "a shift-clicked result counts");
+
+    assert!(craft_planks(&mut menu, &player).is(&vanilla_items::OAK_PLANKS));
+    menu.clicked(
+        Click::Swap {
+            slot: 0,
+            with: SwapTarget::Hotbar(0),
+        },
+        &player,
+    );
+    assert_eq!(
+        planks_crafted(&player),
+        12,
+        "a result swapped to the hotbar counts"
+    );
+}

@@ -1,9 +1,12 @@
 //! Furnace-specific input, fuel, and result slots.
 
+use std::sync::atomic::{AtomicI32, Ordering};
+
 use rustc_hash::FxHashMap;
 use steel_registry::REGISTRY;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::UntypedRecipeRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_items;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
@@ -80,6 +83,8 @@ impl Slot for FurnaceFuelSlot {
 /// Rejects insertion and awards accumulated cooking XP when output is taken.
 pub struct FurnaceResultSlot {
     base: NormalSlot,
+    /// Vanilla `removeCount`: the results taken since the crafted stat was last awarded.
+    remove_count: AtomicI32,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies furnace result slots.
@@ -93,7 +98,15 @@ impl FurnaceResultSlot {
     pub fn new(container: impl Into<ContainerRef>, index: usize) -> Self {
         Self {
             base: NormalSlot::new(container, index),
+            remove_count: AtomicI32::new(0),
         }
+    }
+
+    /// The crafted-stat part of vanilla `checkTakeAchievements`: awards `ITEM_CRAFTED` for the
+    /// results taken since the last award, even none.
+    fn award_crafted(&self, carried: &ItemStack, player: &Player) {
+        let count = self.remove_count.swap(0, Ordering::Relaxed);
+        player.award_stat_with_count(&vanilla_stat_types::ITEM_CRAFTED, carried.item(), count);
     }
 }
 
@@ -130,13 +143,29 @@ impl Slot for FurnaceResultSlot {
         self.base.get_container_slot()
     }
 
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        let held = self.get_item(guard).count();
+        if held > 0 {
+            self.remove_count
+                .fetch_add(amount.min(held), Ordering::Relaxed);
+        }
+        self.base.remove(guard, amount)
+    }
+
+    /// Vanilla `onQuickCraft` awards the stat here; the recipes and experience follow in the
+    /// `on_take` every shift-click that moves anything ends with.
+    fn on_quick_craft_count(&self, picked: &ItemStack, count: i32, player: &Player) {
+        self.remove_count.fetch_add(count, Ordering::Relaxed);
+        self.award_crafted(picked, player);
+    }
+
     fn on_take(
         &self,
         guard: &mut ContainerLockGuard,
-        _stack: &mut ItemStack,
+        stack: &mut ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Award the crafted stat once stats are tracked per take.
+        self.award_crafted(stack, player);
         let (container, _) = self.storage().physical_backing()?;
         let container_id = container.container_id();
         let used = guard

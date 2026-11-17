@@ -290,6 +290,9 @@ impl MenuKind for InventoryKind {
         if !moved {
             return Some(ItemStack::empty());
         }
+        if self.result.contains(slot_index) {
+            behavior.slots()[slot_index].on_quick_craft(&stack_mut, &clicked, player);
+        }
 
         behavior.update_quick_move_source(guard, slot_index, &stack_mut, &clicked);
 
