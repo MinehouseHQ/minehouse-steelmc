@@ -7,8 +7,10 @@ use crate::entity::entities::{
 use crate::entity::next_entity_id;
 use crate::entity::snapshot_old_pos_and_rot_for_tick;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use crate::test_support::TestPlayerBuilder;
 use crate::test_support::TestWorld;
 use crate::test_support::dropped_items;
+use steel_utils::types::{GameType, InteractionHand};
 
 fn rail_world(name: &'static str) -> TestWorld {
     init_vanilla_registry();
@@ -528,4 +530,28 @@ fn detector_rail_reads_a_hopper_minecart_like_a_chest_minecart() {
 
     // One full slot of five: floor(0.2 * 14) + 1.
     assert_eq!(signal, 3);
+}
+
+#[test]
+fn spectator_opens_a_chest_minecart_menu_but_not_a_plain_minecart() {
+    let world_fixture = rail_world("spectator_chest_minecart_menu");
+    let world = &world_fixture.world;
+    let player =
+        TestPlayerBuilder::new(Arc::clone(world), "CartSpectator", next_entity_id()).build();
+    player.restore_game_modes(GameType::Spectator, None);
+    let hand = InteractionHand::MainHand;
+
+    let minecart = spawn_minecart(world, DVec3::new(8.5, 65.0, 2.5));
+    assert_eq!(
+        player.interact_on(&*minecart, hand, minecart.position()),
+        InteractionResult::Pass
+    );
+    assert!(!player.has_container_open());
+
+    let cart = spawn_chest_minecart(world, DVec3::new(8.5, 65.0, 4.5));
+    assert_eq!(
+        player.interact_on(&*cart, hand, cart.position()),
+        InteractionResult::Pass
+    );
+    assert!(player.has_container_open());
 }

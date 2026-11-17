@@ -175,6 +175,11 @@ impl AbstractMinecart for ChestMinecartEntity {
 }
 
 impl Entity for ChestMinecartEntity {
+    fn open_menu_for(&self, player: &Player) -> bool {
+        self.open_chest_menu(player);
+        true
+    }
+
     /// Vanilla `AbstractMinecartContainer.getSlot`: the chest slots, after any pending loot is rolled.
     fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
         SlotAccess::for_container_ref(self.container_ref(), slot)

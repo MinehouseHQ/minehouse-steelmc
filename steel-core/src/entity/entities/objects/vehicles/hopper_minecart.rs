@@ -231,6 +231,11 @@ impl AbstractMinecart for HopperMinecartEntity {
 }
 
 impl Entity for HopperMinecartEntity {
+    fn open_menu_for(&self, player: &Player) -> bool {
+        self.open_hopper_menu(player);
+        true
+    }
+
     /// Vanilla `AbstractMinecartContainer.getSlot`: the hopper slots, after any pending loot is rolled.
     fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {
         SlotAccess::for_container_ref(self.container_ref(), slot)

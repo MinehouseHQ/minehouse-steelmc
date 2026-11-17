@@ -1667,6 +1667,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
+    /// Vanilla `ServerPlayer.openMenu` for an entity that is a `MenuProvider`
+    /// (container minecarts and chest boats), used when a spectator
+    /// interacts with it. Returns whether the entity provides a menu.
+    fn open_menu_for(&self, _player: &Player) -> bool {
+        false
+    }
+
     /// Handles vanilla entity right-click interaction.
     fn interact(
         &self,
