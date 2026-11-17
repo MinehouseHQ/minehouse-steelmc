@@ -1,8 +1,9 @@
-//! Vanilla `/locate`: structures and biomes.
+//! Vanilla `/locate`: structures, biomes and points of interest.
 
 use std::{sync::Arc, time::Instant};
 
 use steel_registry::biome::BiomeRef;
+use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::{
     Modifier, TextComponent,
@@ -14,11 +15,12 @@ use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
         BiomeOrTag, CommandResultSuspension, CommandResultSuspensionPoll, CommandSource,
-        SteelArgumentType, SteelCommandContext, SteelCommandRuntime, StructureOrTagKey, argument,
-        literal,
+        PoiTypeOrTag, SteelArgumentType, SteelCommandContext, SteelCommandRuntime,
+        StructureOrTagKey, argument, literal,
     },
     registration::CommandRegistration,
 };
+use crate::poi::OccupationStatus;
 use crate::world::biome_search::{BiomeSearch, BiomeSearchPoll};
 use crate::world::structure_search::{FoundStructure, StructureSearch, StructureSearchPoll};
 
@@ -27,6 +29,8 @@ const MAX_STRUCTURE_SEARCH_RADIUS: i32 = 100;
 const BIOME_SEARCH_RADIUS: i32 = 6400;
 const BIOME_SAMPLE_HORIZONTAL: i32 = 32;
 const BIOME_SAMPLE_VERTICAL: i32 = 64;
+/// Vanilla `POI_SEARCH_RADIUS`, in blocks.
+const POI_SEARCH_RADIUS: i32 = 256;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("locate"), |_| command())
@@ -46,7 +50,74 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     .executes_suspended(start_biome_search),
             ),
         )
-    // TODO: Add `locate poi` once Steel has a point-of-interest manager.
+        .then(
+            literal("poi")
+                .then(argument("poi", SteelArgumentType::poi_type_or_tag()).executes(locate_poi)),
+        )
+}
+
+/// Vanilla `locatePoi`: the closest point of interest of the type or tag
+/// within [`POI_SEARCH_RADIUS`], in any occupancy.
+///
+/// Steel's point of interest storage holds the loaded chunks, so unlike
+/// vanilla the search does not load the chunks in range.
+fn locate_poi(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    let query = context.poi_type_or_tag("poi")?;
+    let origin = BlockPos::from(context.source().position());
+    let started_at = Instant::now();
+    let closest = context
+        .source()
+        .world()
+        .poi_storage
+        .lock()
+        .find_all_closest_first(
+            &|type_id| {
+                REGISTRY
+                    .poi_types
+                    .by_id(type_id)
+                    .is_some_and(|poi_type| query.matches(poi_type))
+            },
+            |_| true,
+            origin,
+            POI_SEARCH_RADIUS,
+            OccupationStatus::Any,
+        )
+        .into_iter()
+        .next();
+    let Some((pos, type_id)) = closest else {
+        return Err(CommandSyntaxError::dynamic(
+            translations::COMMANDS_LOCATE_POI_NOT_FOUND
+                .message([TextComponent::from(query.as_printable())])
+                .component(),
+        ));
+    };
+    let name = match query {
+        PoiTypeOrTag::Type(_) => query.as_printable(),
+        PoiTypeOrTag::Tag(_) => {
+            let found = REGISTRY
+                .poi_types
+                .by_id(type_id)
+                .map_or_else(String::new, |poi_type| poi_type.key.to_string());
+            format!("{} ({found})", query.as_printable())
+        }
+    };
+    let distance = horizontal_distance(origin, pos);
+    context.source().send_success(
+        &translations::COMMANDS_LOCATE_POI_SUCCESS
+            .message([
+                TextComponent::from(name.clone()),
+                coordinates_component(pos, "~"),
+                TextComponent::from(distance.to_string()),
+            ])
+            .component(),
+        false,
+    );
+    tracing::info!(
+        "Locating element {} took {} ms",
+        name,
+        started_at.elapsed().as_millis()
+    );
+    Ok(distance)
 }
 
 fn start_structure_search(
@@ -311,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn locate_graph_exposes_the_structure_and_biome_branches() {
+    fn locate_graph_exposes_the_structure_biome_and_poi_branches() {
         init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
@@ -336,7 +407,12 @@ mod tests {
             dispatcher.node(biome).and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::biome_or_tag())
         );
-        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(2));
+        let poi = child(&dispatcher, child(&dispatcher, locate, "poi"), "poi");
+        assert_eq!(
+            dispatcher.node(poi).and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::poi_type_or_tag())
+        );
+        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(3));
     }
 
     #[test]
