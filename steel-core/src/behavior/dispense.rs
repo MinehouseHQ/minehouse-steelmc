@@ -8,6 +8,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -35,6 +36,7 @@ use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
 mod entity_placement;
+mod vehicles;
 
 /// Item speed factor of a dispenser (Vanilla passes 6 to `spawnItem`).
 const DISPENSER_SPEED: f64 = 6.0;
@@ -110,12 +112,16 @@ pub(crate) enum DispenseBehavior {
     ArmorStand,
     /// Puts a chest on a tamed donkey, mule or llama in front, or drops it.
     Chest,
+    /// Launches a boat of this type onto the water in front, or drops it.
+    Boat(EntityTypeRef),
+    /// Puts a minecart of this type on the rail in front, or drops it.
+    Minecart(EntityTypeRef),
 }
 
 impl DispenseBehavior {
     /// The behavior Vanilla registers for `item` in `DispenserBlock.DISPENSER_REGISTRY`.
-    // TODO: Boats, minecarts, powder snow buckets, glowstone, brushes, honeycomb,
-    // glass bottles and water potions still use the default drop.
+    // TODO: Powder snow buckets, glowstone, brushes, honeycomb, glass bottles and
+    // water potions still use the default drop.
     pub(crate) fn for_item(item: &ItemStack) -> Self {
         if item.is(&vanilla_items::WATER_BUCKET) {
             Self::FilledBucket(&vanilla_fluids::WATER)
@@ -147,6 +153,10 @@ impl DispenseBehavior {
             Self::ArmorStand
         } else if item.is(&vanilla_items::CHEST) {
             Self::Chest
+        } else if let Some(boat) = ITEM_BEHAVIORS.get_behavior(item.item).as_boat_item() {
+            Self::Boat(boat.entity_type())
+        } else if let Some(cart) = ITEM_BEHAVIORS.get_behavior(item.item).as_minecart_item() {
+            Self::Minecart(cart.entity_type())
         } else if is_dispensed_projectile(item) {
             Self::Projectile
         } else if item.get_equippable().is_some() {
@@ -193,6 +203,8 @@ impl DispenseBehavior {
             | Self::Chest
             | Self::SpawnEgg
             | Self::ArmorStand
+            | Self::Boat(_)
+            | Self::Minecart(_)
             | Self::SulfurCubeBlock => {
                 let result = self.execute_dropping_on_failure(source, stack);
                 play_default_sound_and_animation(source);
@@ -240,6 +252,8 @@ impl DispenseBehavior {
             Self::EmptyBucket => return empty_bucket(source, stack),
             Self::SpawnEgg => return entity_placement::spawn_egg(source, stack),
             Self::ArmorStand => return entity_placement::armor_stand(source, stack),
+            Self::Boat(entity_type) => return vehicles::boat(source, stack, entity_type),
+            Self::Minecart(entity_type) => return vehicles::minecart(source, stack, entity_type),
             Self::Equipment => dispense_equipment(source, &mut stack),
             Self::Chest => entity_placement::chest_on_chested_horse(source, &mut stack),
             Self::SulfurCubeBlock => dispense_into_sulfur_cube(source, &mut stack),

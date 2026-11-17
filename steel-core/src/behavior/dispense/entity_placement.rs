@@ -20,7 +20,7 @@ use crate::inventory::slot_range::CURSOR_OR_HORSE_CHEST_SLOT;
 use crate::world::game_event::GameEventContext;
 
 /// Vanilla `Direction.toYRot`: `(data2d & 3) * 90`, so up and down face 270.
-const fn direction_y_rot(direction: Direction) -> f32 {
+pub(super) const fn direction_y_rot(direction: Direction) -> f32 {
     match direction {
         Direction::Up | Direction::Down => 270.0,
         horizontal => horizontal.to_yaw(),

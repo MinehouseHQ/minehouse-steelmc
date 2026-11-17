@@ -6,6 +6,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities, vanilla_items};
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, ChunkPos, WorldAabb};
 
 use crate::behavior::dispense::{BlockSource, DispenseBehavior};
@@ -144,6 +145,61 @@ fn armor_is_put_on_the_mob_in_front() {
 fn armor_drops_when_nothing_can_wear_it() {
     let world = world("dispense_armor_drop");
     let rest = dispense(&world, ItemStack::new(&vanilla_items::IRON_HELMET));
+    assert!(rest.is_empty());
+    let dropped = entities_in_front(&world);
+    assert_eq!(dropped.len(), 1);
+    assert!(ptr::eq(
+        dropped[0].entity_type(),
+        &raw const vanilla_entities::ITEM
+    ));
+}
+
+#[test]
+fn a_minecart_is_put_on_the_rail_in_front() {
+    let world = world("dispense_minecart");
+    let front = DISPENSER_POS.relative(Direction::East);
+    world.set_block(
+        front,
+        vanilla_blocks::RAIL.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    );
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::MINECART));
+    assert!(rest.is_empty());
+    let carts = entities_in_front(&world);
+    assert_eq!(carts.len(), 1);
+    assert!(ptr::eq(
+        carts[0].entity_type(),
+        &raw const vanilla_entities::MINECART
+    ));
+    let position = carts[0].position();
+    assert!((position.x - 5.625).abs() < 1e-9);
+    assert!((position.y - 64.1).abs() < 1e-9);
+}
+
+#[test]
+fn a_boat_is_launched_onto_the_water_in_front() {
+    let world = world("dispense_boat");
+    let front = DISPENSER_POS.relative(Direction::East);
+    world.set_block(
+        front,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    );
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::OAK_BOAT));
+    assert!(rest.is_empty());
+    let boats = entities_in_front(&world);
+    assert_eq!(boats.len(), 1);
+    assert!(ptr::eq(
+        boats[0].entity_type(),
+        &raw const vanilla_entities::OAK_BOAT
+    ));
+    assert!((boats[0].rotation().0 - 270.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn a_minecart_drops_without_a_rail() {
+    let world = world("dispense_minecart_drop");
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::MINECART));
     assert!(rest.is_empty());
     let dropped = entities_in_front(&world);
     assert_eq!(dropped.len(), 1);
