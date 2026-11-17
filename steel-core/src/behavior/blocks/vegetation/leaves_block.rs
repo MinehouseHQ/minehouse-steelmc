@@ -56,8 +56,10 @@ pub fn set_leaf_decay_observer(observer: &'static dyn LeafDecayObserver) -> bool
     LEAF_DECAY_OBSERVER.set(observer).is_ok()
 }
 
-/// Shared behavior for vanilla leaves blocks.
-pub(crate) struct LeavesBlock {
+/// Vanilla `LeavesBlock`: spruce leaves use it directly, and the particle
+/// leaves share its decay logic.
+#[block_behavior]
+pub struct LeavesBlock {
     block: BlockRef,
 }
 
@@ -338,9 +340,11 @@ impl Bonemealable for MangroveLeavesBlock {
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
+    use steel_utils::ChunkPos;
+
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
-        test_support::TestLevel,
+        test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk},
     };
 
     use super::*;
@@ -373,6 +377,29 @@ mod tests {
         );
 
         assert_eq!(updated.get_value(DISTANCE), 1);
+    }
+
+    #[test]
+    fn spruce_leaves_use_the_plain_leaves_behavior() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("spruce_leaves_decay");
+        let world = &fixture.world;
+        let pos = BlockPos::new(8, 70, 8);
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::SPRUCE_LEAVES);
+
+        let decaying = vanilla_blocks::SPRUCE_LEAVES
+            .default_state()
+            .set_value(DISTANCE, DISTANCE.max);
+        assert!(world.set_block(pos, decaying, UpdateFlags::UPDATE_NONE));
+        behavior.random_tick(decaying, world, pos);
+        assert!(world.get_block_state(pos).is_air());
+
+        let persistent = decaying.set_value(PERSISTENT, true);
+        assert!(world.set_block(pos, persistent, UpdateFlags::UPDATE_NONE));
+        behavior.random_tick(persistent, world, pos);
+        assert_eq!(world.get_block_state(pos), persistent);
     }
 
     #[test]
