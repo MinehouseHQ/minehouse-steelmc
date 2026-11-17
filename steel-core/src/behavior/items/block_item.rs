@@ -299,3 +299,54 @@ impl ItemBehavior for DoubleHighBlockItem {
             .place_with(context.build_place_context(), Self::place_block)
     }
 }
+
+/// Vanilla `GameMasterBlockItem`: a block item, such as a command block, that
+/// only players who can use game master blocks may place.
+#[item_behavior]
+pub struct GameMasterBlockItem {
+    #[json_arg(vanilla_blocks, json = "block")]
+    _block: BlockRef,
+    base: BlockItem,
+}
+
+impl GameMasterBlockItem {
+    /// Creates a game master block item behavior for the given block.
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self {
+            _block: block,
+            base: BlockItem::new(block),
+        }
+    }
+}
+
+impl ItemBehavior for GameMasterBlockItem {
+    fn as_block_item(&self) -> Option<&BlockItem> {
+        Some(&self.base)
+    }
+
+    /// Vanilla `BlockItem.useOn` with `GameMasterBlockItem.getPlacementState`.
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        self.base.place_with_policy(
+            context.build_place_context(),
+            Some,
+            SurvivalCheck::Required,
+            BlockItem::place_block,
+            self.base.block.config.sound_type.place_sound,
+            |place_context| {
+                if place_context
+                    .player()
+                    .is_some_and(|player| !player.can_use_game_master_blocks())
+                {
+                    None
+                } else {
+                    self.base.get_state_for_placement(place_context)
+                }
+            },
+        )
+    }
+
+    fn can_fit_inside_container_items(&self) -> bool {
+        self.base.can_fit_inside_container_items()
+    }
+}

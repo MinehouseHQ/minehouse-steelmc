@@ -30,11 +30,6 @@ use steel_utils::types::InteractionHand;
 const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 const HAS_BOOK: &BoolProperty = &BlockStateProperties::HAS_BOOK;
 
-/// Vanilla `Player.canUseGameMasterBlocks`.
-fn can_use_game_master_blocks(player: &Player) -> bool {
-    player.abilities.lock().instabuild && player.is_operator()
-}
-
 /// Vanilla `LecternBlock`.
 #[block_behavior]
 pub struct LecternBlock {
@@ -79,7 +74,9 @@ impl LecternBlock {
 impl BlockBehavior for LecternBlock {
     /// Vanilla `LecternBlock.getStateForPlacement`.
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let has_book = context.player().is_some_and(can_use_game_master_blocks)
+        let has_book = context
+            .player()
+            .is_some_and(Player::can_use_game_master_blocks)
             && context.with_item(|stack| {
                 stack
                     .get(BLOCK_ENTITY_DATA)
@@ -104,7 +101,10 @@ impl BlockBehavior for LecternBlock {
         pos: BlockPos,
         source: &PlacementSource<'_>,
     ) {
-        if !source.player().is_some_and(can_use_game_master_blocks) {
+        if !source
+            .player()
+            .is_some_and(Player::can_use_game_master_blocks)
+        {
             return;
         }
         let data = source.with_item(|stack| {

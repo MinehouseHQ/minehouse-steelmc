@@ -20,7 +20,7 @@ use steel_protocol::packets::game::{
     SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
     SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
     SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
+    SSetCommandBlock, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -115,6 +115,7 @@ enum ScheduledPlayPacketKind {
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
     SetBeacon(SSetBeacon),
+    SetCommandBlock(SSetCommandBlock),
     SetCarriedItem(SSetCarriedItem),
     Punch(SPunch),
     PlayerAction(SPlayerAction),
@@ -232,6 +233,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
             | ScheduledPlayPacketKind::SignUpdate(_)
+            | ScheduledPlayPacketKind::SetCommandBlock(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_)
@@ -353,6 +355,9 @@ impl ScheduledPlayPacket {
                 player.handle_pick_item_from_block(packet);
             }
             ScheduledPlayPacketKind::SignUpdate(packet) => player.handle_sign_update(packet),
+            ScheduledPlayPacketKind::SetCommandBlock(packet) => {
+                player.handle_set_command_block(packet);
+            }
             ScheduledPlayPacketKind::EditBook(packet) => player.handle_edit_book(packet),
             ScheduledPlayPacketKind::SpectatorAction(packet) => {
                 player.handle_spectator_action(packet);
@@ -867,6 +872,9 @@ impl JavaConnection {
             )),
             play::S_SIGN_UPDATE => scheduled(ScheduledPlayPacketKind::SignUpdate(
                 SSignUpdate::read_packet(data)?,
+            )),
+            play::S_SET_COMMAND_BLOCK => scheduled(ScheduledPlayPacketKind::SetCommandBlock(
+                SSetCommandBlock::read_packet(data)?,
             )),
             play::S_EDIT_BOOK => scheduled(ScheduledPlayPacketKind::EditBook(
                 SEditBook::read_packet(data)?,

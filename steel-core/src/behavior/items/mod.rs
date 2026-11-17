@@ -67,7 +67,7 @@ pub use air::AirItem;
 pub use armor_stand_item::ArmorStandItem;
 pub use arrow::{ArrowItem, SpectralArrowItem};
 pub use banner_item::BannerItem;
-pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use block_item::{BlockItem, DoubleHighBlockItem, GameMasterBlockItem};
 pub use boat_item::BoatItem;
 pub use bonemeal::BoneMealItem;
 pub use book::{WritableBookItem, WrittenBookItem};

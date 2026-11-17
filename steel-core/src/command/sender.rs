@@ -3,7 +3,7 @@ use std::{fmt, sync::Arc};
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use super::{execution::CommandResultCallback, rcon::RconSink};
+use super::{command_block::CommandBlockOutput, execution::CommandResultCallback, rcon::RconSink};
 use crate::{
     player::{DomainResidenceToken, Player},
     server::Server,
@@ -18,6 +18,9 @@ pub enum CommandSender {
     Console,
     /// The command was sent via a remote console, which collects its output.
     Rcon(Arc<RconSink>),
+    /// The command was run by a command block or command block minecart,
+    /// which keeps the last thing it printed.
+    CommandBlock(Arc<CommandBlockOutput>),
 }
 
 /// Stable identity used to preserve top-level command ordering while work is suspended.
@@ -26,6 +29,7 @@ pub(crate) enum CommandSenderKey {
     Player(Uuid),
     Console,
     Rcon,
+    CommandBlock,
 }
 
 /// Exact key used to coalesce suggestions from one live player residence.
@@ -38,6 +42,7 @@ pub(crate) enum CommandSuggestionKey {
     },
     Console,
     Rcon,
+    CommandBlock,
 }
 
 /// Exact runtime owner of queued command work.
@@ -91,6 +96,7 @@ impl CommandExecutionOwner {
             },
             CommandSender::Console => CommandSuggestionKey::Console,
             CommandSender::Rcon(_) => CommandSuggestionKey::Rcon,
+            CommandSender::CommandBlock(_) => CommandSuggestionKey::CommandBlock,
         }
     }
 
@@ -116,6 +122,7 @@ impl CommandSender {
             Self::Player(player) => CommandSenderKey::Player(player.gameprofile.id()),
             Self::Console => CommandSenderKey::Console,
             Self::Rcon(_) => CommandSenderKey::Rcon,
+            Self::CommandBlock(_) => CommandSenderKey::CommandBlock,
         }
     }
 
@@ -134,6 +141,7 @@ impl CommandSender {
             Self::Player(player) => player.send_message(text),
             Self::Console => log::info!("{text}"),
             Self::Rcon(sink) => sink.push_message(text),
+            Self::CommandBlock(output) => output.push_message(text),
         }
     }
 
@@ -141,21 +149,20 @@ impl CommandSender {
     pub(crate) fn result_callback(&self) -> CommandResultCallback {
         match self {
             Self::Rcon(sink) => CommandResultCallback::new(sink.result_recorder()),
-            Self::Player(_) | Self::Console => CommandResultCallback::empty(),
+            Self::Player(_) | Self::Console | Self::CommandBlock(_) => {
+                CommandResultCallback::empty()
+            }
         }
     }
 }
 
 impl fmt::Display for CommandSender {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Player(p) => &p.gameprofile.name(),
-                Self::Console => "Server",
-                Self::Rcon(_) => "Rcon",
-            }
-        )
+        match self {
+            Self::Player(p) => write!(f, "{}", p.gameprofile.name()),
+            Self::Console => write!(f, "Server"),
+            Self::Rcon(_) => write!(f, "Rcon"),
+            Self::CommandBlock(output) => write!(f, "{}", output.name()),
+        }
     }
 }

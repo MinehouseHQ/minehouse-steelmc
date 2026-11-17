@@ -321,6 +321,11 @@ pub fn init_block_entities() {
             Arc::new(BellBlockEntity::new(level, pos, state))
         });
 
+        registry.register(
+            &vanilla_block_entity_types::COMMAND_BLOCK,
+            |level, pos, state| Arc::new(CommandBlockEntity::new(level, pos, state)),
+        );
+
         // Register comparator block entity factory
         registry.register(
             &vanilla_block_entity_types::COMPARATOR,

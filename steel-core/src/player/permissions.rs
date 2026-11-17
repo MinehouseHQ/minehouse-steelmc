@@ -74,6 +74,12 @@ impl Player {
             .is_some_and(|server| server.is_operator(self.gameprofile.id()))
     }
 
+    /// Vanilla `Player.canUseGameMasterBlocks`: an operator in creative mode.
+    #[must_use]
+    pub(crate) fn can_use_game_master_blocks(&self) -> bool {
+        self.abilities.lock().instabuild && self.is_operator()
+    }
+
     /// Returns direct permission overrides.
     #[must_use]
     pub fn permission_overrides(&self) -> PermissionSet {

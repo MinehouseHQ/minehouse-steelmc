@@ -43,7 +43,8 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     )
 }
 
-/// Set a block in the desired position with a mode (destroy, keep, replace, strict), and return 1 if the block is placed, 0 else.
+/// Set a block in the desired position with a mode (destroy, keep, replace, strict): returns 1 when
+/// the block is placed and fails otherwise.
 fn set_block(
     context: &SteelCommandContext<CommandSource>,
     mode: SetBlockMode,
@@ -53,7 +54,7 @@ fn set_block(
     let level = context.source().world();
 
     if matches!(mode, SetBlockMode::Keep) && !level.get_block_state(block_pos).is_air() {
-        return Ok(set_block_failed(context.source()));
+        return Err(set_block_failed());
     }
 
     let place_needed = if matches!(mode, SetBlockMode::Destroy) {
@@ -68,7 +69,7 @@ fn set_block(
     let old_state = level.get_block_state(block_pos);
 
     if place_needed && !block.place(level, block_pos, placement_flags(strict))? {
-        return Ok(set_block_failed(context.source()));
+        return Err(set_block_failed());
     }
 
     if !strict {
@@ -89,8 +90,8 @@ fn set_block(
     Ok(1)
 }
 
-fn set_block_failed(source: &CommandSource) -> i32 {
-    source.send_failure(COMMANDS_SETBLOCK_FAILED.msg().component());
-
-    0
+/// Vanilla `SetBlockCommand.ERROR_FAILED`: a failed placement is a command
+/// error, so `/execute store success` and command blocks see it fail.
+fn set_block_failed() -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(COMMANDS_SETBLOCK_FAILED.msg().component())
 }

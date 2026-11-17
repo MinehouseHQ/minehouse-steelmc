@@ -3,6 +3,7 @@
 mod api;
 pub(crate) mod brigadier;
 mod builtins;
+pub(crate) mod command_block;
 pub(crate) mod execution;
 pub(crate) mod function;
 mod protocol;

@@ -625,6 +625,12 @@ pub trait BlockBehavior: Send + Sync {
         self.as_rail().is_some()
     }
 
+    /// Returns whether this block is a vanilla `GameMasterBlock`, which only
+    /// players who can use game master blocks may break or place.
+    fn is_game_master_block(&self) -> bool {
+        false
+    }
+
     /// Returns whether this behavior implements vanilla `PistonBaseBlock` semantics.
     fn is_piston_base(&self) -> bool {
         false

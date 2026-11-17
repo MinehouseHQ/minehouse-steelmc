@@ -404,13 +404,16 @@ impl BlockBreakingManager {
             return false;
         };
 
-        // TODO: Check for GameMasterBlock (command blocks, etc.)
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        if behavior.is_game_master_block() && !player.can_use_game_master_blocks() {
+            world.send_block_updated(pos);
+            return false;
+        }
 
         if player.block_action_restricted(world, pos) {
             return false;
         }
 
-        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
         anger_piglins_if_guarded(world, player, state);
         world.game_event(

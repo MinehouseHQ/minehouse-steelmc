@@ -1,5 +1,6 @@
 mod bell_block;
 mod button_block;
+mod command_block;
 mod copper_bulb_block;
 mod daylight_detector_block;
 mod diode;
@@ -29,6 +30,8 @@ pub(crate) const MIN_REDSTONE_SIGNAL: i32 = 0;
 
 pub use bell_block::*;
 pub use button_block::*;
+pub use command_block::CommandBlock;
+pub(crate) use command_block::run_command_block_tick;
 pub use copper_bulb_block::*;
 pub use daylight_detector_block::*;
 pub use diode::*;
