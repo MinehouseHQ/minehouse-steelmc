@@ -292,6 +292,7 @@ pub async fn test_server_with_worlds_and_config(
         jobs: ServerJobQueue::new(),
         save_writes: TaskTracker::new(),
         last_save_write: SyncMutex::new(None),
+        pending_autosave: SyncMutex::new(None),
         player_data_storage,
         player_permission_states: SyncRwLock::new(player_permission_states),
         player_permission_updates: AsyncMutex::new(()),
@@ -588,6 +589,8 @@ pub struct Server {
     save_writes: TaskTracker,
     /// Completes when the most recently queued save write finishes.
     last_save_write: SyncMutex<Option<oneshot::Receiver<()>>>,
+    /// A periodic autosave still capturing its chunks, a batch per tick.
+    pending_autosave: SyncMutex<Option<autosave::PendingAutosave>>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Persisted permission state indexed by player UUID.
@@ -956,6 +959,7 @@ impl Server {
             jobs: ServerJobQueue::new(),
             save_writes: TaskTracker::new(),
             last_save_write: SyncMutex::new(None),
+            pending_autosave: SyncMutex::new(None),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
             player_permission_updates: AsyncMutex::new(()),

@@ -1,15 +1,21 @@
 //! Vanilla `MinecraftServer.saveEverything` and its periodic autosave.
 //!
 //! A save captures players and worlds while no world is ticking, then writes
-//! them in the background, so the tick never waits for the disk.
+//! them in the background, so the tick never waits for the disk. The periodic
+//! autosave spreads its chunk capture over several ticks, like Paper's
+//! incremental autosave, so a world full of changed chunks does not stall one
+//! tick for the whole capture.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use super::Server;
 use super::tick_rate_manager::TickRateManager;
+use crate::chunk::chunk_holder::ChunkHolder;
+use crate::chunk::chunk_map::AutosaveChunk;
 use crate::player::player_data::PersistentPlayerData;
 use crate::world::World;
 use crate::world::autosave::WorldSave;
@@ -18,6 +24,67 @@ use crate::world::autosave::WorldSave;
 const AUTOSAVE_INTERVAL_SECONDS: f32 = 300.0;
 /// Vanilla's shortest autosave period, in ticks.
 const MIN_AUTOSAVE_INTERVAL_TICKS: i32 = 100;
+
+/// Time per tick an autosave may spend capturing chunks.
+const AUTOSAVE_CAPTURE_BUDGET: Duration = Duration::from_millis(10);
+/// Chunk holders captured per parallel batch.
+const AUTOSAVE_CAPTURE_BATCH: usize = 256;
+
+/// An autosave whose chunks are still being captured, a batch per tick.
+pub(crate) struct PendingAutosave {
+    worlds: Vec<PendingWorldAutosave>,
+}
+
+struct PendingWorldAutosave {
+    world: Arc<World>,
+    remaining: Vec<Arc<ChunkHolder>>,
+    captured: Vec<AutosaveChunk>,
+}
+
+impl PendingAutosave {
+    /// Starts an autosave of every world `/save-off` has not turned off.
+    pub(super) fn begin(server: &Server) -> Self {
+        let worlds = server
+            .worlds
+            .values()
+            .filter(|world| !world.no_save())
+            .map(|world| PendingWorldAutosave {
+                world: Arc::clone(world),
+                remaining: world.autosave_chunk_holders(),
+                captured: Vec::new(),
+            })
+            .collect();
+        Self { worlds }
+    }
+
+    /// Captures chunks until `budget` is spent. Returns whether every chunk
+    /// has been captured. Must run while no world is ticking.
+    pub(super) fn capture_some(&mut self, budget: Duration) -> bool {
+        let start = Instant::now();
+        for world in &mut self.worlds {
+            while !world.remaining.is_empty() {
+                if start.elapsed() >= budget {
+                    return false;
+                }
+                let batch_start = world.remaining.len().saturating_sub(AUTOSAVE_CAPTURE_BATCH);
+                let batch = world.remaining.split_off(batch_start);
+                world
+                    .captured
+                    .extend(world.world.capture_autosave_chunks(batch));
+            }
+        }
+        true
+    }
+
+    /// Drops the autosave, marking every captured chunk unsaved again.
+    pub(super) fn discard(self) {
+        for world in self.worlds {
+            for chunk in world.captured {
+                chunk.discard();
+            }
+        }
+    }
+}
 
 /// Everything one save captured, from [`Server::prepare_save`].
 pub(crate) struct ServerSave {
@@ -43,17 +110,10 @@ impl Server {
     ///
     /// Must run while no world is ticking, like vanilla's main-thread save.
     pub(crate) fn prepare_save(&self, force: bool) -> ServerSave {
-        let players = self
-            .get_players()
-            .iter()
-            .map(|player| {
-                (
-                    player.get_world().domain().to_owned(),
-                    player.gameprofile.id(),
-                    PersistentPlayerData::from_player(player),
-                )
-            })
-            .collect();
+        // This save captures every changed chunk now, including those an
+        // autosave in progress already captured, so that autosave is dropped
+        // instead of landing its older captures after this one.
+        self.discard_pending_autosave();
         let worlds = self
             .worlds
             .values()
@@ -63,7 +123,72 @@ impl Server {
                     .map(|save| (Arc::clone(world), save))
             })
             .collect();
-        ServerSave { players, worlds }
+        ServerSave {
+            players: self.capture_players(),
+            worlds,
+        }
+    }
+
+    /// Captures the next batch of a periodic autosave, starting one when
+    /// `start` is set and none is in progress. Returns the save once its last
+    /// chunk is captured, together with players and world data captured now.
+    ///
+    /// Must run while no world is ticking.
+    pub(super) fn capture_autosave_step(&self, start: bool) -> Option<ServerSave> {
+        let mut pending = self.pending_autosave.lock().take();
+        if pending.is_none() && start {
+            pending = Some(PendingAutosave::begin(self));
+        }
+        let mut pending = pending?;
+        if !pending.capture_some(AUTOSAVE_CAPTURE_BUDGET) {
+            *self.pending_autosave.lock() = Some(pending);
+            return None;
+        }
+        let mut worlds = Vec::with_capacity(pending.worlds.len());
+        for PendingWorldAutosave {
+            world, captured, ..
+        } in pending.worlds
+        {
+            match world.prepare_save_without_chunks(false) {
+                Some(mut save) => {
+                    save.set_chunks(captured);
+                    worlds.push((world, save));
+                }
+                // `/save-off` ran while the capture was in progress.
+                None => captured.into_iter().for_each(AutosaveChunk::discard),
+            }
+        }
+        Some(ServerSave {
+            players: self.capture_players(),
+            worlds,
+        })
+    }
+
+    /// Whether a periodic autosave is still capturing chunks.
+    pub(super) fn is_autosave_capturing(&self) -> bool {
+        self.pending_autosave.lock().is_some()
+    }
+
+    /// Drops an autosave still capturing chunks, marking what it captured
+    /// unsaved again so the next save writes it.
+    pub(super) fn discard_pending_autosave(&self) {
+        let pending = self.pending_autosave.lock().take();
+        if let Some(pending) = pending {
+            pending.discard();
+        }
+    }
+
+    fn capture_players(&self) -> Vec<(String, Uuid, PersistentPlayerData)> {
+        self.get_players()
+            .iter()
+            .map(|player| {
+                (
+                    player.get_world().domain().to_owned(),
+                    player.gameprofile.id(),
+                    PersistentPlayerData::from_player(player),
+                )
+            })
+            .collect()
     }
 
     /// The write half of vanilla `saveEverything`, together with the

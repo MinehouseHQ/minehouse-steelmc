@@ -94,6 +94,9 @@ impl Server {
     /// processed. Callers must stop packet processing before calling this; the standalone
     /// server does so by closing its task tracker and awaiting the drain.
     pub async fn save_and_shutdown(&self) {
+        // The final save writes every changed chunk, including those an
+        // autosave still capturing already took.
+        self.discard_pending_autosave();
         // An autosave or `/save-all` still writing captured older state than
         // this final save, so it has to land first.
         self.finish_save_writes().await;
@@ -370,19 +373,26 @@ impl Server {
     /// Vanilla `tickServer`'s autosave: counts down and, when due, captures
     /// a save between ticks and writes it in the background.
     async fn tick_autosave(self: &Arc<Self>, schedule: &mut AutosaveSchedule) {
-        if !schedule.tick(&self.tick_rate_manager.read()) {
+        let due = schedule.tick(&self.tick_rate_manager.read());
+        let capturing = self.is_autosave_capturing();
+        if !due && !capturing {
             return;
         }
-        if self.is_save_writing() {
-            tracing::warn!("Skipping autosave while the previous save is still writing");
-            return;
+        let start = due && !capturing;
+        if start {
+            if self.is_save_writing() {
+                tracing::warn!("Skipping autosave while the previous save is still writing");
+                return;
+            }
+            tracing::debug!("Autosave started");
         }
-        tracing::debug!("Autosave started");
         let server = Arc::clone(self);
-        let save = match spawn_blocking(move || server.prepare_save(false)).await {
-            Ok(save) => save,
+        let save = match spawn_blocking(move || server.capture_autosave_step(start)).await {
+            Ok(Some(save)) => save,
+            Ok(None) => return,
             Err(error) => {
                 log::error!("Autosave capture failed: {error}");
+                self.discard_pending_autosave();
                 return;
             }
         };
