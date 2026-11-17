@@ -20,12 +20,8 @@ use steel_protocol::packets::game::{
     SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
     SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
     SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
-<<<<<<< HEAD
     SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction,
     SUseItem, SUseItemOn,
-=======
-    SSetCommandBlock, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
->>>>>>> origin/master
 };
 
 use crate::command::handle_client_request;
@@ -121,10 +117,7 @@ enum ScheduledPlayPacketKind {
     UseItem(SUseItem),
     SetBeacon(SSetBeacon),
     SetCommandBlock(SSetCommandBlock),
-<<<<<<< HEAD
     SetCommandMinecart(SSetCommandMinecart),
-=======
->>>>>>> origin/master
     SetCarriedItem(SSetCarriedItem),
     Punch(SPunch),
     PlayerAction(SPlayerAction),
@@ -243,10 +236,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::UseItem(_)
             | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SetCommandBlock(_)
-<<<<<<< HEAD
             | ScheduledPlayPacketKind::SetCommandMinecart(_)
-=======
->>>>>>> origin/master
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_)
@@ -371,12 +361,9 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCommandBlock(packet) => {
                 player.handle_set_command_block(packet);
             }
-<<<<<<< HEAD
             ScheduledPlayPacketKind::SetCommandMinecart(packet) => {
                 player.handle_set_command_minecart(&packet);
             }
-=======
->>>>>>> origin/master
             ScheduledPlayPacketKind::EditBook(packet) => player.handle_edit_book(packet),
             ScheduledPlayPacketKind::SpectatorAction(packet) => {
                 player.handle_spectator_action(packet);
@@ -895,12 +882,9 @@ impl JavaConnection {
             play::S_SET_COMMAND_BLOCK => scheduled(ScheduledPlayPacketKind::SetCommandBlock(
                 SSetCommandBlock::read_packet(data)?,
             )),
-<<<<<<< HEAD
             play::S_SET_COMMAND_MINECART => scheduled(ScheduledPlayPacketKind::SetCommandMinecart(
                 SSetCommandMinecart::read_packet(data)?,
             )),
-=======
->>>>>>> origin/master
             play::S_EDIT_BOOK => scheduled(ScheduledPlayPacketKind::EditBook(
                 SEditBook::read_packet(data)?,
             )),

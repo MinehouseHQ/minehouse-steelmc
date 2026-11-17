@@ -4,21 +4,14 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-<<<<<<< HEAD
 use glam::DVec3;
-=======
->>>>>>> origin/master
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_game_rules::{COMMAND_BLOCKS_WORK, SEND_COMMAND_FEEDBACK};
-<<<<<<< HEAD
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
-=======
-use steel_registry::{init_vanilla_registry, vanilla_blocks};
->>>>>>> origin/master
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _};
 use text_components::TextComponent;
@@ -31,17 +24,11 @@ use crate::block_entity::entities::CommandBlockEntity;
 use crate::block_entity::{SharedBlockEntity, init_block_entities};
 use crate::command::PendingCommandExecutionQueue;
 use crate::command::command_block::{BaseCommandBlock, CommandBlockRunner};
-<<<<<<< HEAD
 use crate::entity::entities::CommandBlockMinecartEntity;
 use crate::entity::entities::objects::vehicles::AbstractMinecart as _;
 use crate::entity::{Entity as _, SharedEntity, init_entities, next_entity_id};
 use crate::server::Server;
 use crate::world::{CommandBlockRun, World};
-=======
-use crate::entity::init_entities;
-use crate::server::Server;
-use crate::world::World;
->>>>>>> origin/master
 
 const ORIGIN: BlockPos = BlockPos::new(4, 64, 4);
 
@@ -296,7 +283,6 @@ fn the_command_block_state_saves_under_vanilla_keys() {
     assert_eq!(loaded.last_output(), TextComponent::plain(""));
     assert_eq!(BaseCommandBlock::new().name(), TextComponent::plain("@"));
 }
-<<<<<<< HEAD
 
 #[test]
 fn a_powered_rail_runs_a_command_block_minecart_every_four_ticks() {
@@ -345,5 +331,3 @@ fn a_powered_rail_runs_a_command_block_minecart_every_four_ticks() {
         assert_eq!(cart.command_block().success_count(), 1);
     });
 }
-=======
->>>>>>> origin/master
