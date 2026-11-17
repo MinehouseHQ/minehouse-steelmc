@@ -301,7 +301,7 @@ impl Player {
         }
 
         if let Some(world_log) = self.world_log()
-            && world_log.item_used(self, packet.hand)
+            && world_log.item_used(self, packet.hand, None)
         {
             self.broadcast_inventory_changes_and_trigger();
             return;
