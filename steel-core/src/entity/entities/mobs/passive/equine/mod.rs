@@ -66,7 +66,7 @@ use crate::player::advancement::criteria::TAME_ANIMAL;
 use crate::world::World;
 
 pub use camel::{Camel, CamelBase, CamelEntity, CamelHuskEntity};
-pub use chested::{DonkeyEntity, MuleEntity};
+pub use chested::{AbstractChestedHorse, DonkeyEntity, MuleEntity};
 pub use horse::HorseEntity;
 pub use llama::{Llama, LlamaBase, LlamaEntity, TraderLlamaEntity};
 pub use skeleton_horse::SkeletonHorseEntity;

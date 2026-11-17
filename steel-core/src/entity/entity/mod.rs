@@ -6,7 +6,9 @@ use crate::enchantment_helper;
 use crate::entity::entities::mobs::hostile::cube_mob::AbstractCubeMob;
 use crate::entity::entities::mobs::hostile::piglin::AbstractPiglin;
 use crate::entity::entities::mobs::passive::AbstractNautilus;
-use crate::entity::entities::mobs::passive::equine::{AbstractHorse, Llama, PlayerRideableJumping};
+use crate::entity::entities::mobs::passive::equine::{
+    AbstractChestedHorse, AbstractHorse, Llama, PlayerRideableJumping,
+};
 use crate::entity::entities::mobs::villagers::Merchant;
 use crate::entity::entities::objects::vehicles::{
     AbstractBoat, AbstractMinecart, minecart_observer,
@@ -1979,6 +1981,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// `instanceof AbstractHorse`.
     fn as_abstract_horse(&self) -> Option<&dyn AbstractHorse> {
         try_as_dyn::<Self, dyn AbstractHorse>(self)
+    }
+
+    /// `instanceof AbstractChestedHorse`: donkeys, mules and llamas.
+    fn as_abstract_chested_horse(&self) -> Option<&dyn AbstractChestedHorse> {
+        try_as_dyn::<Self, dyn AbstractChestedHorse>(self)
     }
 
     /// `instanceof Llama`: llamas and trader llamas.
