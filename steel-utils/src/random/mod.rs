@@ -1,5 +1,10 @@
 //! This module contains utilities for random number generation.
+use std::cell::RefCell;
+
 use enum_dispatch::enum_dispatch;
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
+use uuid::{Builder, Uuid};
 
 use crate::random::{
     legacy_random::{LegacyRandom, LegacyRandomSplitter},
@@ -118,4 +123,27 @@ pub fn get_seed(x: i32, y: i32, z: i32) -> i64 {
         .wrapping_mul(42_317_861_i64)
         .wrapping_add(l.wrapping_mul(11));
     l >> 16
+}
+
+thread_local! {
+    static INSECURE_RNG: RefCell<SmallRng> = RefCell::new(rand::make_rng());
+}
+
+/// Vanilla `Mth.createInsecureUUID`: a version 4 UUID from a fast,
+/// non-cryptographic per-thread generator.
+///
+/// `Uuid::new_v4` asks the operating system for every UUID, which costs a
+/// system call per entity and shows up in mob spawning, where vanilla creates
+/// and discards a mob for many spawn attempts.
+#[must_use]
+pub fn insecure_uuid() -> Uuid {
+    let bytes = INSECURE_RNG.with_borrow_mut(RngExt::random::<[u8; 16]>);
+    Builder::from_random_bytes(bytes).into_uuid()
+}
+
+/// A fast, non-cryptographic generator seeded from a per-thread one, for
+/// gameplay randomness that draws many numbers per tick.
+#[must_use]
+pub fn fast_rng() -> SmallRng {
+    INSECURE_RNG.with_borrow_mut(SeedableRng::from_rng)
 }

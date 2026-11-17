@@ -15,6 +15,7 @@ use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::wolf_variant::WolfVariantRef;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds, nbt_collection_values};
+use steel_utils::random::insecure_uuid;
 use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -219,7 +220,7 @@ fn load_entity_recursive_inner(
                 .collect::<Option<Vec<_>>>()
         })
         .and_then(|values| Uuid::from_int_array(values.get(..4)?))
-        .unwrap_or_else(Uuid::new_v4);
+        .unwrap_or_else(insecure_uuid);
     let save_data = load_entity_save_data(nbt);
     let request = EntityLoadRequest {
         entity_type,
