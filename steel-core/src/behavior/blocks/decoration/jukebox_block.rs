@@ -66,7 +66,7 @@ impl BlockBehavior for JukeboxBlock {
             && let Some(block_entity) = world.get_block_entity(pos)
             && let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>()
         {
-            jukebox.apply_item_block_entity_data(data);
+            let _ = jukebox.apply_item_block_entity_data(data);
         }
 
         // Vanilla derives this flag from the raw placement data, even when its
