@@ -14,9 +14,7 @@ use steel_registry::{
     blocks::{
         behavior::PushReaction, block_state_ext::BlockStateExt, properties::BlockStateProperties,
     },
-    data_components::{
-        DataComponentMap, DataComponentPatch, ItemContainerContents, vanilla_components::CONTAINER,
-    },
+    data_components::{DataComponentMap, ItemContainerContents, vanilla_components::CONTAINER},
     item_stack::ItemStack,
     vanilla_block_entity_types,
 };
@@ -24,6 +22,7 @@ use steel_utils::{
     BlockLocalAabb, BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, WorldAabb,
     geometry::{Aabb, Space},
     locks::SyncMutex,
+    translations,
     types::UpdateFlags,
 };
 
@@ -32,6 +31,7 @@ use steel_registry::{sound_events, vanilla_game_events};
 
 use crate::{
     behavior::{ITEM_BEHAVIORS, blocks::ShulkerBoxBlock},
+    block_entity::container_name::ContainerName,
     block_entity::container_openers::container_sound_pitch,
     block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter},
     entity::Entity as _,
@@ -87,6 +87,8 @@ pub struct ShulkerBoxBlockEntity {
     container_ref: ContainerRef,
     animation: SyncMutex<ShulkerBoxAnimation>,
     open_count: AtomicI32,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 struct ShulkerBoxContainer {
@@ -134,6 +136,7 @@ impl ShulkerBoxBlockEntity {
                 old_progress: 0,
             }),
             open_count: AtomicI32::new(0),
+            name: ContainerName::new(&translations::CONTAINER_SHULKER_BOX),
         }
     }
 
@@ -206,14 +209,9 @@ impl ShulkerBoxBlockEntity {
 
     /// Builds a shulker box item containing the stored inventory.
     pub fn shulker_box_as_item(&self, state: BlockStateId) -> ItemStack {
-        let block_item = REGISTRY.items.by_block(state.get_block());
-
-        let contents = self.container_contents();
-
-        let mut patch = DataComponentPatch::new();
-        patch.set(CONTAINER, contents);
-
-        ItemStack::with_count_and_patch(block_item, 1, patch)
+        let mut item = ItemStack::new(REGISTRY.items.by_block(state.get_block()));
+        item.apply_components(&self.collect_components());
+        item
     }
 
     /// Calculates the bounding box of a shulker during its opening animation.
@@ -351,6 +349,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     fn load_additional(&self, nbt: &BaseNbtCompound<'_>) {
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        self.name.load(nbt_view);
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
@@ -376,6 +375,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         let container = self.container.lock();
         let mut items: Vec<NbtCompound> = Vec::new();
         for (slot, item) in container.items().iter().enumerate() {
@@ -392,7 +392,12 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 
     /// Copies the container component into the block entity inventory
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
         let contents = components.get_or_default(CONTAINER, ItemContainerContents::empty());
 
         let mut container = self.container.lock();
@@ -413,6 +418,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     /// Stores the block entity inventory in the container component
     fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
         components.set(CONTAINER, Some(self.container_contents()));
     }
 

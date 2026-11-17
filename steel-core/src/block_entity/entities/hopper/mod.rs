@@ -11,19 +11,21 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::geometry::WorldAabb;
 use steel_utils::{
     BlockPos, BlockStateId, Direction, Downcast as _, DowncastType, DowncastTypeKey,
-    locks::SyncMutex,
+    locks::SyncMutex, translations,
 };
 use text_components::TextComponent;
 
 use crate::behavior::blocks::{chest_container, composter_container};
 use crate::block_entity::container_loot::{ContainerLoot, LOOT_TABLE_SEED_TAG, LOOT_TABLE_TAG};
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity as _, RemovalReason};
 use crate::inventory::container::Container;
@@ -43,8 +45,6 @@ pub(crate) const MOVE_ITEM_SPEED: i32 = 8;
 const SUCK_AABB: WorldAabb = WorldAabb::new(0.0, 11.0 / 16.0, 0.0, 1.0, 2.0, 1.0);
 
 /// Hopper block entity.
-///
-/// `CustomName` and `lock` are kept as loaded; Steel does not apply them yet.
 pub struct HopperBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<HopperContainer>>,
@@ -52,6 +52,8 @@ pub struct HopperBlockEntity {
     /// Vanilla `RandomizableContainerBlockEntity` loot table.
     loot: Arc<ContainerLoot>,
     preserved: SyncMutex<NbtCompound>,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 /// Hopper inventory together with its transfer timing, so another hopper
@@ -124,14 +126,14 @@ impl HopperBlockEntity {
             container,
             loot,
             preserved: SyncMutex::new(NbtCompound::new()),
+            name: ContainerName::new(&translations::CONTAINER_HOPPER),
         }
     }
 
     /// Returns the saved custom name, if any.
     #[must_use]
     pub fn custom_name(&self) -> Option<TextComponent> {
-        let preserved = self.preserved.lock();
-        TextComponent::from_nbt(preserved.get("CustomName")?)
+        self.name.custom_name()
     }
 
     /// The containers at `pos` a hopper or dropper can reach, in slot order.
@@ -437,10 +439,13 @@ impl BlockEntity for HopperBlockEntity {
         ] {
             while preserved.remove(key).is_some() {}
         }
+        self.name.load(nbt_view);
+        ContainerName::remove_tags(&mut preserved);
         *self.preserved.lock() = preserved;
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         for (key, value) in self.preserved.lock().iter() {
             nbt.insert(key.to_string(), value.clone());
         }
@@ -466,6 +471,18 @@ impl BlockEntity for HopperBlockEntity {
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
         None
+    }
+
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {

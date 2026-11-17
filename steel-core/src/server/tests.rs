@@ -4877,6 +4877,7 @@ fn save_and_shutdown_disconnects_players_and_claims_their_removal() {
 mod attribute_command;
 mod block_item_data;
 mod command_block;
+mod container_locks;
 mod damage_history;
 mod data_command;
 mod dialog_command;

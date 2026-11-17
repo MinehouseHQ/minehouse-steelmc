@@ -10,6 +10,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::context_float_provider::ContextFloatProvider;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::data_components::vanilla_components::BREWING_FUEL;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -22,10 +23,12 @@ use steel_registry::{
 };
 use steel_utils::locks::IntoShared;
 use steel_utils::{
-    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::UpdateFlags,
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, translations,
+    types::UpdateFlags,
 };
 
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::inventory::recipe_access::{BREWING_REAGENTS, RECIPE_ACCESS, is_potion_input};
@@ -285,6 +288,8 @@ pub struct BrewingStandBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<BrewingStandContainer>>,
     container_ref: ContainerRef,
+    /// Vanilla `BaseContainerBlockEntity` custom name and lock.
+    name: ContainerName,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies this concrete block entity.
@@ -308,6 +313,7 @@ impl BrewingStandBlockEntity {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,
             container,
+            name: ContainerName::new(&translations::CONTAINER_BREWING),
         }
     }
 
@@ -358,6 +364,7 @@ impl BlockEntity for BrewingStandBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
+        self.name.load(nbt);
         let mut stand = self.container.lock();
         stand.items.fill(ItemStack::empty());
         if let Some(items) = nbt.list("Items").and_then(|list| list.compounds()) {
@@ -387,6 +394,7 @@ impl BlockEntity for BrewingStandBlockEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.name.save(nbt);
         let stand = self.container.lock();
         nbt.insert("BrewTime", stand.brew_time);
         nbt.insert("total_brew_time", stand.total_brew_time);
@@ -408,6 +416,18 @@ impl BlockEntity for BrewingStandBlockEntity {
 
     fn tick(&self, world: &Arc<World>) {
         self.server_tick(world);
+    }
+
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {

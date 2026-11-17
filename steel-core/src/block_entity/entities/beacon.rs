@@ -15,6 +15,7 @@ use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
@@ -25,10 +26,12 @@ use steel_utils::color::ArgbColor;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{
     BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
+    translations,
 };
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::entity::{LivingEntity as _, MobEffectInstance};
@@ -150,6 +153,7 @@ impl BeaconState {
 pub struct BeaconBlockEntity {
     base: Arc<BlockEntityBase>,
     state: Arc<SyncMutex<BeaconState>>,
+    name: ContainerName,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `BeaconBlockEntity`.
@@ -170,7 +174,14 @@ impl BeaconBlockEntity {
         Self {
             base,
             state: Arc::new(SyncMutex::new(BeaconState::new())),
+            name: ContainerName::new(&translations::CONTAINER_BEACON),
         }
+    }
+
+    /// The beacon's custom name and lock.
+    #[must_use]
+    pub const fn name(&self) -> &ContainerName {
+        &self.name
     }
 
     pub(crate) fn state(&self) -> Arc<SyncMutex<BeaconState>> {
@@ -342,30 +353,40 @@ impl BlockEntity for BeaconBlockEntity {
         &self.base
     }
 
-    // TODO: Persist `CustomName` and `Lock` like Vanilla. Both need foundations Steel lacks: a
-    //       block-entity display name and a `LockCode` type.
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let mut state = self.state.lock();
-        state.primary_power = Self::load_effect(nbt, "primary_effect");
-        state.secondary_power = Self::load_effect(nbt, "secondary_effect");
+        {
+            let mut state = self.state.lock();
+            state.primary_power = Self::load_effect(nbt, "primary_effect");
+            state.secondary_power = Self::load_effect(nbt, "secondary_effect");
+        }
+        self.name.load(nbt.into());
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        let state = self.state.lock();
-        Self::store_effect(nbt, "primary_effect", state.primary_power);
-        Self::store_effect(nbt, "secondary_effect", state.secondary_power);
-        nbt.insert("Levels", state.levels);
-    }
-
-    fn get_update_tag(&self) -> Option<NbtCompound> {
-        let mut nbt = NbtCompound::new();
         {
             let state = self.state.lock();
-            Self::store_effect(&mut nbt, "primary_effect", state.primary_power);
-            Self::store_effect(&mut nbt, "secondary_effect", state.secondary_power);
+            Self::store_effect(nbt, "primary_effect", state.primary_power);
+            Self::store_effect(nbt, "secondary_effect", state.secondary_power);
             nbt.insert("Levels", state.levels);
         }
-        Some(nbt)
+        self.name.save(nbt);
+    }
+
+    /// Vanilla `getUpdateTag`: `saveCustomOnly`.
+    fn get_update_tag(&self) -> Option<NbtCompound> {
+        Some(self.save_custom_only())
+    }
+
+    fn container_name(&self) -> Option<&ContainerName> {
+        Some(&self.name)
+    }
+
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.name.apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.name.collect_implicit_components(components);
     }
 
     fn tick(&self, world: &Arc<World>) {

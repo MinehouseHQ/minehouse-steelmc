@@ -11,11 +11,11 @@ use steel_registry::blocks::properties::{Axis, BlockStateProperties};
 use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _, translations};
-use text_components::TextComponent;
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::entities::HopperBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::entity::Entity;
@@ -102,7 +102,12 @@ impl BlockBehavior for HopperBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return false;
         };
-        let Some(hopper_entity) = block_entity.downcast_ref::<HopperBlockEntity>() else {
+        if block_entity.downcast_ref::<HopperBlockEntity>().is_none() {
+            return false;
+        }
+        let Some(title) =
+            unlocked_menu_title(&*block_entity, player, &translations::CONTAINER_HOPPER)
+        else {
             return false;
         };
         let Some(container) = block_entity.container_ref() else {
@@ -111,9 +116,6 @@ impl BlockBehavior for HopperBlock {
         if !ContainerRef::prepare_open(slice::from_ref(&container), player) {
             return false;
         }
-        let title = hopper_entity
-            .custom_name()
-            .unwrap_or_else(|| TextComponent::translated(translations::CONTAINER_HOPPER.msg()));
         let inventory = Arc::clone(&player.inventory);
         player.open_menu(title, move |context| {
             hopper(inventory, context.container_id, container)
@@ -130,7 +132,12 @@ impl BlockBehavior for HopperBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if self.open_menu_provider(state, world, pos, player) {
+        // Vanilla counts the use even when the hopper is locked.
+        let is_hopper = world
+            .get_block_entity(pos)
+            .is_some_and(|entity| entity.downcast_ref::<HopperBlockEntity>().is_some());
+        if is_hopper {
+            self.open_menu_provider(state, world, pos, player);
             player.award_custom_stat(&vanilla_custom_stats::INSPECT_HOPPER);
         }
         InteractionResult::Success

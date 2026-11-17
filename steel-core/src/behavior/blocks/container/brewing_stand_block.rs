@@ -8,10 +8,10 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
 
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::{BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess};
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::entity::ai::path::PathComputationType;
 use crate::inventory::container::calculate_redstone_signal_from_container;
@@ -52,14 +52,18 @@ impl BlockBehavior for BrewingStandBlock {
         if block_entity.get_type() != &vanilla_block_entity_types::BREWING_STAND {
             return false;
         }
+        let Some(title) =
+            unlocked_menu_title(&*block_entity, player, &translations::CONTAINER_BREWING)
+        else {
+            return false;
+        };
         let Some(container) = ContainerRef::from_block_entity(block_entity) else {
             return false;
         };
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_BREWING.msg()),
-            move |context| brewing_stand(inventory, context.container_id, container),
-        );
+        player.open_menu(title, move |context| {
+            brewing_stand(inventory, context.container_id, container)
+        });
         true
     }
 
@@ -73,7 +77,12 @@ impl BlockBehavior for BrewingStandBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if self.open_menu_provider(state, world, pos, player) {
+        // Vanilla counts the use even when the stand is locked.
+        let is_stand = world
+            .get_block_entity(pos)
+            .is_some_and(|entity| entity.get_type() == &vanilla_block_entity_types::BREWING_STAND);
+        if is_stand {
+            self.open_menu_provider(state, world, pos, player);
             player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_BREWINGSTAND);
         }
         InteractionResult::Success

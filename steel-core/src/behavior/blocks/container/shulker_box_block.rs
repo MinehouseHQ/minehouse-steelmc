@@ -1,6 +1,7 @@
 use std::slice;
 use std::sync::{Arc, Weak};
 
+use crate::block_entity::container_name::unlocked_menu_title;
 use steel_macros::block_behavior;
 use steel_registry::{
     block_entity_type::BlockEntityTypeRef,
@@ -15,7 +16,6 @@ use steel_registry::{
     vanilla_block_entity_types, vanilla_custom_stats,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, Downcast, translations};
-use text_components::TextComponent;
 
 use super::anger_nearby_piglins;
 use crate::{
@@ -108,6 +108,11 @@ impl BlockBehavior for ShulkerBoxBlock {
         {
             return false;
         }
+        let Some(title) =
+            unlocked_menu_title(&*block_entity, player, &translations::CONTAINER_SHULKER_BOX)
+        else {
+            return false;
+        };
         let Some(container_ref) = block_entity.container_ref() else {
             return false;
         };
@@ -115,10 +120,9 @@ impl BlockBehavior for ShulkerBoxBlock {
             return false;
         }
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_SHULKER_BOX.msg()),
-            move |context| shulker_box(inventory, context.container_id, container_ref),
-        );
+        player.open_menu(title, move |context| {
+            shulker_box(inventory, context.container_id, container_ref)
+        });
         true
     }
 
@@ -135,8 +139,9 @@ impl BlockBehavior for ShulkerBoxBlock {
         if let Some(block_entity) = world.get_block_entity(pos)
             && let Some(block_entity) = block_entity.downcast_ref::<ShulkerBoxBlockEntity>()
             && block_entity.can_open(state, world, pos)
-            && self.open_menu_provider(state, world, pos, player)
         {
+            // Vanilla counts the use even when the box is locked.
+            self.open_menu_provider(state, world, pos, player);
             player.award_custom_stat(&vanilla_custom_stats::OPEN_SHULKER_BOX);
             anger_nearby_piglins(world, player, true);
         }

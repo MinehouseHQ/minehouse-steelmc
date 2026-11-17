@@ -26,6 +26,7 @@
 pub(crate) mod block_state_nbt;
 mod components;
 pub mod container_loot;
+pub mod container_name;
 pub mod container_openers;
 pub mod entities;
 pub mod player_detector;
@@ -66,6 +67,7 @@ pub(crate) use storage::{
 
 use steel_utils::nbt::{merge_nbt_compounds, nbt_compounds_equal};
 
+use crate::block_entity::container_name::ContainerName;
 use crate::block_entity::entities::Spawner;
 use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::lock::ContainerRef;
@@ -465,6 +467,12 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
         self.load_additional(nbt);
         self.base().load_components(nbt);
+    }
+
+    /// The custom name and lock of a vanilla `BaseContainerBlockEntity` or
+    /// beacon; `None` for block entities without them.
+    fn container_name(&self) -> Option<&ContainerName> {
+        None
     }
 
     /// Reads the components this entity represents through its own fields.

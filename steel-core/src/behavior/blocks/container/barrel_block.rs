@@ -11,13 +11,13 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
-use text_components::TextComponent;
 
 use super::anger_nearby_piglins;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::entities::BarrelBlockEntity;
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -62,6 +62,11 @@ impl BlockBehavior for BarrelBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return false;
         };
+        let Some(title) =
+            unlocked_menu_title(&*block_entity, player, &translations::CONTAINER_BARREL)
+        else {
+            return false;
+        };
         let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             return false;
         };
@@ -71,10 +76,9 @@ impl BlockBehavior for BarrelBlock {
 
         // Barrels open a 3-row chest menu.
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_BARREL.msg()),
-            move |context| chest(inventory, context.container_id, container_ref, 3),
-        );
+        player.open_menu(title, move |context| {
+            chest(inventory, context.container_id, container_ref, 3)
+        });
         true
     }
 
@@ -87,13 +91,15 @@ impl BlockBehavior for BarrelBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if !self.open_menu_provider(state, world, pos, player) {
-            return InteractionResult::Pass;
+        // Vanilla counts the use even when the barrel is locked.
+        let is_barrel = world
+            .get_block_entity(pos)
+            .is_some_and(|entity| entity.downcast_ref::<BarrelBlockEntity>().is_some());
+        if is_barrel {
+            self.open_menu_provider(state, world, pos, player);
+            player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
+            anger_nearby_piglins(world, player, true);
         }
-
-        player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
-        anger_nearby_piglins(world, player, true);
-
         InteractionResult::Success
     }
 

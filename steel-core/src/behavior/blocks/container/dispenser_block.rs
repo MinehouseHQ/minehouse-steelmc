@@ -15,13 +15,13 @@ use steel_registry::{
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
-use text_components::TextComponent;
 use text_components::translation::Translation;
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::dispense::{BlockSource, DispenseBehavior, default_dispense};
+use crate::block_entity::container_name::unlocked_menu_title;
 use crate::block_entity::entities::{DispenserBlockEntity, HopperBlockEntity, add_item};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::inventory::container::calculate_redstone_signal_from_container;
@@ -126,7 +126,13 @@ impl Kind {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return false;
         };
-        let Some(entity) = block_entity.downcast_ref::<DispenserBlockEntity>() else {
+        if block_entity
+            .downcast_ref::<DispenserBlockEntity>()
+            .is_none()
+        {
+            return false;
+        }
+        let Some(title) = unlocked_menu_title(&*block_entity, player, self.title) else {
             return false;
         };
         let Some(container) = block_entity.container_ref() else {
@@ -135,9 +141,6 @@ impl Kind {
         if !ContainerRef::prepare_open(slice::from_ref(&container), player) {
             return false;
         }
-        let title = entity
-            .custom_name()
-            .unwrap_or_else(|| TextComponent::translated(self.title.msg()));
         let inventory = Arc::clone(&player.inventory);
         player.open_menu(title, move |context| {
             dispenser(inventory, context.container_id, container)
@@ -146,7 +149,12 @@ impl Kind {
     }
 
     fn open(self, world: &World, pos: BlockPos, player: &Player) -> InteractionResult {
-        if self.open_menu(world, pos, player) {
+        // Vanilla counts the use even when the block is locked.
+        let is_dispenser = world
+            .get_block_entity(pos)
+            .is_some_and(|entity| entity.downcast_ref::<DispenserBlockEntity>().is_some());
+        if is_dispenser {
+            self.open_menu(world, pos, player);
             player.award_custom_stat(self.inspect_stat);
         }
         InteractionResult::Success

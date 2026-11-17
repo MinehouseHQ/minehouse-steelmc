@@ -30,6 +30,7 @@ use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::waxables::get_normal_from_waxed_variant;
 use crate::behavior::weathering::get_weather_state;
+use crate::block_entity::container_name::{ContainerName, block_center, check_container_locks};
 use crate::block_entity::entities::ChestBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::inventory::container::calculate_redstone_signal_from_containers;
@@ -286,6 +287,21 @@ impl ChestBehavior {
                 6,
             ),
         };
+        let (halves, center) = match &combined {
+            ChestCombineResult::None => return false,
+            ChestCombineResult::Single(chest) => (vec![chest], block_center(chest.get_block_pos())),
+            ChestCombineResult::Double(first, second) => (
+                vec![first, second],
+                block_center(first.get_block_pos()).midpoint(block_center(second.get_block_pos())),
+            ),
+        };
+        let names: Vec<&ContainerName> = halves
+            .iter()
+            .filter_map(|half| half.container_name())
+            .collect();
+        if !check_container_locks(&names, player, center, &title) {
+            return false;
+        }
         let containers = combined.containers();
         if containers.is_empty() || !ContainerRef::prepare_open(&containers, player) {
             return false;
@@ -299,9 +315,15 @@ impl ChestBehavior {
     }
 
     fn use_without_item(&self, state: BlockStateId, world: &World, pos: BlockPos, player: &Player) {
-        if !self.open_menu(state, world, pos, player) {
+        // Vanilla counts the use whenever the chest provides a menu, even a
+        // locked one.
+        if matches!(
+            self.combine(state, world, pos, false),
+            ChestCombineResult::None
+        ) {
             return;
         }
+        self.open_menu(state, world, pos, player);
         player.award_custom_stat(self.open_stat);
         anger_nearby_piglins(world, player, true);
     }
