@@ -426,9 +426,6 @@ impl Projectile for ThrownTridentEntity {
     }
 
     fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
-        // TODO: vanilla `ThrownTrident.hitBlockEnchantmentEffects` runs the
-        // `minecraft:hit_block` effects (Channeling's lightning); Steel has
-        // no hit-block enchantment effects yet.
         self.arrow_on_hit_block(hit);
     }
 }
@@ -506,6 +503,12 @@ impl AbstractArrow for ThrownTridentEntity {
     /// Vanilla `ThrownTrident.getWeaponItem`: the trident itself.
     fn get_weapon_item(&self) -> Option<ItemStack> {
         Some(self.pickup_item_stack())
+    }
+
+    /// Vanilla `ThrownTrident.hitBlockEnchantmentEffects`: a trident whose
+    /// enchantment broke it is killed.
+    fn on_hit_block_weapon_broken(&self, world: &World) {
+        self.kill(world);
     }
 
     /// Vanilla `ThrownTrident.findHitEntities`: at most one entity, and none

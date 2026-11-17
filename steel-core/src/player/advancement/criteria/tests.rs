@@ -39,7 +39,7 @@ mod triggers {
     use super::super::predicates::LocationPredicate;
     use super::super::{AVOID_VIBRATION, TICK, init_criteria};
     use crate::behavior::init_behaviors;
-    use crate::entity::entities::ItemEntity;
+    use crate::entity::entities::{ItemEntity, LightningBoltEntity};
     use crate::entity::init_entities;
     use crate::entity::next_entity_id;
     use crate::entity::{Entity, SharedEntity};
@@ -798,6 +798,83 @@ mod triggers {
             &player,
             "minecraft:adventure/avoid_vibration",
             "avoid_vibration"
+        ));
+    }
+
+    fn bolt_at(world: &Arc<World>, position: glam::DVec3) -> Arc<LightningBoltEntity> {
+        use steel_registry::vanilla_entities;
+
+        let bolt = Arc::new(LightningBoltEntity::new(
+            &vanilla_entities::LIGHTNING_BOLT,
+            next_entity_id(),
+            position,
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&bolt) as SharedEntity)
+            .expect("the bolt should attach to the loaded chunk");
+        bolt
+    }
+
+    #[test]
+    fn a_channeled_bolt_striking_a_villager_grants_very_very_frightening() {
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+
+        let (fixture, player) = movement_fixture("criteria_channeled");
+        let world = &fixture.world;
+        let _villager = spawn_in(world, &vanilla_entities::VILLAGER);
+        let bolt = bolt_at(world, DVec3::new(8.5, 64.0, 8.5));
+        let advancement = "minecraft:adventure/very_very_frightening";
+
+        Arc::clone(&bolt).tick();
+        assert!(!criterion_done(&player, advancement, "struck_villager"));
+
+        let bolt = bolt_at(world, DVec3::new(8.5, 64.0, 8.5));
+        let _villager = spawn_in(world, &vanilla_entities::VILLAGER);
+        bolt.set_cause(Some(Arc::clone(&player)));
+        Arc::clone(&bolt).tick();
+        assert!(criterion_done(&player, advancement, "struck_villager"));
+    }
+
+    #[test]
+    fn a_fireless_bolt_beside_a_villager_grants_surge_protector() {
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+
+        use crate::entity::create_entity_instance;
+
+        let (fixture, player) = movement_fixture("criteria_surge");
+        let world = &fixture.world;
+        player
+            .teleport_to(DVec3::new(8.5, 100.0, 8.5))
+            .expect("the player can move");
+        let villager = create_entity_instance(
+            world,
+            &vanilla_entities::VILLAGER,
+            DVec3::new(8.5, 100.0, 1.5),
+        )
+        .expect("a villager can be created");
+        world
+            .try_add_entity(Arc::clone(&villager))
+            .expect("the villager should attach to the loaded chunk");
+        // In the air the bolt has nothing to set on fire.
+        let bolt = bolt_at(world, DVec3::new(8.5, 100.0, 14.5));
+        let advancement = "minecraft:adventure/lightning_rod_with_villager_no_fire";
+
+        for _ in 0..64 {
+            if bolt.is_removed() {
+                break;
+            }
+            Arc::clone(&bolt).tick();
+        }
+        assert!(bolt.is_removed());
+        assert_eq!(bolt.blocks_set_on_fire(), 0);
+        assert!(villager.is_alive());
+        assert!(criterion_done(
+            &player,
+            advancement,
+            "lightning_rod_with_villager_no_fire"
         ));
     }
 }

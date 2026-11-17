@@ -1,8 +1,11 @@
+mod hit_block;
 mod item_in_use;
 mod location;
 mod tick;
 
 use std::sync::Arc;
+
+use glam::DVec3;
 
 use item_in_use::EnchantedItemInUse;
 
@@ -18,8 +21,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
-use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::{BlockPos, Identifier};
 
 use crate::entity::attribute::AttributeModifier;
 use crate::entity::damage::DamageSource;
@@ -35,6 +38,7 @@ pub(crate) use location::{
     stop_location_based_effects, stop_location_based_effects_in_slot,
 };
 
+pub(crate) use hit_block::on_hit_block;
 pub(crate) use tick::tick_effects;
 
 pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
@@ -109,13 +113,13 @@ impl<'a> EnchantmentPostAttackContext<'a> {
         }
     }
 
-    fn damage_context(&self) -> EnchantmentDamageContext<'a> {
-        EnchantmentDamageContext::new(
-            self.victim.entity_type(),
-            self.attacker.map(|entity| entity.entity_type()),
-            self.direct_attacker.map(|entity| entity.entity_type()),
-            self.damage_source,
-        )
+    /// The loot context's entity for an `entity_properties` condition.
+    const fn entity(&self, target: EnchantmentEntityTarget) -> Option<&'a SharedEntity> {
+        match target {
+            EnchantmentEntityTarget::This => Some(self.victim),
+            EnchantmentEntityTarget::Attacker => self.attacker,
+            EnchantmentEntityTarget::DirectAttacker => self.direct_attacker,
+        }
     }
 
     fn affected_entity(&self, target: EnchantmentTarget) -> Option<&'a SharedEntity> {
@@ -672,7 +676,6 @@ fn apply_post_attack_effects(
     let Some(enchantments) = enchantments else {
         return false;
     };
-    let damage_context = context.damage_context();
     let mut enchanted_item_broke = false;
 
     for (key, level) in enchantments.iter() {
@@ -695,7 +698,7 @@ fn apply_post_attack_effects(
                 continue;
             };
             let requirements_match =
-                post_attack_requirements_match(effect.requirements, &damage_context, level);
+                post_attack_requirements_match(effect.requirements, world, context, level);
             if !requirements_match {
                 continue;
             }
@@ -707,6 +710,7 @@ fn apply_post_attack_effects(
                 &effect.effect,
                 level,
                 affected_entity.as_ref(),
+                affected_entity.position(),
                 Some(enchanted_entity),
                 item,
             );
@@ -749,6 +753,7 @@ pub(crate) fn on_projectile_spawned(
                     &effect.effect,
                     level,
                     projectile,
+                    projectile.position(),
                     owner,
                     &mut EnchantedItemInUse::Stack(weapon),
                 );
@@ -791,11 +796,14 @@ pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEn
     }
 }
 
+/// Vanilla `EnchantmentEntityEffect.apply(level, enchantmentLevel, item,
+/// entity, position)`.
 fn apply_entity_effect(
     world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &dyn Entity,
+    position: DVec3,
     enchanted_entity: Option<&SharedEntity>,
     enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
@@ -808,6 +816,7 @@ fn apply_entity_effect(
         effect,
         level,
         entity,
+        position,
         enchanted_entity,
         enchanted_item,
     )
@@ -826,7 +835,8 @@ fn entity_effect_is_supported(effect: &EnchantmentEntityEffect) -> bool {
         | EnchantmentEntityEffect::Ignite { .. }
         | EnchantmentEntityEffect::PlaySound { .. }
         | EnchantmentEntityEffect::SpawnParticles { .. }
-        | EnchantmentEntityEffect::ReplaceDisk { .. } => true,
+        | EnchantmentEntityEffect::ReplaceDisk { .. }
+        | EnchantmentEntityEffect::SummonEntity { .. } => true,
         EnchantmentEntityEffect::ApplyMobEffect { to_apply, .. } => {
             matches!(to_apply, MobEffectSelection::Single(_))
         }
@@ -838,6 +848,7 @@ fn apply_supported_entity_effect(
     effect: &EnchantmentEntityEffect,
     level: i32,
     entity: &dyn Entity,
+    position: DVec3,
     enchanted_entity: Option<&SharedEntity>,
     enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
@@ -850,6 +861,7 @@ fn apply_supported_entity_effect(
                     effect,
                     level,
                     entity,
+                    position,
                     enchanted_entity,
                     enchanted_item,
                 );
@@ -914,16 +926,20 @@ fn apply_supported_entity_effect(
         }
         EnchantmentEntityEffect::ReplaceDisk { .. } => {
             if let Some(world) = entity.level() {
-                location::replace_disk(&world, effect, level, entity, entity.position());
+                location::replace_disk(&world, effect, level, entity, position);
             }
             false
         }
         EnchantmentEntityEffect::PlaySound { .. } => {
-            tick::play_sound(world, effect, level, entity, entity.position());
+            tick::play_sound(world, effect, level, entity, position);
             false
         }
         EnchantmentEntityEffect::SpawnParticles { .. } => {
-            tick::spawn_particles(world, effect, entity, entity.position());
+            tick::spawn_particles(world, effect, entity, position);
+            false
+        }
+        EnchantmentEntityEffect::SummonEntity { entity_types, .. } => {
+            hit_block::summon_entity(entity_types, entity, position, enchanted_entity);
             false
         }
         EnchantmentEntityEffect::ApplyMobEffect { .. }
@@ -964,6 +980,7 @@ fn post_piercing_entity_effect_is_supported(effect: &EnchantmentEntityEffect) ->
             matches!(to_apply, MobEffectSelection::Single(_))
         }
         EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::SummonEntity { .. }
         | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
 }
@@ -1033,11 +1050,13 @@ fn apply_supported_post_piercing_entity_effect(
                 effect,
                 level,
                 user,
+                user.position(),
                 None,
                 &mut EnchantedItemInUse::Stack(&mut ignored_item),
             )
         }
         EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::SummonEntity { .. }
         | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
 }
@@ -1063,7 +1082,8 @@ fn requirements_match(
 
 fn post_attack_requirements_match(
     requirements: Option<&'static EnchantmentEffectRequirements>,
-    context: &EnchantmentDamageContext<'_>,
+    world: &World,
+    context: &EnchantmentPostAttackContext<'_>,
     level: i32,
 ) -> bool {
     let Some(requirements) = requirements else {
@@ -1071,7 +1091,7 @@ fn post_attack_requirements_match(
     };
 
     matches!(
-        requirements_state_with_random(requirements, context, level),
+        requirements_state_with_random(requirements, world, context, level),
         Some(true)
     )
 }
@@ -1116,20 +1136,26 @@ fn requirements_state(
         EnchantmentEffectRequirements::EnchantmentActiveCheck { .. } => Some(false),
         EnchantmentEffectRequirements::RandomChance { .. }
         | EnchantmentEffectRequirements::MatchTool { .. }
+        | EnchantmentEffectRequirements::WeatherCheck { .. }
+        | EnchantmentEffectRequirements::LocationCheck { .. }
         | EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
 
+/// Evaluates requirements in vanilla's post-attack context: the victim is
+/// `this` and the origin, beside the attacker, direct attacker and damage
+/// source.
 fn requirements_state_with_random(
     requirements: &'static EnchantmentEffectRequirements,
-    context: &EnchantmentDamageContext<'_>,
+    world: &World,
+    context: &EnchantmentPostAttackContext<'_>,
     level: i32,
 ) -> Option<bool> {
     match requirements {
         EnchantmentEffectRequirements::AllOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level) {
+                match requirements_state_with_random(term, world, context, level) {
                     Some(true) => {}
                     Some(false) => return Some(false),
                     None => has_unknown = true,
@@ -1140,7 +1166,7 @@ fn requirements_state_with_random(
         EnchantmentEffectRequirements::AnyOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level) {
+                match requirements_state_with_random(term, world, context, level) {
                     Some(true) => return Some(true),
                     Some(false) => {}
                     None => has_unknown = true,
@@ -1149,17 +1175,34 @@ fn requirements_state_with_random(
             if has_unknown { None } else { Some(false) }
         }
         EnchantmentEffectRequirements::Inverted(term) => {
-            requirements_state_with_random(term, context, level).map(|matched| !matched)
+            requirements_state_with_random(term, world, context, level).map(|matched| !matched)
         }
-        EnchantmentEffectRequirements::EntityProperties { entity, predicate } => context
-            .entity_type(*entity)
-            .and_then(|entity_type| entity_predicate_matches_type(predicate, entity_type)),
+        EnchantmentEffectRequirements::EntityProperties { entity, predicate } => {
+            context.entity(*entity).map_or(Some(false), |entity| {
+                entity_predicate_matches_entity(predicate, entity.as_ref())
+            })
+        }
         EnchantmentEffectRequirements::DamageSourceProperties(predicate) => Some(
             damage_source_predicate_matches(predicate, context.damage_source),
         ),
         EnchantmentEffectRequirements::RandomChance { chance } => {
             Some(rand::random::<f32>() < chance.calculate(level))
         }
+        EnchantmentEffectRequirements::WeatherCheck {
+            raining,
+            thundering,
+        } => Some(hit_block::weather_matches(world, *raining, *thundering)),
+        EnchantmentEffectRequirements::LocationCheck {
+            offset,
+            blocks,
+            can_see_sky,
+        } => Some(hit_block::location_check_matches(
+            world,
+            context.victim.position(),
+            *offset,
+            blocks.as_ref(),
+            *can_see_sky,
+        )),
         EnchantmentEffectRequirements::EnchantmentActiveCheck { .. } => Some(false),
         EnchantmentEffectRequirements::MatchTool { .. }
         | EnchantmentEffectRequirements::Unsupported { .. } => None,
@@ -1190,11 +1233,30 @@ fn entity_requirements_state(
     level: i32,
     enchantment_active: Option<bool>,
 ) -> Option<bool> {
+    entity_requirements_state_at(
+        requirements,
+        entity,
+        entity.position(),
+        level,
+        enchantment_active,
+    )
+}
+
+/// [`entity_requirements_state`] with an origin other than the entity's
+/// position, as vanilla's block-hit context has.
+fn entity_requirements_state_at(
+    requirements: &'static EnchantmentEffectRequirements,
+    entity: &dyn Entity,
+    origin: DVec3,
+    level: i32,
+    enchantment_active: Option<bool>,
+) -> Option<bool> {
     match requirements {
         EnchantmentEffectRequirements::AllOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match entity_requirements_state(term, entity, level, enchantment_active) {
+                match entity_requirements_state_at(term, entity, origin, level, enchantment_active)
+                {
                     Some(true) => {}
                     Some(false) => return Some(false),
                     None => has_unknown = true,
@@ -1205,7 +1267,8 @@ fn entity_requirements_state(
         EnchantmentEffectRequirements::AnyOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match entity_requirements_state(term, entity, level, enchantment_active) {
+                match entity_requirements_state_at(term, entity, origin, level, enchantment_active)
+                {
                     Some(true) => return Some(true),
                     Some(false) => {}
                     None => has_unknown = true,
@@ -1214,7 +1277,7 @@ fn entity_requirements_state(
             if has_unknown { None } else { Some(false) }
         }
         EnchantmentEffectRequirements::Inverted(term) => {
-            entity_requirements_state(term, entity, level, enchantment_active)
+            entity_requirements_state_at(term, entity, origin, level, enchantment_active)
                 .map(|matched| !matched)
         }
         EnchantmentEffectRequirements::EntityProperties {
@@ -1227,6 +1290,25 @@ fn entity_requirements_state(
         EnchantmentEffectRequirements::EnchantmentActiveCheck { active } => {
             Some(enchantment_active == Some(*active))
         }
+        EnchantmentEffectRequirements::WeatherCheck {
+            raining,
+            thundering,
+        } => entity
+            .level()
+            .map(|world| hit_block::weather_matches(&world, *raining, *thundering)),
+        EnchantmentEffectRequirements::LocationCheck {
+            offset,
+            blocks,
+            can_see_sky,
+        } => entity.level().map(|world| {
+            hit_block::location_check_matches(
+                &world,
+                origin,
+                *offset,
+                blocks.as_ref(),
+                *can_see_sky,
+            )
+        }),
         EnchantmentEffectRequirements::EntityProperties { .. }
         | EnchantmentEffectRequirements::DamageSourceProperties(_)
         | EnchantmentEffectRequirements::MatchTool { .. }
@@ -1243,6 +1325,7 @@ fn entity_predicate_matches_type(
         || predicate.flags.has_constraints()
         || predicate.movement.is_some()
         || predicate.periodic_tick.is_some()
+        || predicate.location_can_see_sky.is_some()
         || !matches!(
             predicate.movement_affected_by,
             MovementAffectedByPredicate::Any
@@ -1284,6 +1367,13 @@ fn entity_predicate_matches_entity(
     }
 
     if !entity_type_predicate_matches(&predicate.entity_type, entity.entity_type())? {
+        return Some(false);
+    }
+
+    if predicate
+        .location_can_see_sky
+        .is_some_and(|expected| entity_sees_sky(entity) != expected)
+    {
         return Some(false);
     }
 
@@ -1380,6 +1470,18 @@ fn entity_predicate_matches_entity(
             Some(true)
         }
     }
+}
+
+/// Vanilla `EntityPredicate.location` reduced to `can_see_sky`, tested at
+/// the entity's position.
+fn entity_sees_sky(entity: &dyn Entity) -> bool {
+    let position = entity.position();
+    entity.level().is_some_and(|world| {
+        hit_block::sky_visible(
+            &world,
+            BlockPos::containing(position.x, position.y, position.z),
+        )
+    })
 }
 
 /// Vanilla `MovementAffectedByPredicate` with a `block.blocks` location

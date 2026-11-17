@@ -628,6 +628,8 @@ mod tests {
             | EnchantmentEffectRequirements::DamageSourceProperties(_)
             | EnchantmentEffectRequirements::MatchTool { .. }
             | EnchantmentEffectRequirements::EnchantmentActiveCheck { .. }
+            | EnchantmentEffectRequirements::WeatherCheck { .. }
+            | EnchantmentEffectRequirements::LocationCheck { .. }
             | EnchantmentEffectRequirements::Unsupported { .. } => false,
         }
     }
@@ -646,6 +648,7 @@ mod tests {
             | EnchantmentEntityEffect::Ignite { .. }
             | EnchantmentEntityEffect::ApplyMobEffect { .. }
             | EnchantmentEntityEffect::ReplaceDisk { .. }
+            | EnchantmentEntityEffect::SummonEntity { .. }
             | EnchantmentEntityEffect::Unsupported { .. } => false,
         }
     }
@@ -664,6 +667,7 @@ mod tests {
             | EnchantmentEntityEffect::Ignite { .. }
             | EnchantmentEntityEffect::ApplyMobEffect { .. }
             | EnchantmentEntityEffect::ReplaceDisk { .. }
+            | EnchantmentEntityEffect::SummonEntity { .. }
             | EnchantmentEntityEffect::Unsupported { .. } => false,
         }
     }

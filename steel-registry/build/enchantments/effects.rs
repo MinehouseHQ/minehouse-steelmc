@@ -320,6 +320,7 @@ pub(super) fn entity_predicate_token(predicate: &EntityPredicateJson) -> TokenSt
     let periodic_tick = predicate
         .periodic_tick
         .map_or_else(|| quote! { None }, |period| quote! { Some(#period) });
+    let location_can_see_sky = optional_bool_token(predicate.location_can_see_sky);
     let type_specific = entity_type_specific_predicate_token(&predicate.type_specific);
     let unsupported = predicate.unsupported;
     quote! {
@@ -330,6 +331,7 @@ pub(super) fn entity_predicate_token(predicate: &EntityPredicateJson) -> TokenSt
             movement: #movement,
             movement_affected_by: #movement_affected_by,
             periodic_tick: #periodic_tick,
+            location_can_see_sky: #location_can_see_sky,
             type_specific: #type_specific,
             unsupported: #unsupported,
         }
@@ -597,6 +599,24 @@ pub(super) fn generate_entity_effect(
                 }
             }
         }
+        EntityEffectJson::SummonEntity { entity, join_team } => {
+            let entity_types = match entity {
+                ItemHolderSetJson::Tag(tag) => {
+                    let tag = identifier_token(tag);
+                    quote! { EnchantmentEntityTypeSet::Tag(#tag) }
+                }
+                ItemHolderSetJson::Direct(types) => {
+                    let types = types.iter().map(identifier_token);
+                    quote! { EnchantmentEntityTypeSet::Direct(&[#(#types),*]) }
+                }
+            };
+            quote! {
+                EnchantmentEntityEffect::SummonEntity {
+                    entity_types: #entity_types,
+                    join_team: #join_team,
+                }
+            }
+        }
         EntityEffectJson::Unsupported { effect_type } => {
             let effect_type = identifier_token(effect_type);
             quote! { EnchantmentEntityEffect::Unsupported { effect_type: #effect_type } }
@@ -762,6 +782,44 @@ pub(super) fn generate_requirements_value(
         }
         RequirementsJson::EnchantmentActiveCheck { active } => {
             quote! { EnchantmentEffectRequirements::EnchantmentActiveCheck { active: #active } }
+        }
+        RequirementsJson::WeatherCheck {
+            raining,
+            thundering,
+        } => {
+            let raining = optional_bool_token(*raining);
+            let thundering = optional_bool_token(*thundering);
+            quote! {
+                EnchantmentEffectRequirements::WeatherCheck {
+                    raining: #raining,
+                    thundering: #thundering,
+                }
+            }
+        }
+        RequirementsJson::LocationCheck {
+            offset: [offset_x, offset_y, offset_z],
+            blocks,
+            can_see_sky,
+        } => {
+            let blocks = match blocks {
+                Some(ItemHolderSetJson::Tag(tag)) => {
+                    let tag = identifier_token(tag);
+                    quote! { Some(EnchantmentBlockSet::Tag(#tag)) }
+                }
+                Some(ItemHolderSetJson::Direct(blocks)) => {
+                    let blocks = blocks.iter().map(identifier_token);
+                    quote! { Some(EnchantmentBlockSet::Direct(&[#(#blocks),*])) }
+                }
+                None => quote! { None },
+            };
+            let can_see_sky = optional_bool_token(*can_see_sky);
+            quote! {
+                EnchantmentEffectRequirements::LocationCheck {
+                    offset: glam::IVec3::new(#offset_x, #offset_y, #offset_z),
+                    blocks: #blocks,
+                    can_see_sky: #can_see_sky,
+                }
+            }
         }
         RequirementsJson::Unsupported { condition } => {
             let condition = identifier_token(condition);

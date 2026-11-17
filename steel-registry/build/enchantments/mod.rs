@@ -71,7 +71,7 @@ struct EnchantmentEffectsJson {
     #[serde(rename = "minecraft:post_piercing_attack", default)]
     post_piercing_attack: Vec<ConditionalEntityEffectJson>,
     #[serde(rename = "minecraft:hit_block", default)]
-    hit_block: Vec<serde_json::Value>,
+    hit_block: Vec<ConditionalEntityEffectJson>,
     #[serde(rename = "minecraft:item_damage", default)]
     item_damage: Vec<ConditionalValueEffectJson>,
     #[serde(rename = "minecraft:equipment_drops", default)]
@@ -292,6 +292,10 @@ enum EntityEffectJson {
         block_state: BlockStateData,
         trigger_game_event: Option<Identifier>,
     },
+    SummonEntity {
+        entity: ItemHolderSetJson,
+        join_team: bool,
+    },
     Unsupported {
         effect_type: Identifier,
     },
@@ -345,6 +349,15 @@ enum RequirementsJson {
     EnchantmentActiveCheck {
         active: bool,
     },
+    WeatherCheck {
+        raining: Option<bool>,
+        thundering: Option<bool>,
+    },
+    LocationCheck {
+        offset: [i32; 3],
+        blocks: Option<ItemHolderSetJson>,
+        can_see_sky: Option<bool>,
+    },
     Unsupported {
         condition: Identifier,
     },
@@ -381,6 +394,7 @@ struct EntityPredicateJson {
     movement: Option<Box<MovementPredicateJson>>,
     movement_affected_by: MovementAffectedByJson,
     periodic_tick: Option<i32>,
+    location_can_see_sky: Option<bool>,
     type_specific: EntityTypeSpecificPredicateJson,
     unsupported: bool,
 }
@@ -580,6 +594,7 @@ pub(crate) fn build() -> TokenStream {
             CrossbowChargingSounds, DamageSourcePredicate, DamageSourceTagPredicate,
             EnchantmentAttributeEffect, EnchantmentEffectRequirements, EnchantmentEffects,
             EnchantmentBlockSet, EnchantmentEntityEffect, EnchantmentEntityTarget,
+            EnchantmentEntityTypeSet,
             EnchantmentItemSet, EnchantmentLocationBasedEffect, EnchantmentTarget,
             EnchantmentDoubleBounds, EnchantmentValueEffect, EntityFlagsPredicate,
             EntityMovementPredicate, EntityPredicate, MovementAffectedByPredicate,
