@@ -12,7 +12,9 @@ use steel_utils::types::InteractionHand;
 
 use crate::enchantment_helper;
 use crate::entity::entities::{ArrowEntity, SpectralArrowEntity, ThrownTridentEntity};
-use crate::entity::{AbstractArrow, LivingEntity, Projectile as _, SharedEntity, next_entity_id};
+use crate::entity::{
+    AbstractArrow, Entity, LivingEntity, Projectile as _, SharedEntity, next_entity_id,
+};
 use crate::inventory::container::Container as _;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -204,6 +206,13 @@ pub(crate) fn create_arrow(
 /// trident.
 #[must_use]
 pub(crate) fn as_abstract_arrow(entity: &SharedEntity) -> Option<&dyn AbstractArrow> {
+    as_abstract_arrow_entity(&**entity)
+}
+
+/// Returns `entity` as an arrow or a thrown trident, like vanilla's
+/// `instanceof AbstractArrow`.
+#[must_use]
+pub(crate) fn as_abstract_arrow_entity(entity: &dyn Entity) -> Option<&dyn AbstractArrow> {
     use steel_utils::Downcast as _;
     if let Some(arrow) = entity.downcast_ref::<ArrowEntity>() {
         return Some(arrow);
