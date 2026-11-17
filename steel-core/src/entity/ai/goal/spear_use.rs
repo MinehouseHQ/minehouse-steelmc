@@ -101,31 +101,55 @@ impl SpearUseGoal {
     }
 
     fn able_to_attack(mob: &dyn PathfinderMob) -> bool {
-        let mut has_spear = false;
-        mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
-            has_spear = stack.has(KINETIC_WEAPON);
-        });
-        mob.target().is_some() && has_spear
+        mob.target().is_some() && holds_kinetic_weapon(mob)
     }
 
     /// Vanilla `getKineticWeaponUseDuration`.
     fn kinetic_weapon_use_duration(mob: &dyn PathfinderMob) -> i32 {
-        let mut duration = 0;
-        mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
-            duration = stack.get(KINETIC_WEAPON).map_or(0, |weapon| {
-                weapon.delay_ticks()
-                    + weapon
-                        .damage_conditions()
-                        .map_or(0, KineticWeaponCondition::max_duration_ticks)
-            });
-        });
-        reduced_tick_delay(duration)
+        reduced_tick_delay(kinetic_weapon_damage_use_duration(mob))
     }
+}
+
+/// Whether the main hand holds a kinetic weapon such as a spear.
+pub(crate) fn holds_kinetic_weapon(mob: &dyn PathfinderMob) -> bool {
+    let mut has_spear = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
+        has_spear = stack.has(KINETIC_WEAPON);
+    });
+    has_spear
+}
+
+/// Vanilla `KineticWeapon.computeDamageUseDuration` of the main hand item, or
+/// 0 without a kinetic weapon.
+pub(crate) fn kinetic_weapon_damage_use_duration(mob: &dyn PathfinderMob) -> i32 {
+    let mut duration = 0;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
+        duration = stack.get(KINETIC_WEAPON).map_or(0, |weapon| {
+            weapon.delay_ticks()
+                + weapon
+                    .damage_conditions()
+                    .map_or(0, KineticWeaponCondition::max_duration_ticks)
+        });
+    });
+    duration
+}
+
+/// Vanilla `Mob.chargeSpeedModifier` of the root vehicle when it is a mob,
+/// else 1.
+pub(crate) fn mount_charge_speed_modifier(mob: &dyn PathfinderMob) -> f64 {
+    let speed_modifier = mob
+        .root_vehicle()
+        .and_then(|mount| mount.as_mob().map(Mob::charge_speed_modifier))
+        .unwrap_or(1.0);
+    f64::from(speed_modifier)
 }
 
 /// Vanilla `Mob.getNavigation`: a rider steers with its controlled vehicle's
 /// navigation.
-fn with_navigation<R>(mob: &dyn PathfinderMob, f: impl FnOnce(&mut PathNavigation) -> R) -> R {
+pub(crate) fn with_navigation<R>(
+    mob: &dyn PathfinderMob,
+    f: impl FnOnce(&mut PathNavigation) -> R,
+) -> R {
     if let Some(vehicle) = mob.controlled_pathfinder_vehicle()
         && let Some(vehicle) = vehicle.as_mob()
     {
@@ -177,11 +201,7 @@ impl SpearUseGoal {
     ) -> SpearUseState {
         let target_position = target.position();
         let target_dist_sqr = mob.position().distance_squared(target_position);
-        let speed_modifier = mob
-            .root_vehicle()
-            .and_then(|mount| mount.as_mob().map(Mob::charge_speed_modifier))
-            .unwrap_or(1.0);
-        let speed_modifier = f64::from(speed_modifier);
+        let speed_modifier = mount_charge_speed_modifier(mob);
         let mount_distance = if mob.is_passenger() { 2.0 } else { 0.0 };
         mob.mob_look_at(target.as_ref(), LOOK_MAX_ROTATION, LOOK_MAX_ROTATION);
         mob.mob_base().controls().lock().look_control.set_look_at(

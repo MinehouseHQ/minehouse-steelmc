@@ -104,7 +104,10 @@ pub(crate) use remove_block::{RemoveBlockGoal, RemoveBlockSound};
 pub(crate) use reset_universal_anger_target::ResetUniversalAngerTargetGoal;
 pub(crate) use restrict_sun::RestrictSunGoal;
 pub(crate) use selector::{Goal, GoalControl, GoalControls, GoalSelector};
-pub(crate) use spear_use::SpearUseGoal;
+pub(crate) use spear_use::{
+    SpearUseGoal, holds_kinetic_weapon, kinetic_weapon_damage_use_duration,
+    mount_charge_speed_modifier, with_navigation,
+};
 pub(crate) use spellcaster_goals::{SpellcasterCastingSpellGoal, SpellcasterUseSpellGoal};
 pub(crate) use squid_flee_goal::SquidFleeGoal;
 pub(crate) use squid_random_movement_goal::SquidRandomMovementGoal;

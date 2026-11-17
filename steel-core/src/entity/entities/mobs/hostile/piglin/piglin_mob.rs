@@ -11,6 +11,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::vanilla_components::KINETIC_WEAPON;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
@@ -35,7 +36,8 @@ use super::{AbstractPiglin, convert_to_zombified_piglin};
 use crate::behavior::InteractionResult;
 use crate::entity::ai::brain::activity::Activity;
 use crate::entity::ai::brain::memory_types::{
-    ATE_RECENTLY, ATTACK_TARGET, HUNTED_RECENTLY, UNIVERSAL_ANGER,
+    ATE_RECENTLY, ATTACK_TARGET, HUNTED_RECENTLY, SPEAR_CHARGE_POSITION, SPEAR_ENGAGE_TIME,
+    SPEAR_FLEEING_POSITION, SPEAR_FLEEING_TIME, UNIVERSAL_ANGER,
 };
 use crate::entity::ai::brain::sensors::{
     HurtBySensor, NearestItemSensor, NearestLivingEntitySensor, PlayerSensor,
@@ -96,9 +98,14 @@ const BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments
 
 /// Vanilla `Piglin.BRAIN_PROVIDER` memories the behaviors and sensors do not
 /// register themselves.
-// TODO(spear): vanilla also registers the four `SPEAR_*` memories for the
-// spear behaviors Steel does not have yet.
-static PIGLIN_MEMORIES: [&dyn AnyMemoryModuleType; 2] = [&UNIVERSAL_ANGER, &ATE_RECENTLY];
+static PIGLIN_MEMORIES: [&dyn AnyMemoryModuleType; 6] = [
+    &UNIVERSAL_ANGER,
+    &ATE_RECENTLY,
+    &SPEAR_FLEEING_TIME,
+    &SPEAR_FLEEING_POSITION,
+    &SPEAR_CHARGE_POSITION,
+    &SPEAR_ENGAGE_TIME,
+];
 
 /// A piglin.
 #[entity_behavior(class = "Piglin", spawn_rule)]
@@ -624,12 +631,9 @@ impl Mob for PiglinEntity {
         (!self.is_baby()).then_some(ItemTag::PIGLIN_PREFERRED_WEAPONS)
     }
 
-    /// Vanilla `Piglin.canUseNonMeleeWeapon` also counts spears
-    /// (`KINETIC_WEAPON`).
-    // TODO(spear): add `KINETIC_WEAPON` once mobs can use spears; until then a
-    // spear piglin would never attack, so it swings its spear in melee.
+    /// Vanilla `Piglin.canUseNonMeleeWeapon`: crossbows and spears.
     fn can_use_non_melee_weapon(&self, item: &ItemStack) -> bool {
-        item.is(&vanilla_items::CROSSBOW)
+        item.is(&vanilla_items::CROSSBOW) || item.has(KINETIC_WEAPON)
     }
 
     fn finalize_spawn(

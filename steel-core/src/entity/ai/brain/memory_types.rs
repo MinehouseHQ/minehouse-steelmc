@@ -568,3 +568,26 @@ pub static SONIC_BOOM_SOUND_COOLDOWN: MemoryModuleType<()> =
     MemoryModuleType::with_codec("sonic_boom_sound_cooldown", unit_codec());
 pub static SONIC_BOOM_SOUND_DELAY: MemoryModuleType<()> =
     MemoryModuleType::with_codec("sonic_boom_sound_delay", unit_codec());
+
+/// Vanilla `SpearAttack.SpearStatus`: where a brain-driven spear charge is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpearStatus {
+    /// Walking up to the target.
+    Approach,
+    /// Charging at the target with the spear down.
+    Charging,
+    /// Backing off to charge again.
+    Retreat,
+}
+
+impl MemoryValue for SpearStatus {
+    const KEY: DowncastTypeKey = DowncastTypeKey::new("steel:brain_memory/spear_status");
+}
+
+pub static SPEAR_FLEEING_TIME: MemoryModuleType<i32> = MemoryModuleType::new("spear_fleeing_time");
+pub static SPEAR_FLEEING_POSITION: MemoryModuleType<DVec3> =
+    MemoryModuleType::new("spear_fleeing_position");
+pub static SPEAR_CHARGE_POSITION: MemoryModuleType<DVec3> =
+    MemoryModuleType::new("spear_charge_position");
+pub static SPEAR_ENGAGE_TIME: MemoryModuleType<i32> = MemoryModuleType::new("spear_engage_time");
+pub static SPEAR_STATUS: MemoryModuleType<SpearStatus> = MemoryModuleType::new("spear_status");
