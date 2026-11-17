@@ -1,18 +1,3 @@
 # MineHouse parity specs that pass on vanilla 26.3 but not yet on SteelMC.
 # CI fails when a spec not listed here fails. A listed spec that passes is
 # reported; remove it from the list in the same change that fixes it.
-
-# mobs: the entity (or the mob it converts into) does not exist in SteelMC yet
-minehouse_mob_cat
-minehouse_mob_ender_dragon
-minehouse_mob_happy_ghast
-minehouse_mob_piglin
-minehouse_mob_piglin_brute
-minehouse_mob_sulfur_cube
-minehouse_mob_turtle
-minehouse_mob_warden
-minehouse_mob_wither
-minehouse_mob_zombie
-
-# mobs: built with a dispenser
-minehouse_mob_copper_golem
