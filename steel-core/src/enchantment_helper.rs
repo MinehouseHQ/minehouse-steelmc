@@ -368,6 +368,46 @@ fn apply_entity_filtered_value_effects(
     value
 }
 
+/// Vanilla `EnchantmentHelper.processMobExperience`: the `mob_experience`
+/// effects of a living killer's equipment, with the killed entity as `this`.
+pub(crate) fn process_mob_experience(
+    killer: Option<&dyn Entity>,
+    victim: &dyn Entity,
+    amount: i32,
+) -> i32 {
+    let Some(killer) = killer.and_then(|killer| killer.as_living_entity()) else {
+        return amount;
+    };
+    let mut random = LegacyRandom::from_seed(rand::random());
+    let mut value = amount as f32;
+    for slot in EquipmentSlot::ALL {
+        killer.with_equipment_slot(slot, &mut |item| {
+            let Some(enchantments) = item.get_enchantments() else {
+                return;
+            };
+            for (key, level) in enchantments.iter() {
+                let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+                    continue;
+                };
+                if !enchantment.matching_slot(slot) {
+                    continue;
+                }
+                let level = *level as i32;
+                for effect in enchantment
+                    .effects
+                    .value_effects(EnchantmentEffectComponent::MobExperience)
+                {
+                    if entity_requirements_match(effect.requirements, victim, level) {
+                        value = effect.effect.process_with_random(level, &mut random, value);
+                    }
+                }
+            }
+        });
+    }
+    // Vanilla `MutableFloat.intValue` truncates toward zero.
+    value as i32
+}
+
 pub(crate) fn modify_armor_effectiveness(
     item: &ItemStack,
     context: &EnchantmentDamageContext<'_>,
@@ -1760,6 +1800,26 @@ mod tests {
             ),
             0.0,
         );
+    }
+
+    #[test]
+    fn mob_experience_needs_a_living_killer_and_keeps_vanilla_rewards() {
+        init_vanilla_registry();
+
+        let killer = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
+        killer.equip(
+            EquipmentSlot::MainHand,
+            enchanted_item(
+                &vanilla_items::DIAMOND_SWORD,
+                Identifier::vanilla_static("looting"),
+                3,
+            ),
+        );
+        let victim = TestLivingEntity::new(2, &vanilla_entities::ZOMBIE);
+
+        assert_eq!(process_mob_experience(None, &victim, 5), 5);
+        // No vanilla enchantment has a `mob_experience` effect.
+        assert_eq!(process_mob_experience(Some(&killer), &victim, 5), 5);
     }
 
     #[test]

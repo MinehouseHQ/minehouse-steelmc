@@ -1,14 +1,21 @@
 use std::sync::Arc;
 
-use rand::RngExt;
+use rand::{Rng, RngExt};
 use steel_macros::item_behavior;
 use steel_registry::{
-    blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
+    REGISTRY, TaggedRegistryExt as _,
+    blocks::{
+        BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
+        shapes::is_offset_shape_full_block,
+    },
     data_components::vanilla_components::USE_EFFECTS,
     item_stack::ItemStack,
-    level_events, vanilla_blocks, vanilla_game_events,
+    level_events,
+    vanilla_biome_tags::BiomeTag,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_game_events,
 };
-use steel_utils::{BlockPos, Direction, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, types::UpdateFlags};
 
 use crate::{
     behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext},
@@ -58,7 +65,7 @@ impl BoneMealItem {
     pub(crate) fn grow_water_plant(
         world: &Arc<World>,
         pos: BlockPos,
-        _clicked_face: Option<Direction>,
+        clicked_face: Option<Direction>,
     ) -> bool {
         let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::WATER || !state.get_fluid_state().is_full() {
@@ -94,7 +101,8 @@ impl BoneMealItem {
                 }
             }
 
-            // TODO: implement coral and underwater bonemeal tag selection.
+            let new_state =
+                Self::water_plant_to_grow(world, &mut rng, new_state, new_pos, i, clicked_face);
 
             let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(new_state) else {
                 return false;
@@ -117,6 +125,70 @@ impl BoneMealItem {
 
         true
     }
+}
+
+impl BoneMealItem {
+    /// The coral part of vanilla `growWaterPlant`: in warm oceans the first try
+    /// on a side face grows a wall coral, and later tries sometimes grow an
+    /// underwater bonemeal plant instead of seagrass. A wall coral is turned
+    /// until it can survive.
+    fn water_plant_to_grow(
+        world: &World,
+        rng: &mut impl Rng,
+        seagrass: BlockStateId,
+        pos: BlockPos,
+        attempt: i32,
+        clicked_face: Option<Direction>,
+    ) -> BlockStateId {
+        if !world
+            .biome_at(pos)
+            .is_some_and(|biome| biome.has_tag(&BiomeTag::PRODUCES_CORALS_FROM_BONEMEAL))
+        {
+            return seagrass;
+        }
+        let mut state = seagrass;
+        if attempt == 0
+            && let Some(face) = clicked_face.filter(|face| face.get_axis().is_horizontal())
+        {
+            if let Some(coral) = random_block_of(&BlockTag::WALL_CORALS, rng) {
+                state = coral.default_state();
+            }
+            if state
+                .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                .is_some()
+            {
+                state = state.set_value(&BlockStateProperties::HORIZONTAL_FACING, face);
+            }
+        } else if rng.random_range(0..4) == 0
+            && let Some(plant) = random_block_of(&BlockTag::UNDERWATER_BONEMEALS, rng)
+        {
+            state = plant.default_state();
+        }
+
+        if state.get_block().has_tag(&BlockTag::WALL_CORALS)
+            && state
+                .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                .is_some()
+            && let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state)
+        {
+            let mut turns = 0;
+            while !behavior.can_survive(state, world, pos) && turns < 4 {
+                let direction = Direction::HORIZONTAL[rng.random_range(0..4)];
+                state = state.set_value(&BlockStateProperties::HORIZONTAL_FACING, direction);
+                turns += 1;
+            }
+        }
+        state
+    }
+}
+
+/// Vanilla `Registry.getRandomElementOf` for a block tag.
+fn random_block_of(tag: &Identifier, rng: &mut impl Rng) -> Option<BlockRef> {
+    let blocks = REGISTRY.blocks.get_tag(tag)?;
+    if blocks.is_empty() {
+        return None;
+    }
+    Some(blocks[rng.random_range(0..blocks.len())])
 }
 
 impl ItemBehavior for BoneMealItem {
@@ -164,3 +236,6 @@ impl ItemBehavior for BoneMealItem {
         InteractionResult::Pass
     }
 }
+
+#[cfg(test)]
+mod tests;
