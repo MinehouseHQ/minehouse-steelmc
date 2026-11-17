@@ -125,4 +125,20 @@ impl RecentDamageSource {
     pub const fn source_position_raw(&self) -> Option<DVec3> {
         self.source_position
     }
+
+    /// The damage source again, with the entities that are still around.
+    #[must_use]
+    pub fn to_damage_source(&self) -> DamageSource {
+        let mut source = DamageSource::environment(self.damage_type);
+        if let Some(causing) = self.causing_entity() {
+            source = source.with_causing_entity(Arc::clone(causing));
+        }
+        if let Some(direct) = self.direct_entity() {
+            source = source.with_direct_entity(Arc::clone(direct));
+        }
+        if let Some(position) = self.source_position {
+            source = source.with_source_position(position);
+        }
+        source
+    }
 }

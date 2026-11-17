@@ -30,6 +30,7 @@ use crate::entity::{
     Entity as _, EntitySpawnReason, LivingEntity, PatrollingMonster, RemovalReason, SharedEntity,
 };
 use crate::inventory::prelude::EquipmentSlot;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::World;
 use crate::world::raid::{Raid, Raids};
 
@@ -259,8 +260,7 @@ pub trait Raider: PatrollingMonster {
         {
             let _ = self.spawn_at_location(current, 0.0);
         }
-        // TODO(advancements): vanilla `onItemPickup` fires
-        // THROWN_ITEM_PICKED_UP_BY_ENTITY here, like `Mob::default_pick_up_item`.
+        on_item_pickup(self.as_entity_event_source(), item_entity, &item_stack);
         let count = item_stack.count();
         self.set_item_slot(slot, item_stack);
         world.broadcast_to_nearby(

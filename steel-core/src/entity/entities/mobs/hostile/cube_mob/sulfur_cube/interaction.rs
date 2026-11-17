@@ -27,6 +27,7 @@ use crate::entity::{
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::World;
 
 /// Vanilla `PUSH_DISTANCE_THRESHOLD`.
@@ -72,10 +73,11 @@ impl SulfurCubeEntity {
         }
         if held.is(&vanilla_items::SHEARS) && self.ready_for_shearing() {
             if let Some(world) = self.level() {
+                let swallowed = self.equipment_in_slot(EquipmentSlot::Body);
                 self.shear(&world, SoundSource::Players, &held);
                 self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
                 player.hurt_item_in_hand(hand, 1);
-                // TODO(advancements): PLAYER_SHEARED_EQUIPMENT with the swallowed block.
+                player.trigger_sheared_equipment(&swallowed, self);
             }
             return InteractionResult::Success;
         }
@@ -145,7 +147,7 @@ impl SulfurCubeEntity {
         if !self.can_hold_item(&stack) || self.state.lock().pickup_timer > 0 {
             return;
         }
-        // TODO(advancements): vanilla `onItemPickup` fires THROWN_ITEM_PICKED_UP_BY_ENTITY.
+        on_item_pickup(self, item_entity, &stack);
         let swallowed = stack.split(1);
         self.set_item_slot(EquipmentSlot::Body, swallowed);
         self.play_sound(&sound_events::ENTITY_SULFUR_CUBE_ABSORB, 1.0, 1.0);

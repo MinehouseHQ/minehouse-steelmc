@@ -11,6 +11,7 @@
     reason = "conditions of every trigger are decoded now; the triggers that read them are wired one group at a time"
 )]
 
+mod event_triggers;
 mod interaction_triggers;
 mod movement_triggers;
 pub(crate) mod predicates;
@@ -35,6 +36,7 @@ use predicates::{
     ItemCondition, LocationPredicate, MobEffectsPredicate, StateCondition,
 };
 
+pub(crate) use event_triggers::*;
 pub(crate) use interaction_triggers::*;
 pub use movement_triggers::{MovementCriteria, SavedMovementPositions};
 pub(crate) use triggers::*;

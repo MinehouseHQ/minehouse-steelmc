@@ -49,6 +49,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::World;
 
 const PANDA_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -979,6 +980,7 @@ impl Mob for PandaEntity {
         if !self.main_hand_is_empty() || !can_pick_up_and_eat(item_entity) {
             return;
         }
+        on_item_pickup(self, item_entity, &item_entity.get_item());
         let item_stack = item_entity.get_item();
         let count = item_stack.count();
         self.set_main_hand(item_stack);

@@ -19,6 +19,7 @@ use steel_registry::{
 };
 
 use crate::behavior::ITEM_BEHAVIORS;
+use crate::player::advancement::criteria::on_item_pickup;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
@@ -379,6 +380,15 @@ impl ItemEntity {
             let take_packet = CTakeItemEntity::new(self.id(), player.id(), picked_up_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
+
+        // Vanilla `ServerPlayer.onItemPickup` sees the whole stack when it
+        // was all taken, and what is left otherwise.
+        let picked_up = if item.is_empty() {
+            self.get_item()
+        } else {
+            item.clone()
+        };
+        on_item_pickup(player.as_ref(), self, &picked_up);
 
         // Update or remove the item entity
         if added {

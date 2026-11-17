@@ -12,7 +12,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{
-    sound_events, vanilla_block_entity_types, vanilla_game_events, vanilla_particle_types,
+    sound_events, vanilla_block_entity_types, vanilla_damage_types, vanilla_game_events,
+    vanilla_particle_types,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -22,6 +23,9 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use crate::behavior::blocks::PULSE;
 use crate::behavior::blocks::spreader::SculkSpreader;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::entity::LivingEntity;
+use crate::entity::damage::DamageSource;
+use crate::player::advancement::criteria::KILL_MOB_NEAR_SCULK_CATALYST;
 use crate::world::World;
 use crate::world::game_event::{
     GameEventContext, GameEventDeliveryMode, GameEventListener, SharedGameEventListener,
@@ -115,14 +119,33 @@ impl GameEventListener for CatalystListener {
                     BlockPos::containing(source_pos.x, source_pos.y + 0.5, source_pos.z),
                     experience,
                 );
-                // TODO(advancements): vanilla triggers KILL_MOB_NEAR_SCULK_CATALYST
-                // for the player who last hurt the mob.
+                trigger_kill_near_catalyst(mob);
             }
             mob.skip_drop_experience();
             self.bloom(world);
         }
         true
     }
+}
+
+/// Vanilla `CatalystListener.handleGameEvent`: the player who last hurt the
+/// mob hears `KILL_MOB_NEAR_SCULK_CATALYST`.
+pub(crate) fn trigger_kill_near_catalyst(mob: &dyn LivingEntity) {
+    let Some(attacker) = mob.last_hurt_by_mob() else {
+        return;
+    };
+    let Some(player) = attacker.as_player() else {
+        return;
+    };
+    let source = mob.last_damage_source().map_or_else(
+        || {
+            DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
+                .with_causing_entity(Arc::clone(&attacker))
+                .with_direct_entity(Arc::clone(&attacker))
+        },
+        |recent| recent.to_damage_source(),
+    );
+    player.trigger_killed(&KILL_MOB_NEAR_SCULK_CATALYST, mob, &source);
 }
 
 /// Vanilla `SculkCatalystBlockEntity`.

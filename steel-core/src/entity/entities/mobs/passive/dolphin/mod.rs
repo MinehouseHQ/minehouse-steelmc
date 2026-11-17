@@ -52,6 +52,7 @@ use crate::entity::{
 };
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::{ServerLevelAccessor, World};
 
 /// Vanilla `Dolphin.TOTAL_AIR_SUPPLY`.
@@ -488,6 +489,7 @@ impl Mob for DolphinEntity {
         if !self.can_hold_item(&item_stack) {
             return;
         }
+        on_item_pickup(self, item_entity, &item_stack);
         let count = item_stack.count();
         self.living_base
             .equipment()

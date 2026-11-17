@@ -119,6 +119,15 @@ impl HoneyBlock {
         entity.reset_fall_distance();
     }
 
+    /// Vanilla `maybeDoSlideAchievement`: once a second for a sliding player.
+    fn maybe_do_slide_achievement(world: &World, pos: BlockPos, entity: &dyn Entity) {
+        if let Some(player) = entity.as_player()
+            && world.game_time() % 20 == 0
+        {
+            player.trigger_slide_down_block(world.get_block_state(pos));
+        }
+    }
+
     fn maybe_do_slide_effects(_world: &World, entity: &dyn Entity) {
         if !Self::does_entity_do_slide_effects(entity) {
             return;
@@ -198,7 +207,7 @@ impl BlockBehavior for HoneyBlock {
         is_precise: bool,
     ) {
         if Self::is_sliding_down(pos, entity) {
-            // TODO: Award the honey-block slide advancement once advancements exist.
+            Self::maybe_do_slide_achievement(world, pos, entity);
             Self::do_slide_movement(entity);
             Self::maybe_do_slide_effects(world, entity);
         }

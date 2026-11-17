@@ -86,9 +86,20 @@ impl Player {
 
     /// Vanilla `PlayerInteractTrigger.trigger(player, itemStack, interactedWith)`.
     pub(crate) fn trigger_interacted_with_entity(&self, stack: &ItemStack, entity: &dyn Entity) {
+        self.trigger_item_and_entity(&PLAYER_INTERACTED_WITH_ENTITY, stack, entity);
+    }
+
+    /// The triggers that test one stack against `item` and one entity against
+    /// `entity` (vanilla `PlayerInteractTrigger` and `PickedUpItemTrigger`).
+    pub(crate) fn trigger_item_and_entity(
+        &self,
+        trigger_id: &Identifier,
+        stack: &ItemStack,
+        entity: &dyn Entity,
+    ) {
         let world = self.get_world();
         let context = ConditionContext::entity(&world, self.position(), entity);
-        trigger(self, &PLAYER_INTERACTED_WITH_ENTITY, |conditions| {
+        trigger(self, trigger_id, |conditions| {
             conditions
                 .item
                 .as_ref()

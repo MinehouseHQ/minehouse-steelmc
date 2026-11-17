@@ -27,6 +27,7 @@ use steel_utils::locks::SyncMutex;
 use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity, Mob, RemovalReason};
 use crate::inventory::container::SimpleContainer;
+use crate::player::advancement::criteria::on_item_pickup;
 use crate::world::World;
 
 /// Vanilla `AbstractVillager.inventory` size.
@@ -85,8 +86,7 @@ pub(crate) fn pick_up_item_into_inventory(
         }
         inventory.add_item(&item_stack)
     };
-    // TODO(advancements): vanilla `onItemPickup` fires
-    // THROWN_ITEM_PICKED_UP_BY_ENTITY here, like `Mob::default_pick_up_item`.
+    on_item_pickup(mob, item_entity, &item_stack);
     let taken = item_stack.count() - remainder.count();
     world.broadcast_to_nearby(
         ChunkPos::from_entity_pos(item_entity.position()),

@@ -1649,8 +1649,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let spawn_offset = dimensions
                 .attachments
                 .get_average(EntityAttachment::Passenger, dimensions);
-            let _ = self.spawn_at_location_with_offset(item_stack, spawn_offset);
-            // TODO: Trigger PLAYER_SHEARED_EQUIPMENT once advancement criteria exist.
+            let _ = self.spawn_at_location_with_offset(item_stack.clone(), spawn_offset);
+            player.trigger_sheared_equipment(&item_stack, mob);
             return true;
         }
 
