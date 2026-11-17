@@ -64,7 +64,7 @@ impl Player {
         if gamemode == GameType::Spectator {
             self.stop_riding();
             self.remove_entities_on_shoulder();
-            // TODO: Stop item use once living item-use state is implemented.
+            self.stop_using_item();
             enchantment_helper::stop_location_based_effects(self);
         } else {
             self.set_camera(None);

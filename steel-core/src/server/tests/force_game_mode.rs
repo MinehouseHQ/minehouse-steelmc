@@ -5,8 +5,9 @@
 use std::slice;
 use std::sync::Arc;
 
-use steel_registry::init_vanilla_registry;
-use steel_utils::types::GameType;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{init_vanilla_registry, vanilla_items};
+use steel_utils::types::{GameType, InteractionHand};
 use tokio::runtime::Builder;
 
 use super::scoreboard_command::run;
@@ -16,6 +17,7 @@ use super::{
 };
 use crate::behavior::init_behaviors;
 use crate::config::{ResolvedDomainConfig, RuntimeConfig};
+use crate::entity::LivingEntity as _;
 use crate::entity::next_entity_id;
 use crate::permission::PermissionSubjectIndex;
 use crate::player::{Player, ResetReason};
@@ -94,4 +96,24 @@ fn a_returning_player_takes_the_forced_default_mode() {
         assert_eq!(player.game_mode(), GameType::Adventure);
         assert_eq!(player.previous_game_mode(), Some(GameType::Spectator));
     });
+}
+
+#[test]
+fn switching_to_spectator_stops_using_the_held_item() {
+    with_joined_player(
+        "spectator_stops_item_use",
+        false,
+        |_server, _world, player| {
+            player
+                .inventory
+                .lock()
+                .set_selected_item(ItemStack::new(&vanilla_items::BREAD));
+            player.start_using_item(InteractionHand::MainHand);
+            assert!(player.is_using_item());
+
+            assert!(player.set_game_mode(GameType::Spectator));
+
+            assert!(!player.is_using_item());
+        },
+    );
 }
