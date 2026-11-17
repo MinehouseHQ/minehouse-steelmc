@@ -22,6 +22,7 @@ use crate::entity::{
     ENTITIES, EntitySpawnReason, IllagerSpell, PathfinderMob, SharedEntity, SpellcasterIllager,
     next_entity_id,
 };
+use crate::scoreboard::ScoreHolder;
 use crate::world::LevelReader as _;
 use crate::world::game_event::GameEventContext;
 
@@ -123,8 +124,10 @@ impl Spell for SummonVexSpell {
         let Some(world) = mob.level() else {
             return;
         };
-        // TODO: Vanilla also puts each vex on the evoker's scoreboard team; Steel
-        // has no teams yet.
+        let scoreboard = world.scoreboard();
+        let evoker_team = scoreboard
+            .as_ref()
+            .and_then(|scoreboard| scoreboard.holder_team(&mob.scoreboard_name()));
         for _ in 0..VEXES_PER_CAST {
             let pos = mob.block_position().offset(
                 -2 + rand::random_range(0..5),
@@ -154,6 +157,12 @@ impl Spell for SummonVexSpell {
                 vex.set_limited_life(
                     20 * (VEX_MIN_LIFE_SECONDS + rand::random_range(0..VEX_LIFE_SPREAD_SECONDS)),
                 );
+            }
+            if let (Some(scoreboard), Some(team)) = (&scoreboard, &evoker_team) {
+                let holder = ScoreHolder::new(vex_entity.scoreboard_name());
+                if let Err(error) = scoreboard.add_holder_to_team(&holder, team.name()) {
+                    log::debug!("summoned vex could not join its evoker's team: {error}");
+                }
             }
             if let Err(error) = world.try_add_entity(vex_entity) {
                 log::debug!("world rejected a summoned vex: {error}");
@@ -408,6 +417,62 @@ impl Spell for WololoSpell {
             && let Some(sheep) = target.downcast_ref::<SheepEntity>()
         {
             sheep.set_color(DyeColor::Red);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_utils::types::Difficulty;
+    use steel_utils::{ChunkPos, Downcast as _};
+
+    use super::{Spell as _, SummonVexSpell};
+    use crate::behavior::init_behaviors;
+    use crate::entity::entities::VexEntity;
+    use crate::entity::{create_entity_instance, init_entities};
+    use crate::scoreboard::{ScoreHolder, Scoreboard};
+    use crate::test_support::{fresh_test_world, insert_entity_ticking_full_chunk};
+
+    #[test]
+    fn summoned_vexes_join_the_evokers_team() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+        let fixture = fresh_test_world("evoker_vex_team");
+        let world = &fixture.world;
+        world.set_difficulty(Difficulty::Normal);
+        insert_entity_ticking_full_chunk(world, ChunkPos::new(0, 0));
+        let scoreboard = Arc::new(Scoreboard::new());
+        world.set_domain_scoreboard(Arc::clone(&scoreboard));
+        scoreboard.add_team("raiders").expect("a new team");
+
+        let evoker =
+            create_entity_instance(world, &vanilla_entities::EVOKER, DVec3::new(8.5, 64.0, 8.5))
+                .expect("evoker");
+        scoreboard
+            .add_holder_to_team(&ScoreHolder::new(evoker.scoreboard_name()), "raiders")
+            .expect("the team exists");
+        assert!(world.try_add_entity(Arc::clone(&evoker)).is_ok());
+
+        let mob = evoker.as_pathfinder_mob().expect("an evoker is a mob");
+        SummonVexSpell::new().perform(mob, &evoker);
+
+        let vexes = world.get_entities_in_aabb_matching(
+            &evoker.bounding_box().inflate_xyz(8.0, 8.0, 8.0),
+            |entity| entity.downcast_ref::<VexEntity>().is_some(),
+        );
+        assert_eq!(vexes.len(), 3);
+        for vex in vexes {
+            assert_eq!(
+                scoreboard
+                    .holder_team(&vex.scoreboard_name())
+                    .map(|team| team.name().to_owned()),
+                Some("raiders".to_owned())
+            );
         }
     }
 }
