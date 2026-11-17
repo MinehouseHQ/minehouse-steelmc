@@ -97,7 +97,8 @@ impl ItemBehavior for TridentItem {
             .unwrap_or(&sound_events::ITEM_TRIDENT_THROW);
         player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
         let has_infinite_materials = player.has_infinite_materials();
-        stack.hurt_without_breaking(1, has_infinite_materials);
+        let change = stack.hurt_without_breaking_tracked(1, has_infinite_materials);
+        player.trigger_item_durability_changed(change);
 
         if riptide_strength == 0.0 {
             let thrown = stack.consume_and_return(1, has_infinite_materials);

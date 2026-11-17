@@ -810,17 +810,20 @@ impl Player {
             return;
         };
         let has_infinite_materials = self.has_infinite_materials();
-        let mut inventory = self.inventory.lock();
-        inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
-            if stack.is_empty() {
-                return;
-            }
-            let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
-            behavior.post_hurt_enemy(stack, living_target, self);
-            if let Some(damage) = behavior.item_damage_per_attack(stack) {
-                stack.hurt_and_break(damage, has_infinite_materials);
-            }
-        });
+        let mut change = None;
+        self.inventory
+            .lock()
+            .mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+                if stack.is_empty() {
+                    return;
+                }
+                let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
+                behavior.post_hurt_enemy(stack, living_target, self);
+                if let Some(damage) = behavior.item_damage_per_attack(stack) {
+                    (_, change) = stack.hurt_and_break_tracked(damage, has_infinite_materials);
+                }
+            });
+        self.trigger_item_durability_changed(change);
     }
 
     /// Interacts with an entity using the held item.

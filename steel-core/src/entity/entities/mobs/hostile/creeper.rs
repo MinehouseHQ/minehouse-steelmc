@@ -508,11 +508,10 @@ impl Mob for CreeperEntity {
             );
         }
         self.ignite();
-        let mut inventory = player.inventory.lock();
         if item_stack.is_damageable_item() {
-            inventory.hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+            player.hurt_item_in_hand(hand, 1);
         } else if !player.has_infinite_materials() {
-            inventory.shrink_item_in_hand(hand, 1);
+            player.inventory.lock().shrink_item_in_hand(hand, 1);
         }
         InteractionResult::Success
     }

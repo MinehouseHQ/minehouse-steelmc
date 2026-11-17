@@ -16,6 +16,7 @@ use crate::entity::{AbstractArrow, LivingEntity, Projectile as _, SharedEntity, 
 use crate::inventory::container::Container as _;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
+use crate::player::advancement::criteria::report_durability_change;
 use crate::world::World;
 
 /// Vanilla `AbstractArrow(LivingEntity mob, ...)` spawn offset below the eye.
@@ -293,7 +294,8 @@ pub(crate) fn shoot_from_rotation(
         );
         spawn_arrow(world, &arrow, projectile, Some(shooter));
         // VANILLA: `getDurabilityUse` is 1 for arrows.
-        weapon.hurt_and_break(1, has_infinite_materials);
+        let (_, change) = weapon.hurt_and_break_tracked(1, has_infinite_materials);
+        report_durability_change(shooter.as_ref(), change);
         if weapon.is_empty() {
             break;
         }

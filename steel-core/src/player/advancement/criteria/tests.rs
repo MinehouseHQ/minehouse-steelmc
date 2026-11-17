@@ -443,4 +443,51 @@ mod triggers {
         assert!(start_riding_entities(&player_entity, &boat, true));
         assert!(criterion_done(&player, advancement, criterion));
     }
+
+    #[test]
+    fn wearing_a_fungus_on_a_stick_on_a_strider_grants_ride_strider() {
+        use crate::entity::{
+            SharedEntity, create_entity_instance, init_entities, start_riding_entities,
+        };
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+        use steel_utils::ChunkPos;
+        use steel_utils::types::InteractionHand;
+
+        setup();
+        init_entities();
+        let fixture = fresh_test_world("criteria_ride_strider");
+        let world = &fixture.world;
+        let position = DVec3::new(8.5, 64.0, 8.5);
+        insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
+        let player = player_in(world, "StriderRider");
+        let player_entity: SharedEntity = Arc::clone(&player) as SharedEntity;
+        player.inventory.lock().set_item_in_hand(
+            InteractionHand::MainHand,
+            ItemStack::new(&vanilla_items::WARPED_FUNGUS_ON_A_STICK),
+        );
+        let criterion = "used_warped_fungus_on_a_stick";
+        let advancement = "minecraft:nether/ride_strider";
+
+        // Off a strider the wear does not count.
+        player.hurt_item_in_hand(InteractionHand::MainHand, 1);
+        assert!(!criterion_done(&player, advancement, criterion));
+
+        let strider = create_entity_instance(world, &vanilla_entities::STRIDER, position)
+            .expect("the strider can be created");
+        world
+            .try_add_entity(Arc::clone(&strider))
+            .expect("the strider should attach to the loaded chunk");
+        assert!(start_riding_entities(&player_entity, &strider, true));
+        player.hurt_item_in_hand(InteractionHand::MainHand, 1);
+        assert!(criterion_done(&player, advancement, criterion));
+        assert_eq!(
+            player
+                .inventory
+                .lock()
+                .get_item_in_hand(InteractionHand::MainHand)
+                .get_damage_value(),
+            2
+        );
+    }
 }

@@ -74,10 +74,7 @@ impl SulfurCubeEntity {
             if let Some(world) = self.level() {
                 self.shear(&world, SoundSource::Players, &held);
                 self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
-                player
-                    .inventory
-                    .lock()
-                    .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+                player.hurt_item_in_hand(hand, 1);
                 // TODO(advancements): PLAYER_SHEARED_EQUIPMENT with the swallowed block.
             }
             return InteractionResult::Success;
@@ -112,10 +109,7 @@ impl SulfurCubeEntity {
         }
         self.prime_time(false);
         if held.is(&vanilla_items::FLINT_AND_STEEL) {
-            player
-                .inventory
-                .lock()
-                .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+            player.hurt_item_in_hand(hand, 1);
         } else {
             Mob::use_player_item(self, player, hand);
         }

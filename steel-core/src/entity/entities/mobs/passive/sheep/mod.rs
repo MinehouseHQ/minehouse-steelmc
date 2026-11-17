@@ -528,10 +528,7 @@ impl Mob for SheepEntity {
             self.shear(&world, SoundSource::Players, &item_stack);
             // Vanilla `Sheep.mobInteract` sources the shear game event to the player.
             self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
-            player
-                .inventory
-                .lock()
-                .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+            player.hurt_item_in_hand(hand, 1);
             return InteractionResult::SuccessServer;
         }
 

@@ -110,7 +110,12 @@ impl BlockBehavior for PumpkinBlock {
                 | UpdateFlags::UPDATE_NEIGHBORS,
         );
         let has_infinite_materials = player.has_infinite_materials();
-        inv.with_item(|item_stack| item_stack.hurt_and_break(1, has_infinite_materials));
+        let change = inv.with_item(|item_stack| {
+            item_stack
+                .hurt_and_break_tracked(1, has_infinite_materials)
+                .1
+        });
+        player.trigger_item_durability_changed(change);
 
         world.game_event(
             &vanilla_game_events::SHEAR,

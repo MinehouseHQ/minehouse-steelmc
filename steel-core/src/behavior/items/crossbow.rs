@@ -29,6 +29,7 @@ use crate::entity::{
     Entity, LivingEntity, LivingEntityRef, Projectile as _, SharedEntity, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
+use crate::player::advancement::criteria::report_durability_change;
 use crate::world::World;
 
 /// Vanilla `CrossbowItem.MAX_CHARGE_DURATION`, in seconds.
@@ -255,7 +256,9 @@ fn shoot(
             target,
         );
         spawn_projectile(world, &projectile_entity, projectile, shooter);
-        weapon.hurt_and_break(get_durability_use(projectile), has_infinite_materials);
+        let (_, change) =
+            weapon.hurt_and_break_tracked(get_durability_use(projectile), has_infinite_materials);
+        report_durability_change(shooter.as_ref(), change);
         if weapon.is_empty() {
             break;
         }

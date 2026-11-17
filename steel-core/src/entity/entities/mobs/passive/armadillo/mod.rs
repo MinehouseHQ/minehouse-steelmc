@@ -975,11 +975,7 @@ impl Mob for ArmadilloEntity {
             item_stack.copy_with_count(item_stack.count())
         };
         if item_stack.is(&vanilla_items::BRUSH) && self.brush_off_scute(&item_stack) {
-            player.inventory.lock().hurt_item_in_hand(
-                hand,
-                BRUSH_DAMAGE,
-                player.has_infinite_materials(),
-            );
+            player.hurt_item_in_hand(hand, BRUSH_DAMAGE);
             return InteractionResult::Success;
         }
         if self.is_scared() {

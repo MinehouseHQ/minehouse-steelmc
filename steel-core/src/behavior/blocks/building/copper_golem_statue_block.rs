@@ -263,7 +263,9 @@ impl BlockBehavior for WeatheringCopperGolemStatueBlock {
             let golem =
                 CopperGolemEntity::from_statue(world, pos, state, statue_entity.golem_name());
             let has_infinite_materials = player.has_infinite_materials();
-            inv.with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+            let change =
+                inv.with_item(|item| item.hurt_and_break_tracked(1, has_infinite_materials).1);
+            player.trigger_item_durability_changed(change);
             if let Err(error) = world.try_add_entity(golem) {
                 log::debug!("world rejected a revived copper golem: {error}");
             }

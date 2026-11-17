@@ -57,6 +57,25 @@ impl Default for ItemStack {
     }
 }
 
+/// One wear of a stack as vanilla `ItemDurabilityTrigger.trigger` sees it:
+/// the stack before the damage and its new damage value.
+#[derive(Debug, Clone)]
+pub struct DurabilityChange {
+    /// The stack before the damage was applied.
+    pub stack: ItemStack,
+    /// The damage value the stack was set to.
+    pub new_damage: i32,
+}
+
+impl DurabilityChange {
+    fn new(stack: &ItemStack, new_damage: i32) -> Self {
+        Self {
+            stack: stack.clone(),
+            new_damage,
+        }
+    }
+}
+
 impl ItemStack {
     /// Creates an empty item stack (using AIR).
     #[must_use]
@@ -260,21 +279,52 @@ impl ItemStack {
         self.hurt_and_break_with_random(amount, has_infinite_materials, &mut random)
     }
 
+    /// [`Self::hurt_and_break`] for a stack a player wears out: also returns
+    /// the durability change vanilla `applyDamage` reports to
+    /// `ITEM_DURABILITY_CHANGED`, for the caller to trigger once no lock is
+    /// held.
+    pub fn hurt_and_break_tracked(
+        &mut self,
+        amount: i32,
+        has_infinite_materials: bool,
+    ) -> (bool, Option<DurabilityChange>) {
+        let mut random = Xoroshiro::from_seed_unmixed(rand::rng().random());
+        let mut change = None;
+        let broke = self.hurt_and_break_reporting(
+            amount,
+            has_infinite_materials,
+            &mut random,
+            &mut |stack, new_damage| change = Some(DurabilityChange::new(stack, new_damage)),
+        );
+        (broke, change)
+    }
+
     /// Vanilla `ItemStack.hurtWithoutBreaking`: wears the item but never
     /// past its last point of durability.
     pub fn hurt_without_breaking(&mut self, amount: i32, has_infinite_materials: bool) {
+        let _ = self.hurt_without_breaking_tracked(amount, has_infinite_materials);
+    }
+
+    /// [`Self::hurt_without_breaking`], returning the durability change for
+    /// `ITEM_DURABILITY_CHANGED` (vanilla `applyDamage`).
+    pub fn hurt_without_breaking_tracked(
+        &mut self,
+        amount: i32,
+        has_infinite_materials: bool,
+    ) -> Option<DurabilityChange> {
         if !self.is_damageable_item() || has_infinite_materials {
-            return;
+            return None;
         }
         let mut random = Xoroshiro::from_seed_unmixed(rand::rng().random());
         let effective_amount = self.process_durability_change(amount, &mut random);
         if effective_amount == 0 {
-            return;
+            return None;
         }
-        // TODO(advancements): ITEM_DURABILITY_CHANGED.
-        self.set_damage_value(
-            (self.get_damage_value() + effective_amount).min(self.get_max_damage() - 1),
-        );
+        let new_damage =
+            (self.get_damage_value() + effective_amount).min(self.get_max_damage() - 1);
+        let change = DurabilityChange::new(self, new_damage);
+        self.set_damage_value(new_damage);
+        Some(change)
     }
 
     /// Damages the item using the supplied random source for data-driven
@@ -286,6 +336,18 @@ impl ItemStack {
         amount: i32,
         has_infinite_materials: bool,
         random: &mut impl Random,
+    ) -> bool {
+        self.hurt_and_break_reporting(amount, has_infinite_materials, random, &mut |_, _| {})
+    }
+
+    /// Vanilla `hurtAndBreak` and `applyDamage`: `report` sees the stack before
+    /// the damage and the new damage value, as `ITEM_DURABILITY_CHANGED` does.
+    fn hurt_and_break_reporting(
+        &mut self,
+        amount: i32,
+        has_infinite_materials: bool,
+        random: &mut impl Random,
+        report: &mut dyn FnMut(&Self, i32),
     ) -> bool {
         if !self.is_damageable_item() {
             return false;
@@ -302,9 +364,7 @@ impl ItemStack {
         }
 
         let new_damage = self.get_damage_value() + effective_amount;
-
-        // TODO: Trigger ITEM_DURABILITY_CHANGED advancement criteria
-
+        report(self, new_damage);
         self.set_damage_value(new_damage);
 
         if self.is_broken() {

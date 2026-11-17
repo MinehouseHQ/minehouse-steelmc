@@ -88,7 +88,9 @@ impl ItemBehavior for BrushItem {
         if outcome.durability_damage {
             let slot = equipped_brush_slot(player, stack);
             let item_ref = stack.item;
-            if stack.hurt_and_break(1, player.has_infinite_materials()) {
+            let (broke, change) = stack.hurt_and_break_tracked(1, player.has_infinite_materials());
+            player.trigger_item_durability_changed(change);
+            if broke {
                 player.on_equipped_item_broken(item_ref, slot);
             }
         }

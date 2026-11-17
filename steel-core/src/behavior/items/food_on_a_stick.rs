@@ -51,14 +51,15 @@ impl ItemBehavior for FoodOnAStickItem {
         }
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context.inv.with_inventory(|inventory| {
+        let change = context.inv.with_inventory(|inventory| {
             inventory.hurt_and_convert_item_in_hand_on_break(
                 context.hand,
                 self.consume_item_damage,
                 &vanilla_items::FISHING_ROD,
                 has_infinite_materials,
-            );
+            )
         });
+        context.player.trigger_item_durability_changed(change);
 
         InteractionResult::SuccessServer
     }
