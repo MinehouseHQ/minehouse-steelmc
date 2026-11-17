@@ -128,6 +128,25 @@ pub(crate) fn land_random_pos_away(
     vertical_dist: i32,
     avoid_pos: DVec3,
 ) -> Option<DVec3> {
+    land_random_pos_away_between(
+        mob,
+        0.0,
+        f64::from(horizontal_dist),
+        vertical_dist,
+        avoid_pos,
+    )
+}
+
+/// Vanilla `LandRandomPos.getPosAway(mob, minHorizontalDist,
+/// maxHorizontalDist, verticalDist, avoidPos)`: a land position between the
+/// two distances away from `avoid_pos`.
+pub(crate) fn land_random_pos_away_between(
+    mob: &(impl PathfinderMob + ?Sized),
+    min_horizontal_dist: f64,
+    max_horizontal_dist: f64,
+    vertical_dist: i32,
+    avoid_pos: DVec3,
+) -> Option<DVec3> {
     let mut dir_away = mob.position() - avoid_pos;
     if dir_away.length() == 0.0 {
         dir_away = DVec3::new(
@@ -136,14 +155,13 @@ pub(crate) fn land_random_pos_away(
             rand::random::<f64>() - 0.5,
         );
     }
-    let max_horizontal_dist = f64::from(horizontal_dist);
     let restrict = mob_restricted(mob, max_horizontal_dist);
     generate_random_pos(mob, || {
         let direction = {
             let mut random = LegacyRandom::from_seed(rand::random());
             generate_random_direction_within_radians(
                 &mut random,
-                0.0,
+                min_horizontal_dist,
                 max_horizontal_dist,
                 vertical_dist,
                 0,

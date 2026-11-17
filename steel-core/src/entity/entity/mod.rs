@@ -3907,6 +3907,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().invulnerable()
     }
 
+    /// Vanilla `Entity.isInvulnerableToPiercingWeapon`: piercing and kinetic
+    /// weapons pass through invulnerable entities.
+    fn is_invulnerable_to_piercing_weapon(&self) -> bool {
+        self.is_invulnerable()
+    }
+
     /// Sets whether this entity is invulnerable to non-bypassing damage.
     fn set_invulnerable(&self, invulnerable: bool) {
         self.base().set_invulnerable(invulnerable);

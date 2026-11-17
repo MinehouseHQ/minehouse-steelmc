@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::components::BlocksAttacks;
 use steel_registry::data_components::vanilla_components::{
-    BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS, WEAPON,
+    BLOCKS_ATTACKS, DEATH_PROTECTION, KINETIC_WEAPON, USE_EFFECTS, WEAPON,
 };
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
@@ -12,12 +12,14 @@ use super::*;
 use crate::behavior::items::projectile_weapon::as_abstract_arrow;
 use crate::behavior::{
     BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
+    consumable_use_tick,
 };
 use crate::entity::ai::brain::Memories;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
 use crate::entity::entity::compute_modified_friction;
 use crate::entity::get_kill_credit;
+use crate::entity::kinetic::{damage_entities, mob_stab_attack};
 use crate::entity::pushing::EntityPush;
 use crate::inventory::slot_access::SlotAccess;
 use crate::inventory::slot_range::{
@@ -2299,7 +2301,25 @@ pub trait LivingEntity: Entity {
             return;
         };
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
-        behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        // Vanilla `ItemStack.onUseTick`: a kinetic weapon stabs instead of
+        // running the item's own use tick.
+        if let Some(kinetic_weapon) = item.get(KINETIC_WEAPON).cloned() {
+            consumable_use_tick(&item, user, active.remaining_ticks());
+            if let Some(mob) = self.as_mob() {
+                let hand = active.hand();
+                damage_entities(
+                    user.living(),
+                    &kinetic_weapon,
+                    &item,
+                    active.remaining_ticks(),
+                    |target, stab| mob_stab_attack(mob, entity, hand, target, stab),
+                );
+            }
+            // The stabs wear the weapon in its slot.
+            self.with_equipment_slot(slot, &mut |stack| item = stack.clone());
+        } else {
+            behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        }
         let use_on_release = behavior.use_on_release(&item);
         let remaining = self
             .living_base()
