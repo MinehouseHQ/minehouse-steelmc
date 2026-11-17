@@ -23,6 +23,7 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::block_entity::BlockEntity;
+use crate::enchantment_helper;
 use crate::entity::entities::mobs::hostile::piglin::anger_nearby_piglins;
 use crate::entity::{ActiveMobEffect, Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
@@ -49,9 +50,6 @@ impl Player {
                 .unwrap_or(attribute.default_value) as f32
         };
 
-        // TODO: Efficiency and Aqua Affinity have no effect until the enchantment
-        // `attributes` effect (`EnchantmentHelper.runLocationChangedEffects`) installs
-        // its attribute modifiers on equipment changes.
         if speed > 1.0 {
             speed += attribute_value(vanilla_attributes::MINING_EFFICIENCY);
         }
@@ -295,7 +293,12 @@ impl BlockBreakingManager {
                 let block_state = world.get_block_state(pos);
 
                 if !is_air(block_state) {
-                    // TODO: Call EnchantmentHelper.onHitBlock before blockState.attack.
+                    enchantment_helper::on_hit_block_equipped(
+                        world,
+                        player,
+                        EquipmentSlot::MainHand,
+                        pos.get_center().into(),
+                    );
                     BLOCK_BEHAVIORS
                         .get_behavior(block_state.get_block())
                         .attack(block_state, world, pos, player);

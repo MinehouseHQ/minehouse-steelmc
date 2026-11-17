@@ -38,7 +38,7 @@ pub(crate) use location::{
     stop_location_based_effects, stop_location_based_effects_in_slot,
 };
 
-pub(crate) use hit_block::on_hit_block;
+pub(crate) use hit_block::{on_hit_block, on_hit_block_equipped};
 pub(crate) use tick::tick_effects;
 
 pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
