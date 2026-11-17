@@ -27,6 +27,7 @@ use crate::{
         AgeableMob, AgeableMobBase, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
         EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
         PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, damage::DamageSource,
+        fish::water_animal_spawn_unobstructed,
     },
     physics::{MoveResult, MoverType},
     player::Player,
@@ -303,6 +304,11 @@ impl Mob for GlowSquidEntity {
 
     fn ambient_sound_interval(&self) -> i32 {
         SQUID_AMBIENT_SOUND_INTERVAL
+    }
+
+    /// Vanilla `AgeableWaterCreature.checkSpawnObstruction`: water is fine.
+    fn check_spawn_obstruction(&self, level: &dyn ServerLevelAccessor) -> bool {
+        water_animal_spawn_unobstructed(self, level)
     }
 
     fn finalize_spawn(

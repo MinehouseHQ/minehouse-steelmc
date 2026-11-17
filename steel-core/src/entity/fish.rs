@@ -31,7 +31,8 @@ use crate::world::{ServerLevelAccessor, World};
 /// Vanilla `WaterAnimal.AMBIENT_SOUND_INTERVAL`.
 pub const WATER_ANIMAL_AMBIENT_SOUND_INTERVAL: i32 = 120;
 const FISH_MAX_HEALTH: f64 = 3.0;
-const FISH_MAX_SPAWN_CLUSTER_SIZE: i32 = 8;
+/// Vanilla `AbstractFish.getMaxSpawnClusterSize`.
+pub const FISH_MAX_SPAWN_CLUSTER_SIZE: i32 = 8;
 const FISH_AVOID_PLAYER_DISTANCE: f32 = 8.0;
 const FISH_MOVE_CONTROL_MAX_TURN: f32 = 90.0;
 const MAX_AIR_SUPPLY: i32 = 300;

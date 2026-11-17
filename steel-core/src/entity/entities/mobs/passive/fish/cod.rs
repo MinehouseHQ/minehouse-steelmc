@@ -259,6 +259,11 @@ impl Mob for CodEntity {
         self.fish_requires_custom_persistence()
     }
 
+    /// Vanilla `AbstractSchoolingFish.getMaxSpawnClusterSize`.
+    fn max_spawn_cluster_size(&self) -> i32 {
+        self.max_school_size()
+    }
+
     fn mob_can_be_leashed(&self) -> bool {
         false
     }
