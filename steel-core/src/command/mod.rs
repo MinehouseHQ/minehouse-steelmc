@@ -28,6 +28,7 @@ pub use execution::{
 pub(crate) use builtins::{
     create_registered_dispatcher, game_rule_values, gamemode::handle_client_request,
     player_can_change_difficulty, player_can_request_game_rule_values, print_for_avatar,
+    set_game_rules_from_client,
 };
 pub(crate) use protocol::{command_suggestions_packet, command_tree_packet};
 pub use queue::CommandQueueFull;
