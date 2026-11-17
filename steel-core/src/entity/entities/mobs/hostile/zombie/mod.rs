@@ -254,6 +254,21 @@ impl ZombieVariant {
     }
 }
 
+/// Vanilla `instanceof Zombie`: zombies, husks, drowned, zombie villagers and
+/// zombified piglins.
+#[must_use]
+pub(crate) fn is_zombie_class(entity_type: EntityTypeRef) -> bool {
+    [
+        &vanilla_entities::ZOMBIE,
+        &vanilla_entities::HUSK,
+        &vanilla_entities::DROWNED,
+        &vanilla_entities::ZOMBIE_VILLAGER,
+        &vanilla_entities::ZOMBIFIED_PIGLIN,
+    ]
+    .into_iter()
+    .any(|zombie_type| entity_type == zombie_type)
+}
+
 /// Entity types whose vanilla class is `Zombie` or a subclass of it, minus
 /// the zombified piglin that vanilla `setAlertOthers(ZombifiedPiglin.class)` excludes.
 fn is_zombie_family(entity: &dyn Entity) -> bool {

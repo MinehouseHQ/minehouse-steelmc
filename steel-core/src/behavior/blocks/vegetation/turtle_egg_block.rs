@@ -25,6 +25,7 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
+use crate::entity::entities::mobs::hostile::zombie::is_zombie_class;
 use crate::entity::entities::mobs::passive::turtle::spawn_hatchling;
 use crate::player::Player;
 use crate::world::World;
@@ -292,15 +293,11 @@ impl BlockBehavior for TurtleEggBlock {
         pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
+        // Vanilla skips `instanceof Zombie`: zombies trample eggs through
+        // their own goal instead.
         if let Some(entity) = context.source_entity()
-            && entity.entity_type() != &vanilla_entities::ZOMBIE
+            && !is_zombie_class(entity.entity_type())
         {
-            // Vanilla excludes `instanceof Zombie`, which also covers husks,
-            // drowned, zombie villagers, and zombified piglins. None of those
-            // exist in Steel yet, so this single-type check is currently exact.
-            // TODO(zombie-family): widen this to the whole zombie set (a shared
-            // "is a zombie" predicate or an entity-type tag) once those entities
-            // land, so falling zombies do not double up with their trample AI.
             self.destroy_egg(world, state, pos, entity, FALL_TRAMPLE_ODDS);
         }
         self.default_fall_on(state, world, pos, context)
@@ -395,5 +392,25 @@ mod tests {
 
         behavior.random_tick(world.get_block_state(pos), world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 0);
+    }
+
+    #[test]
+    fn falling_zombie_subclasses_do_not_trample_eggs() {
+        init_vanilla_registry();
+        for zombie in [
+            &vanilla_entities::ZOMBIE,
+            &vanilla_entities::HUSK,
+            &vanilla_entities::DROWNED,
+            &vanilla_entities::ZOMBIE_VILLAGER,
+            &vanilla_entities::ZOMBIFIED_PIGLIN,
+        ] {
+            assert!(
+                is_zombie_class(zombie),
+                "{} is a vanilla Zombie",
+                zombie.key
+            );
+        }
+        assert!(!is_zombie_class(&vanilla_entities::SKELETON));
+        assert!(!is_zombie_class(&vanilla_entities::ZOMBIE_HORSE));
     }
 }

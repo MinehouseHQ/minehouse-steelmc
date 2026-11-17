@@ -37,6 +37,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::ai::path::PathType;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::mobs::hostile::zombie::is_zombie_class;
 use crate::entity::entity_selector;
 use crate::entity::{
     AgeableMob, AgeableMobBase, AgeableMobGroupData, DefaultEntityPush, Entity, EntityBase,
@@ -100,19 +101,6 @@ pub struct WanderingTraderEntity {
 // SAFETY: The owner-scoped type key uniquely identifies WanderingTraderEntity.
 unsafe impl DowncastType for WanderingTraderEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/wandering_trader");
-}
-
-/// Vanilla `Zombie.class`: zombies and every subclass.
-fn is_zombie(entity: &dyn LivingEntity) -> bool {
-    [
-        &vanilla_entities::ZOMBIE,
-        &vanilla_entities::HUSK,
-        &vanilla_entities::DROWNED,
-        &vanilla_entities::ZOMBIE_VILLAGER,
-        &vanilla_entities::ZOMBIFIED_PIGLIN,
-    ]
-    .into_iter()
-    .any(|entity_type| entity.entity_type() == entity_type)
 }
 
 /// Vanilla `AvoidEntityGoal` for one entity class, with its default
@@ -196,7 +184,10 @@ impl WanderingTraderEntity {
                 ),
             );
             goal_selector.add_goal(1, TradeWithPlayerGoal);
-            goal_selector.add_goal(1, avoid_goal(8.0, is_zombie));
+            goal_selector.add_goal(
+                1,
+                avoid_goal(8.0, |entity| is_zombie_class(entity.entity_type())),
+            );
             goal_selector.add_goal(1, avoid_type_goal(12.0, &vanilla_entities::EVOKER));
             goal_selector.add_goal(1, avoid_type_goal(8.0, &vanilla_entities::VINDICATOR));
             goal_selector.add_goal(1, avoid_type_goal(8.0, &vanilla_entities::VEX));
