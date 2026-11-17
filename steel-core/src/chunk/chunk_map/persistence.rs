@@ -3,6 +3,7 @@ use super::{
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
+use crate::world::tick_pool::install_on_tick_pool;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use tokio::sync::oneshot;
 
@@ -357,8 +358,10 @@ impl ChunkMap {
     /// only covers `LevelChunk`s too; lower statuses are saved on unload.
     ///
     /// Must run while this world is not ticking, so blocks and entities are
-    /// captured at one consistent point. The capture runs on the chunk
-    /// encoding pool.
+    /// captured at one consistent point. The capture runs on the tick pool,
+    /// which is idle between ticks: the chunk encoding pool is shared with
+    /// generation, so a capture queued there waits behind generation work
+    /// and stalls the tick.
     pub(crate) fn prepare_autosave(self: &Arc<Self>) -> Vec<AutosaveChunk> {
         let mut holders = Vec::new();
         self.chunks.iter_sync(|_, holder| {
@@ -367,7 +370,7 @@ impl ChunkMap {
         });
         let world = self.world_gen_context.world();
         let entity_manager = world.entity_manager();
-        self.chunk_encoding_pool.install(|| {
+        install_on_tick_pool(|| {
             holders
                 .into_par_iter()
                 .filter_map(|holder| {
