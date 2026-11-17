@@ -194,7 +194,7 @@ impl MannequinEntity {
         self.entity_data.lock().avatar.player_main_hand.set(arm);
     }
 
-    /// The `DATA_PLAYER_MODE_CUSTOMISATION` bits: a set bit shows that layer.
+    /// The player-model customization bits: a set bit shows that layer.
     #[must_use]
     pub fn shown_layers(&self) -> i8 {
         *self
