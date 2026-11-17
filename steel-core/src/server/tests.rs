@@ -83,6 +83,7 @@ use crate::world::World;
 use steel_registry::vanilla_damage_types;
 
 use super::DEBUG_STACK_SIZE;
+use super::autosave::PendingAutosave;
 use super::known_players::{
     KnownPlayerSaveStep, UncachedPlayerTarget, classify_uncached_player_target, direct_uuid_profile,
 };
@@ -5158,6 +5159,66 @@ fn signed_chat_commands_queue_their_message_arguments() {
 
         drop(alice);
         drop(server);
+    });
+}
+
+#[test]
+fn autosave_captures_chunks_over_ticks() {
+    let world_fixture = fresh_test_world("autosave-steps");
+    let world = &world_fixture.world;
+    init_behaviors();
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(world, pos);
+    let chunk_is_dirty = || {
+        holder
+            .try_chunk(ChunkStatus::Full)
+            .is_some_and(Chunk::is_dirty)
+    };
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let Ok(server) = test_server(Arc::clone(world), PermissionSubjectIndex::new()).await else {
+            panic!("test server should initialize");
+        };
+        // The periodic autosave captures its chunks over ticks, then saves.
+        assert!(world.set_block(
+            BlockPos::new(4, 64, 4),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let Some(stepped) = server.capture_autosave_step(true) else {
+            panic!("one changed chunk fits in one step");
+        };
+        assert!(!server.is_autosave_capturing());
+        assert!(
+            server.capture_autosave_step(false).is_none(),
+            "nothing pending"
+        );
+        assert_eq!(server.write_save(stepped).await.chunks, 1);
+        assert!(!chunk_is_dirty());
+
+        // A capture that runs out of time stays pending for the next tick.
+        assert!(world.set_block(
+            BlockPos::new(5, 64, 5),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let mut pending = PendingAutosave::begin(&server);
+        assert!(!pending.capture_some(Duration::ZERO));
+        assert!(chunk_is_dirty(), "nothing captured without time");
+        assert!(pending.capture_some(Duration::MAX));
+        assert!(!chunk_is_dirty());
+        *server.pending_autosave.lock() = Some(pending);
+        assert!(server.is_autosave_capturing());
+
+        // `/save-all` drops a capture in progress and saves its chunks itself.
+        let forced = server.write_save(server.prepare_save(true)).await;
+        assert!(!server.is_autosave_capturing());
+        assert_eq!(forced.chunks, 1);
+        assert!(!chunk_is_dirty());
+        server.finish_save_writes().await;
     });
 }
 

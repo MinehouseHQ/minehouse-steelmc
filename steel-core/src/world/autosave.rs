@@ -4,6 +4,7 @@
 //! so everything is taken at one consistent point, like vanilla's main-thread
 //! save. The write then runs in the background without holding any world lock.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use steel_utils::saved_data::names as saved_data_names;
@@ -11,6 +12,7 @@ use steel_utils::saved_data::names as saved_data_names;
 use super::World;
 use super::custom_spawner::WanderingTraderData;
 use super::raid::SavedRaids;
+use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_map::AutosaveChunk;
 use crate::chunk::chunk_ticket_storage::PersistentChunkTickets;
 use crate::level_data::PreparedLevelData;
@@ -22,6 +24,13 @@ pub(crate) struct WorldSave {
     wandering_trader_data: Option<WanderingTraderData>,
     raids: SavedRaids,
     chunks: Vec<AutosaveChunk>,
+}
+
+impl WorldSave {
+    /// Sets the chunks this save writes.
+    pub(crate) fn set_chunks(&mut self, chunks: Vec<AutosaveChunk>) {
+        self.chunks = chunks;
+    }
 }
 
 /// What a [`WorldSave`] wrote.
@@ -52,6 +61,29 @@ impl World {
     /// set, like vanilla's `noSave` check. Must run while this world is not
     /// ticking.
     pub(crate) fn prepare_save(&self, force: bool) -> Option<WorldSave> {
+        let mut save = self.prepare_save_without_chunks(force)?;
+        save.chunks = self.chunk_map.prepare_autosave();
+        Some(save)
+    }
+
+    /// Every loaded chunk holder, for a chunk capture split over several
+    /// ticks with [`Self::capture_autosave_chunks`].
+    pub(crate) fn autosave_chunk_holders(&self) -> Vec<Arc<ChunkHolder>> {
+        self.chunk_map.autosave_holders()
+    }
+
+    /// Captures the Full chunks among `holders` that have unsaved changes.
+    /// Must run while this world is not ticking.
+    pub(crate) fn capture_autosave_chunks(
+        &self,
+        holders: Vec<Arc<ChunkHolder>>,
+    ) -> Vec<AutosaveChunk> {
+        self.chunk_map.capture_autosave(holders)
+    }
+
+    /// [`Self::prepare_save`] without the chunks, for a save whose chunks
+    /// were captured over several ticks.
+    pub(crate) fn prepare_save_without_chunks(&self, force: bool) -> Option<WorldSave> {
         if self.no_save() && !force {
             return None;
         }
@@ -77,7 +109,7 @@ impl World {
             chunk_tickets: self.chunk_map.persistent_chunk_tickets(),
             wandering_trader_data,
             raids: self.raids.to_saved(),
-            chunks: self.chunk_map.prepare_autosave(),
+            chunks: Vec::new(),
         })
     }
 
