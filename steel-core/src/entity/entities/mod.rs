@@ -49,7 +49,7 @@ pub use objects::projectiles::{
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::{
-    BoatEntity, ChestBoatEntity, ChestMinecartEntity, ChestRaftEntity, FurnaceMinecartEntity,
-    HopperMinecartEntity, MinecartEntity, RaftEntity, SpawnerMinecartEntity, TntMinecartEntity,
-    redstone_signal_from_container,
+    BoatEntity, ChestBoatEntity, ChestMinecartEntity, ChestRaftEntity, CommandBlockMinecartEntity,
+    FurnaceMinecartEntity, HopperMinecartEntity, MinecartEntity, RaftEntity, SpawnerMinecartEntity,
+    TntMinecartEntity, redstone_signal_from_container,
 };

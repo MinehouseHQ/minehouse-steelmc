@@ -707,21 +707,15 @@ pub(crate) fn fresh_test_derived_world(primary: &Arc<World>, name: &'static str)
     )
 }
 
-/// A summonable entity type with no Steel implementation yet, for tests of
-/// the "no factory registered" paths.
+/// A summonable entity type treated as having no Steel implementation on
+/// the calling thread, for tests of the "no factory registered" paths.
 pub(crate) fn unimplemented_entity_type() -> EntityTypeRef {
-    use crate::entity::{ENTITIES, init_entities};
-    use steel_registry::REGISTRY;
+    use crate::entity::{init_entities, test_factory_override};
+    use steel_registry::RegistryEntry as _;
+    use steel_registry::vanilla_entities;
 
     init_entities();
-    REGISTRY
-        .entity_types
-        .iter()
-        .map(|(_, entity_type)| entity_type)
-        .find(|&entity_type| {
-            entity_type.summonable
-                && entity_type.can_serialize
-                && !ENTITIES.has_factory(entity_type)
-        })
-        .expect("every entity type has a factory; these tests are no longer needed")
+    let entity_type = &vanilla_entities::COMMAND_BLOCK_MINECART;
+    test_factory_override::hide(entity_type.id());
+    entity_type
 }

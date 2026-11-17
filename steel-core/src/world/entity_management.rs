@@ -12,6 +12,7 @@ use std::sync::Weak;
 
 use crate::entity::entities::{EnderDragonEntity, EnderDragonPartEntity};
 use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
+use crate::world::CommandBlockRun;
 use crate::world::game_event::DynamicListenerAction;
 use crate::world::waypoints::{self, WaypointManager};
 
@@ -571,15 +572,15 @@ impl World {
         mem::take(&mut *self.pending_world_changes.lock())
     }
 
-    /// Queues the command block tick at `pos` for the server, which runs
-    /// command block commands once every world has ticked.
-    pub(crate) fn queue_command_block_tick(&self, pos: BlockPos) {
-        self.command_block_ticks.lock().push(pos);
+    /// Queues a command block run for the server, which runs command block
+    /// commands once every world has ticked.
+    pub(crate) fn queue_command_block_run(&self, run: CommandBlockRun) {
+        self.command_block_runs.lock().push(run);
     }
 
-    /// Takes the queued command block ticks in the order they were queued.
-    pub(crate) fn drain_command_block_ticks(&self) -> Vec<BlockPos> {
-        mem::take(&mut *self.command_block_ticks.lock())
+    /// Takes the queued command block runs in the order they were queued.
+    pub(crate) fn drain_command_block_runs(&self) -> Vec<CommandBlockRun> {
+        mem::take(&mut *self.command_block_runs.lock())
     }
 
     /// Gets an entity by its network ID if it is visible to vanilla gameplay lookups.

@@ -4,13 +4,14 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_game_rules::{COMMAND_BLOCKS_WORK, SEND_COMMAND_FEEDBACK};
-use steel_registry::{init_vanilla_registry, vanilla_blocks};
+use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _};
 use text_components::TextComponent;
@@ -23,9 +24,11 @@ use crate::block_entity::entities::CommandBlockEntity;
 use crate::block_entity::{SharedBlockEntity, init_block_entities};
 use crate::command::PendingCommandExecutionQueue;
 use crate::command::command_block::{BaseCommandBlock, CommandBlockRunner};
-use crate::entity::init_entities;
+use crate::entity::entities::CommandBlockMinecartEntity;
+use crate::entity::entities::objects::vehicles::AbstractMinecart as _;
+use crate::entity::{Entity as _, SharedEntity, init_entities, next_entity_id};
 use crate::server::Server;
-use crate::world::World;
+use crate::world::{CommandBlockRun, World};
 
 const ORIGIN: BlockPos = BlockPos::new(4, 64, 4);
 
@@ -279,4 +282,52 @@ fn the_command_block_state_saves_under_vanilla_keys() {
     );
     assert_eq!(loaded.last_output(), TextComponent::plain(""));
     assert_eq!(BaseCommandBlock::new().name(), TextComponent::plain("@"));
+}
+
+#[test]
+fn a_powered_rail_runs_a_command_block_minecart_every_four_ticks() {
+    with_world("command_block_minecart", |server, world| {
+        let cart = Arc::new(CommandBlockMinecartEntity::new(
+            &vanilla_entities::COMMAND_BLOCK_MINECART,
+            next_entity_id(),
+            DVec3::new(8.5, 64.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        assert!(
+            world
+                .try_add_entity(Arc::clone(&cart) as SharedEntity)
+                .is_ok()
+        );
+        cart.command_block()
+            .set_command("/setblock ~ ~2 ~ stone".to_owned());
+        let rail = BlockPos::new(8, 64, 8);
+
+        cart.base().set_tick_count(3);
+        cart.activate_minecart(world, rail, true);
+        assert!(
+            world.drain_command_block_runs().is_empty(),
+            "a cart waits four ticks before its first run"
+        );
+        cart.base().set_tick_count(4);
+        cart.activate_minecart(world, rail, false);
+        assert!(world.drain_command_block_runs().is_empty(), "unpowered");
+        cart.activate_minecart(world, rail, true);
+        cart.activate_minecart(world, rail, true);
+        let runs = world.drain_command_block_runs();
+        assert_eq!(runs, vec![CommandBlockRun::Minecart(cart.id())]);
+
+        let entity: SharedEntity = Arc::clone(&cart) as SharedEntity;
+        let mut pending = PendingCommandExecutionQueue::new();
+        let mut runner = CommandBlockRunner {
+            server,
+            pending: &mut pending,
+        };
+        CommandBlockMinecartEntity::run_command(&entity, world, &mut runner);
+        assert_eq!(
+            world.get_block_state(BlockPos::new(8, 66, 8)).get_block(),
+            &vanilla_blocks::STONE,
+            "the command runs from the cart"
+        );
+        assert_eq!(cart.command_block().success_count(), 1);
+    });
 }
