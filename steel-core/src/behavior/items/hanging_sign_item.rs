@@ -106,6 +106,10 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 }
 
 impl ItemBehavior for HangingSignItem {
+    fn as_hanging_sign_item(&self) -> Option<&HangingSignItem> {
+        Some(self)
+    }
+
     // Survival check required here because it was a true function and this should be better
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.base.base.place_with_policy(

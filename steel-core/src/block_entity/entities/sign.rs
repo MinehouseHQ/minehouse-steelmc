@@ -23,6 +23,7 @@ use steel_registry::{DyeColor, vanilla_block_entity_types};
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
 };
+use text_components::interactivity::ClickEvent;
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
@@ -117,6 +118,15 @@ impl SignText {
         self.messages
             .iter()
             .all(|msg| matches!(msg.content, Content::Text { .. }))
+    }
+
+    /// Vanilla `SignText.hasAnyClickCommands`: whether a line's own style
+    /// runs a command when clicked.
+    #[must_use]
+    pub fn has_any_click_commands(&self) -> bool {
+        self.messages
+            .iter()
+            .any(|msg| matches!(msg.interactions.click, Some(ClickEvent::RunCommand { .. })))
     }
 
     /// Loads sign text from borrowed NBT.
@@ -259,6 +269,13 @@ impl SignBlockEntity {
     #[must_use]
     pub fn is_waxed(&self) -> bool {
         self.sign.lock().is_waxed
+    }
+
+    /// Vanilla `SignBlockEntity.canExecuteClickCommands`: only waxed signs
+    /// run the click commands on the side the player faces.
+    #[must_use]
+    pub fn can_execute_click_commands(&self, slot: SignTextSlot) -> bool {
+        self.is_waxed() && self.get_text(slot).has_any_click_commands()
     }
 
     /// Makes this sign waxed, returning whether its state changed.

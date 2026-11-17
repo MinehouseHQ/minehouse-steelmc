@@ -24,8 +24,8 @@ use steel_utils::types::{InteractionHand, SignTextSlot};
 use text_components::{Modifier as _, TextComponent};
 
 use crate::behavior::items::{
-    BannerItem, BlockItem, BoatItem, DefaultItemBehavior, MinecartItem, MobBucketItem,
-    SolidBucketItem, SpawnEggItem, block_transformer,
+    BannerItem, BlockItem, BoatItem, DefaultItemBehavior, HangingSignItem, MinecartItem,
+    MobBucketItem, SolidBucketItem, SpawnEggItem, block_transformer,
 };
 use crate::behavior::projectile_item::ProjectileItem;
 use crate::behavior::{
@@ -363,6 +363,12 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Returns this item behavior as a `BlockItem` (vanilla `instanceof BlockItem`).
     fn as_block_item(&self) -> Option<&BlockItem> {
+        None
+    }
+
+    /// Returns this item behavior as a `HangingSignItem` (vanilla
+    /// `instanceof HangingSignItem`).
+    fn as_hanging_sign_item(&self) -> Option<&HangingSignItem> {
         None
     }
 
