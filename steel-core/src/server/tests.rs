@@ -4887,6 +4887,7 @@ mod function_command;
 mod game_time;
 mod help_command;
 mod jigsaw_block;
+mod lava_fire;
 mod loot_command;
 mod place_command;
 mod projectile_owners;
