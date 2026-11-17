@@ -56,7 +56,7 @@ fn summon_loads_the_given_data_and_passengers() {
 }
 
 #[test]
-fn execute_store_writes_into_an_entitys_data() {
+fn execute_store_writes_into_entity_data() {
     init_vanilla_registry();
     init_behaviors();
     init_entities();
