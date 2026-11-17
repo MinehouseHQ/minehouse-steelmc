@@ -372,6 +372,11 @@ macro_rules! boat_entity {
         impl Entity for $name {
             boat_entity!(@entity_methods);
 
+            fn open_menu_for(&self, player: &Player) -> bool {
+                self.open_chest_menu(player);
+                true
+            }
+
             /// Vanilla `AbstractChestBoat.getSlot`: the chest slots, after any
             /// pending loot is rolled.
             fn get_slot(&self, slot: i32) -> Option<SlotAccess<'_>> {

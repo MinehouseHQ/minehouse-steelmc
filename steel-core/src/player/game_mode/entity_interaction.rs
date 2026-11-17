@@ -781,7 +781,7 @@ impl Player {
         location: DVec3,
     ) -> InteractionResult {
         if self.is_spectator() {
-            // TODO: Open entity menu providers in spectator once that foundation exists.
+            entity.open_menu_for(self);
             return InteractionResult::Pass;
         }
 
