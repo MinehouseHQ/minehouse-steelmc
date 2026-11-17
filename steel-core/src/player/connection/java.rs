@@ -15,13 +15,13 @@ use steel_protocol::packets::game::{
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
     SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
     SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SEditBook, SInteract, SMovePlayer, SMovePlayerPos,
+    SContainerSlotStateChanged, SEditBook, SInteract, SJigsawGenerate, SMovePlayer, SMovePlayerPos,
     SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
     SPickItemFromBlock, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
     SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
     SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction,
-    SUseItem, SUseItemOn,
+    SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSetJigsawBlock, SSignUpdate,
+    SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -118,6 +118,8 @@ enum ScheduledPlayPacketKind {
     SetBeacon(SSetBeacon),
     SetCommandBlock(SSetCommandBlock),
     SetCommandMinecart(SSetCommandMinecart),
+    SetJigsawBlock(SSetJigsawBlock),
+    JigsawGenerate(SJigsawGenerate),
     SetCarriedItem(SSetCarriedItem),
     Punch(SPunch),
     PlayerAction(SPlayerAction),
@@ -237,6 +239,8 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SetCommandBlock(_)
             | ScheduledPlayPacketKind::SetCommandMinecart(_)
+            | ScheduledPlayPacketKind::SetJigsawBlock(_)
+            | ScheduledPlayPacketKind::JigsawGenerate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_)
@@ -363,6 +367,12 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::SetCommandMinecart(packet) => {
                 player.handle_set_command_minecart(&packet);
+            }
+            ScheduledPlayPacketKind::SetJigsawBlock(packet) => {
+                player.handle_set_jigsaw_block(packet);
+            }
+            ScheduledPlayPacketKind::JigsawGenerate(packet) => {
+                player.handle_jigsaw_generate(&packet);
             }
             ScheduledPlayPacketKind::EditBook(packet) => player.handle_edit_book(packet),
             ScheduledPlayPacketKind::SpectatorAction(packet) => {
@@ -881,6 +891,12 @@ impl JavaConnection {
             )),
             play::S_SET_COMMAND_BLOCK => scheduled(ScheduledPlayPacketKind::SetCommandBlock(
                 SSetCommandBlock::read_packet(data)?,
+            )),
+            play::S_SET_JIGSAW_BLOCK => scheduled(ScheduledPlayPacketKind::SetJigsawBlock(
+                SSetJigsawBlock::read_packet(data)?,
+            )),
+            play::S_JIGSAW_GENERATE => scheduled(ScheduledPlayPacketKind::JigsawGenerate(
+                SJigsawGenerate::read_packet(data)?,
             )),
             play::S_SET_COMMAND_MINECART => scheduled(ScheduledPlayPacketKind::SetCommandMinecart(
                 SSetCommandMinecart::read_packet(data)?,

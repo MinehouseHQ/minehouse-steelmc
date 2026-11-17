@@ -51,6 +51,7 @@ mod block_interaction;
 mod command_block_edit;
 mod entity_interaction;
 mod item_interaction;
+mod jigsaw_edit;
 mod kinetic;
 mod player_methods;
 mod swing;

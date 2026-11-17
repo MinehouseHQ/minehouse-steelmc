@@ -121,6 +121,27 @@ pub enum JointType {
     Aligned,
 }
 
+impl JointType {
+    /// Vanilla `JointType.getSerializedName`.
+    #[must_use]
+    pub const fn serialized_name(self) -> &'static str {
+        match self {
+            Self::Rollable => "rollable",
+            Self::Aligned => "aligned",
+        }
+    }
+
+    /// Vanilla `JointType.CODEC.byName`: the joint called `name`, if any.
+    #[must_use]
+    pub const fn by_name(name: &str) -> Option<Self> {
+        match name.as_bytes() {
+            b"rollable" => Some(Self::Rollable),
+            b"aligned" => Some(Self::Aligned),
+            _ => None,
+        }
+    }
+}
+
 /// A jigsaw connector block extracted from a structure template.
 #[derive(Debug, Clone)]
 pub struct JigsawBlock {

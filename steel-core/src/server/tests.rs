@@ -4885,6 +4885,7 @@ mod fillbiome_command;
 mod function_command;
 mod game_time;
 mod help_command;
+mod jigsaw_block;
 mod loot_command;
 mod place_command;
 mod projectile_owners;

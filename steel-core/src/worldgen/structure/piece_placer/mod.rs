@@ -106,17 +106,15 @@ impl StructurePiecePlacer {
         let mut piece_bounding_box = piece.bounding_box;
         let piece_orientation = piece.orientation;
         let placed = match &mut piece.payload {
-            StructurePiecePayload::Jigsaw(data) => Self::place_pool_element(
+            StructurePiecePayload::Jigsaw(data) => Self::place_jigsaw_piece(
                 region,
                 registry,
-                &data.pool_element,
-                BlockPos::new(data.position.x, data.position.y, data.position.z),
+                data,
                 reference_pos,
-                data.rotation,
                 clip,
                 random,
-                data.liquid_settings,
                 biome_zoom_seed,
+                false,
             ),
             StructurePiecePayload::Template(data) => Self::place_template_piece(
                 region,
