@@ -69,8 +69,8 @@ pub use ram::PrepareRamNearestTarget;
 pub use ranged::{CrossbowAttack, back_up_if_too_close};
 pub use spear::{SpearApproach, SpearAttack, SpearRetreat};
 pub use stroll::{
-    inside_brownian_walk, set_walk_target_away_from_entity, village_bound_random_stroll,
-    village_bound_random_stroll_within,
+    find_section_closest_to_village, inside_brownian_walk, set_walk_target_away_from_entity,
+    village_bound_random_stroll, village_bound_random_stroll_within,
 };
 pub use swim::Swim;
 pub use temptation::FollowTemptation;

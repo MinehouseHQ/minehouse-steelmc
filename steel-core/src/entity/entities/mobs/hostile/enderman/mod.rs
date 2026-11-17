@@ -332,7 +332,7 @@ fn player_not_wearing_disguise_item(player: &Player) -> bool {
 }
 
 /// Vanilla `BlockUtil.clampedPackDifferenceInPosition`.
-fn clamped_pack_difference_in_position(
+pub(crate) fn clamped_pack_difference_in_position(
     pos: BlockPos,
     test_pos: BlockPos,
     x_radius: i32,

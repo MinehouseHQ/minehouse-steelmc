@@ -20,8 +20,9 @@ use crate::behavior::InteractionResult;
 use crate::enchantment_helper::{self, EnchantmentPostAttackContext};
 use crate::entity::SpawnRule;
 use crate::entity::ai::goal::{
-    HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal, MoveTowardsTargetGoal,
-    NearestAttackableTargetGoal, RandomLookAroundGoal, ResetUniversalAngerTargetGoal,
+    DefendVillageTargetGoal, GolemRandomStrollInVillageGoal, HurtByTargetGoal, LookAtPlayerGoal,
+    MeleeAttackGoal, MoveBackToVillageGoal, MoveTowardsTargetGoal, NearestAttackableTargetGoal,
+    OfferFlowerGoal, RandomLookAroundGoal, ResetUniversalAngerTargetGoal,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::pushing::EntityPush;
@@ -79,8 +80,6 @@ struct AnimationTicks {
 }
 
 /// An iron golem: guards villages and the player who built it.
-// TODO: The village goals (`MoveBackToVillageGoal`, `GolemRandomStrollInVillageGoal`,
-// `OfferFlowerGoal`, `DefendVillageTargetGoal`) and `checkSpawnObstruction` come with villagers.
 #[entity_behavior(class = "IronGolem", spawn_rule)]
 pub struct IronGolemEntity {
     base: EntityBase,
@@ -131,10 +130,14 @@ impl IronGolemEntity {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(1, MeleeAttackGoal::new(1.0, true));
             goal_selector.add_goal(2, MoveTowardsTargetGoal::new(0.9, 32.0));
+            goal_selector.add_goal(2, MoveBackToVillageGoal::new(0.6, false));
+            goal_selector.add_goal(4, GolemRandomStrollInVillageGoal::new(0.6));
+            goal_selector.add_goal(5, OfferFlowerGoal::new());
             goal_selector.add_goal(7, LookAtPlayerGoal::new(6.0));
             goal_selector.add_goal(8, RandomLookAroundGoal::new());
 
             let mut target_selector = mob_base.target_selector().lock();
+            target_selector.add_goal(1, DefendVillageTargetGoal::new());
             target_selector.add_goal(2, HurtByTargetGoal::new());
             target_selector.add_goal(
                 3,
