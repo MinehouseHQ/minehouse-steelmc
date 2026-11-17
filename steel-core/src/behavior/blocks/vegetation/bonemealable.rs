@@ -6,7 +6,13 @@ use rand::{Rng, RngExt};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
-use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureRef};
+use steel_registry::biome::Biome;
+use steel_registry::feature::{
+    CompositeFeatureConfiguration, ConfiguredFeature, ConfiguredFeatureKind, ConfiguredFeatureRef,
+    PlacedFeature, PlacedFeatureData, PlacedFeatureRef, SimpleRandomSelectorConfiguration,
+};
+use steel_registry::vanilla_feature_tags::FeatureTag;
+use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
 use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -28,19 +34,105 @@ pub(crate) fn place_bonemeal_feature(
     rng: &mut dyn Rng,
     pos: BlockPos,
 ) -> bool {
-    let mut region = WorldGenRegion::new_live(
-        &world.chunk_map.world_gen_context,
-        Arc::clone(world),
-        ChunkPos::from_block_pos(pos),
-        RandomSource::Legacy(LegacyRandom::from_seed(rng.random())),
-    );
-    let mut random = WorldgenRandom::from_seed(rng.random());
+    let (mut region, mut random) = bonemeal_region(world, rng, pos);
     FeatureDecorationRunner::place_feature_in_world(
         &mut region,
         &ConfiguredFeatureRef::Reference(feature),
         &mut random,
         pos,
     )
+}
+
+/// A live region around `pos` and a worldgen random seeded from `rng`, as
+/// the bonemeal feature placers use them.
+fn bonemeal_region<'a>(
+    world: &'a Arc<World>,
+    rng: &mut dyn Rng,
+    pos: BlockPos,
+) -> (WorldGenRegion<'a>, WorldgenRandom) {
+    let region = WorldGenRegion::new_live(
+        &world.chunk_map.world_gen_context,
+        Arc::clone(world),
+        ChunkPos::from_block_pos(pos),
+        RandomSource::Legacy(LegacyRandom::from_seed(rng.random())),
+    );
+    (region, WorldgenRandom::from_seed(rng.random()))
+}
+
+/// Vanilla `PlacedFeature.place(level, generator, random, pos)` as bonemeal
+/// calls it, on a live region over the loaded world.
+pub(crate) fn place_bonemeal_placed_feature(
+    world: &Arc<World>,
+    feature: &'static PlacedFeature,
+    rng: &mut dyn Rng,
+    pos: BlockPos,
+) -> bool {
+    let (mut region, mut random) = bonemeal_region(world, rng, pos);
+    FeatureDecorationRunner::place_placed_feature_in_world(
+        &mut region,
+        &PlacedFeatureRef::Reference(feature),
+        &mut random,
+        pos,
+    )
+}
+
+/// Vanilla `PlacedFeature.getFeatures`: the configured feature and every
+/// registered configured feature nested in it, depth first.
+fn collect_placed_features(placed: &PlacedFeatureData, out: &mut Vec<&'static ConfiguredFeature>) {
+    let kind = match &placed.feature {
+        ConfiguredFeatureRef::Reference(feature) => {
+            out.push(feature);
+            &feature.kind
+        }
+        ConfiguredFeatureRef::Inline(kind) => kind.as_ref(),
+    };
+    let mut nested = |feature: &PlacedFeatureRef| match feature {
+        PlacedFeatureRef::Reference(placed) => collect_placed_features(&placed.data, out),
+        PlacedFeatureRef::Inline(placed) => collect_placed_features(placed, out),
+    };
+    match kind {
+        ConfiguredFeatureKind::Overlay { features }
+        | ConfiguredFeatureKind::Sequence(CompositeFeatureConfiguration { features })
+        | ConfiguredFeatureKind::SimpleRandomSelector(SimpleRandomSelectorConfiguration {
+            features,
+        }) => features.iter().for_each(&mut nested),
+        ConfiguredFeatureKind::RandomBooleanSelector(config) => {
+            nested(&config.feature_true);
+            nested(&config.feature_false);
+        }
+        ConfiguredFeatureKind::RandomSelector(config) => {
+            for weighted in &config.features {
+                nested(&weighted.feature);
+            }
+            nested(&config.default);
+        }
+        ConfiguredFeatureKind::WeightedRandomSelector(config) => {
+            for weighted in &config.features {
+                nested(&weighted.data);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Vanilla `BiomeGenerationSettings.getBoneMealFeatures`: every feature the
+/// biome places, nested ones included, in the `can_spawn_from_bone_meal`
+/// tag.
+#[must_use]
+pub(crate) fn bone_meal_features(biome: &Biome) -> Vec<&'static ConfiguredFeature> {
+    let mut features = Vec::new();
+    for key in biome.features.iter().flatten() {
+        let Some(placed) = REGISTRY.placed_features.by_key(key) else {
+            continue;
+        };
+        collect_placed_features(&placed.data, &mut features);
+    }
+    features.retain(|feature| {
+        REGISTRY
+            .configured_features
+            .is_in_tag(feature, &FeatureTag::CAN_SPAWN_FROM_BONE_MEAL)
+    });
+    features
 }
 
 /// Blocks that react to bonemeal.

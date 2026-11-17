@@ -178,6 +178,7 @@ const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
 const STRUCTURE_SETS: &str = "structure_sets";
 const STRUCTURE_TAGS: &str = "structure_tags";
+const FEATURE_TAGS: &str = "feature_tags";
 const STRUCTURES: &str = "structures";
 const STRUCTURE_PROCESSORS: &str = "structure_processors";
 const TEMPLATE_POOLS: &str = "template_pools";
@@ -271,6 +272,7 @@ pub fn main() {
         (structure::structures(), STRUCTURES),
         (structure::processors(), STRUCTURE_PROCESSORS),
         (tags::structure(), STRUCTURE_TAGS),
+        (tags::feature(), FEATURE_TAGS),
         (structure::sets(), STRUCTURE_SETS),
         (structure::template_pools(), TEMPLATE_POOLS),
         (tags::banner_pattern(), BANNER_PATTERN_TAGS),
