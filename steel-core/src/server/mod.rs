@@ -90,6 +90,7 @@ use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll
 use crate::world::{PlayerMap, World, WorldConfig};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
+use crate::worldgen::template::StructureTemplateManager;
 use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -135,6 +136,8 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
+/// Vanilla `LevelResource.GENERATED_DIR`: where structure blocks save templates.
+const GENERATED_DIR: &str = "generated";
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
@@ -877,6 +880,13 @@ impl Server {
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
             let clock = Arc::clone(&primary.game_time);
+            let structure_templates = Arc::new(StructureTemplateManager::new(
+                primary
+                    .level_path
+                    .as_ref()
+                    .map(|path| path.join(GENERATED_DIR)),
+            ));
+            primary.set_structure_templates(Arc::clone(&structure_templates));
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -886,6 +896,7 @@ impl Server {
                 let world =
                     construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
                         .await?;
+                world.set_structure_templates(Arc::clone(&structure_templates));
                 worlds.insert(world_entry.key.clone(), world);
             }
         }

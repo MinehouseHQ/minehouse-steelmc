@@ -49,14 +49,29 @@ impl StructureTemplate {
                 return Err(format!("structure template {context} is empty"));
             }
         };
-        let compound = root.as_compound();
+        Self::load_compound(registry, &root.as_compound(), context)
+    }
 
+    /// Vanilla `StructureTemplate.load` from an already parsed template compound.
+    pub(super) fn load_compound(
+        registry: &Registry,
+        compound: &BorrowedNbtCompound<'_, '_>,
+        context: &str,
+    ) -> Result<Self, String> {
         let size = Self::read_vec3(compound.list("size"), context, "size")?;
-        let palettes = Self::read_palettes(registry, &compound, context)?;
-        let blocks = compound
-            .list("blocks")
-            .and_then(|list| list.compounds())
-            .ok_or_else(|| format!("structure template {context} has non-compound blocks list"))?;
+        let palettes = Self::read_palettes(registry, compound, context)?;
+        // A template saved before anything filled it has empty lists, which
+        // carry no element type.
+        let blocks = match compound.list("blocks") {
+            Some(list) if list.empty() => Vec::new(),
+            list => list
+                .and_then(|list| list.compounds())
+                .ok_or_else(|| {
+                    format!("structure template {context} has non-compound blocks list")
+                })?
+                .into_iter()
+                .collect(),
+        };
 
         let mut loaded_palettes = Vec::with_capacity(palettes.len());
         for palette in &palettes {
@@ -65,7 +80,7 @@ impl StructureTemplate {
             });
         }
 
-        let entities = Self::read_entities(registry, &compound, context)?;
+        let entities = Self::read_entities(registry, compound, context)?;
 
         Ok(Self {
             size,
@@ -111,6 +126,9 @@ impl StructureTemplate {
         compound: &BorrowedNbtCompound<'_, '_>,
         context: &str,
     ) -> Result<Vec<Vec<BlockStateId>>, String> {
+        if compound.list("palette").is_some_and(|list| list.empty()) {
+            return Ok(vec![Vec::new()]);
+        }
         if let Some(palette) = compound.list("palette").and_then(|list| list.compounds()) {
             return Ok(vec![Self::read_palette(registry, &palette, context)?]);
         }
@@ -175,7 +193,7 @@ impl StructureTemplate {
 
     pub(super) fn read_blocks(
         registry: &Registry,
-        blocks: &BorrowedNbtCompoundList<'_, '_>,
+        blocks: &[BorrowedNbtCompound<'_, '_>],
         palette: &[BlockStateId],
         context: &str,
     ) -> Result<Vec<StructureBlockInfo>, String> {
@@ -183,7 +201,7 @@ impl StructureTemplate {
         let mut other_blocks = Vec::new();
         let mut block_entities = Vec::new();
 
-        for block in blocks.clone() {
+        for block in blocks {
             let pos = Self::read_vec3(block.list("pos"), context, "block pos")?;
             let state_index = block
                 .int("state")
@@ -243,15 +261,15 @@ impl StructureTemplate {
             let entity_nbt = entity.compound("nbt").ok_or_else(|| {
                 format!("structure template {context} has entity entry without nbt")
             })?;
-            let id = entity_nbt
+            // Vanilla keeps such entries and skips them when it fails to create
+            // the entity: a passenger saves as an empty compound.
+            let Some(entity_type) = entity_nbt
                 .string("id")
-                .ok_or_else(|| format!("structure template {context} has entity nbt without id"))?;
-            let id = Identifier::from_str(id.to_str().as_ref()).map_err(|err| {
-                format!("structure template {context} has invalid entity identifier: {err}")
-            })?;
-            let entity_type = registry.entity_types.by_key(&id).ok_or_else(|| {
-                format!("structure template {context} references unknown entity type {id}")
-            })?;
+                .and_then(|id| Identifier::from_str(id.to_str().as_ref()).ok())
+                .and_then(|id| registry.entity_types.by_key(&id))
+            else {
+                continue;
+            };
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
             let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
