@@ -1,15 +1,13 @@
 //! `FlowerPotBlock` behavior (`net.minecraft.world.level.block.FlowerPotBlock`).
-//!
-//! TODO: Potted open/closed eyeblossoms do not transform at day/night yet.
-//! Vanilla reads `EnvironmentAttributes.EYEBLOSSOM_OPEN`, which Steel lacks
-//! (the same gap documented on `EyeblossomBlock`).
 
 use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashMap;
 use steel_macros::block_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_custom_stats;
@@ -18,6 +16,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
 
+use crate::behavior::blocks::vegetation::EyeblossomType;
 use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::ai::path::PathComputationType;
@@ -60,7 +59,49 @@ impl FlowerPotBlock {
     }
 }
 
+impl FlowerPotBlock {
+    /// Vanilla `isRandomlyTicking`: only potted eyeblossoms tick.
+    fn is_potted_eyeblossom(state: BlockStateId) -> bool {
+        let block = state.get_block();
+        block == &vanilla_blocks::POTTED_OPEN_EYEBLOSSOM
+            || block == &vanilla_blocks::POTTED_CLOSED_EYEBLOSSOM
+    }
+
+    /// Vanilla `opposite`: swaps an open and a closed potted eyeblossom.
+    fn opposite(state: BlockStateId) -> BlockStateId {
+        let block = state.get_block();
+        if block == &vanilla_blocks::POTTED_OPEN_EYEBLOSSOM {
+            vanilla_blocks::POTTED_CLOSED_EYEBLOSSOM.default_state()
+        } else if block == &vanilla_blocks::POTTED_CLOSED_EYEBLOSSOM {
+            vanilla_blocks::POTTED_OPEN_EYEBLOSSOM.default_state()
+        } else {
+            state
+        }
+    }
+}
+
 impl BlockBehavior for FlowerPotBlock {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if !Self::is_potted_eyeblossom(state) {
+            return;
+        }
+        let is_open = self.potted == &vanilla_blocks::OPEN_EYEBLOSSOM;
+        if world.eyeblossom_open().unwrap_or(is_open) == is_open {
+            return;
+        }
+        world.set_block(pos, Self::opposite(state), UpdateFlags::UPDATE_ALL);
+        let new_type = EyeblossomType::from_open(is_open).transform();
+        new_type.spawn_transform_particle(world, pos, &mut rand::rng());
+        world.play_sound(
+            new_type.long_switch_sound(),
+            SoundSource::Blocks,
+            pos,
+            1.0,
+            1.0,
+            None,
+        );
+    }
+
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -169,7 +210,6 @@ impl BlockBehavior for FlowerPotBlock {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
-    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::{ChunkPos, Direction};
 

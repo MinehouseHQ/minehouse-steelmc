@@ -6,6 +6,6 @@ mod bee;
 mod polar_bear;
 mod wolf;
 
-pub use bee::BeeEntity;
+pub use bee::{BeeEntity, attracts_bees};
 pub use polar_bear::PolarBearEntity;
 pub use wolf::WolfEntity;

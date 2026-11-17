@@ -324,6 +324,14 @@ impl World {
         environment::creaking_active(self.dimension_type, level_data.world_clocks())
     }
 
+    /// Vanilla `EnvironmentAttributes.EYEBLOSSOM_OPEN`: whether eyeblossoms
+    /// should be open, or `None` (vanilla `TriState.DEFAULT`) where nothing
+    /// says, which leaves them as they are.
+    pub fn eyeblossom_open(&self) -> Option<bool> {
+        let level_data = self.level_data.read();
+        environment::eyeblossom_open(self.dimension_type, level_data.world_clocks())
+    }
+
     /// Whether the environment currently permits daylight burning.
     pub fn monsters_burn(&self) -> bool {
         let level_data = self.level_data.read();
