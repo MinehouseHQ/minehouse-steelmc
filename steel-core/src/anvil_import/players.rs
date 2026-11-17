@@ -352,6 +352,7 @@ fn convert_player_data(
             entered_nether_pos: nbt::doubles::<3>(root, "entered_nether_pos"),
             last_explosion_impact_pos: nbt::doubles::<3>(root, "last_explosion_impact_pos"),
         },
+        post_effects: post_effects(root),
         capture_order: next_capture_order(),
     })
 }
@@ -521,6 +522,19 @@ fn inventory(root: &NbtCompound, report: &mut PlayerReport) -> Vec<PersistentSlo
         }
     }
     inventory
+}
+
+/// Vanilla `ServerPlayer.readAdditionalSaveData` for `post_effects`: the
+/// whole list, or nothing when any id is invalid.
+fn post_effects(root: &NbtCompound) -> Vec<Identifier> {
+    root.list("post_effects")
+        .and_then(|list| {
+            nbt::list_elements(list)
+                .iter()
+                .map(|tag| nbt::tag_string(tag).and_then(|id| nbt::identifier(&id)))
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default()
 }
 
 /// Vanilla `LivingEntity.readAdditionalSaveData` for `locator_bar_icon`.

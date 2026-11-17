@@ -4895,6 +4895,7 @@ mod locate_biome;
 mod locate_poi;
 mod loot_command;
 mod place_command;
+mod post_effect_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;

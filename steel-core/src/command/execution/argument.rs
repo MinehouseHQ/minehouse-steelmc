@@ -544,6 +544,11 @@ impl SteelArgumentType {
         Self::new(SoundParser)
     }
 
+    /// Vanilla `IdentifierArgument.id()` with the `post_effects` suggestions.
+    pub(crate) fn post_effect() -> Self {
+        Self::new(PostEffectParser)
+    }
+
     pub(crate) fn advancement() -> Self {
         Self::new(AdvancementParser)
     }
@@ -1918,6 +1923,22 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::ResourceLocation,
         Some(ProtocolSuggestionType::AvailableSounds),
+    )
+);
+// The server has no post effects of its own (vanilla
+// `CommandSourceStack.getAvailablePostEffects` is empty); the client
+// suggests the ones its resource packs provide.
+unit_argument_parser!(
+    PostEffectParser,
+    "steel:command/parser/post_effect",
+    IdentifierValue,
+    parse | reader,
+    _source | { parse_identifier(reader).map(IdentifierValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::PostEffects),
     )
 );
 unit_argument_parser!(

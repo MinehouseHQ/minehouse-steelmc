@@ -24,6 +24,7 @@ mod permissions;
 pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
+mod post_effects;
 mod profile;
 pub mod recipe_book;
 mod session;
@@ -321,6 +322,8 @@ pub struct Player {
     recipe_book: SyncMutex<recipe_book::ServerRecipeBook>,
     /// Vanilla `shoulderEntityLeft`/`shoulderEntityRight`: perched parrots.
     shoulder_entities: SyncMutex<shoulder::ShoulderEntities>,
+    /// Vanilla `ServerPlayer.postEffects` and `postEffectsDirty`.
+    post_effects: SyncMutex<post_effects::PostEffects>,
 
     /// Active fishing hook, kept weakly because the world owns live entities.
     pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
@@ -374,6 +377,56 @@ impl PlayerResidenceState {
         self.pending_root_vehicle = None;
         self.pending_ender_pearls.clear();
         self.token
+    }
+}
+
+impl Player {
+    /// Vanilla `ServerPlayer.doTick`'s sleeping check: wakes the player when
+    /// the bed no longer allows sleep or is gone or out of reach.
+    fn wake_if_bed_invalid(&self) {
+        if !self.is_sleeping() {
+            return;
+        }
+        let world = self.get_world();
+        let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
+        if state.is_some_and(|state| {
+            !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
+        }) {
+            self.stop_sleep_in_bed(false, true);
+        } else if !self.can_interact_with_level()
+            || self
+                .sleeping_pos()
+                .is_none_or(|pos| !world.get_block_state(pos).is_bed())
+        {
+            self.stop_sleep_in_bed(true, true);
+        }
+    }
+}
+
+impl Player {
+    /// Vanilla `entered_nether_pos`, `last_explosion_impact_pos` and
+    /// `post_effects` of `ServerPlayer.addAdditionalSaveData`.
+    fn save_movement_positions_and_post_effects(&self, nbt: &mut NbtCompound) {
+        {
+            let criteria = self.movement_criteria.lock();
+            for (key, position) in [
+                ("entered_nether_pos", criteria.entered_nether()),
+                ("last_explosion_impact_pos", criteria.explosion_impact()),
+            ] {
+                if let Some(position) = position {
+                    nbt.insert(key, NbtList::Double(position.to_array().to_vec()));
+                }
+            }
+        }
+        nbt.insert(
+            "post_effects",
+            NbtList::String(
+                self.post_effects()
+                    .iter()
+                    .map(|effect| effect.to_string().into())
+                    .collect(),
+            ),
+        );
     }
 }
 
@@ -754,6 +807,7 @@ impl Player {
             camera: SyncMutex::new(None),
             recipe_book: SyncMutex::new(recipe_book::ServerRecipeBook::default()),
             shoulder_entities: SyncMutex::new(shoulder::ShoulderEntities::default()),
+            post_effects: SyncMutex::new(post_effects::PostEffects::default()),
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
@@ -1437,17 +1491,7 @@ impl Player {
             NbtTag::Byte(i8::from(self.has_seen_credits())),
         );
         nbt.insert("warden_spawn_tracker", self.warden_spawn_tracker().save());
-        {
-            let criteria = self.movement_criteria.lock();
-            for (key, position) in [
-                ("entered_nether_pos", criteria.entered_nether()),
-                ("last_explosion_impact_pos", criteria.explosion_impact()),
-            ] {
-                if let Some(position) = position {
-                    nbt.insert(key, NbtList::Double(position.to_array().to_vec()));
-                }
-            }
-        }
+        self.save_movement_positions_and_post_effects(nbt);
         nbt.insert(
             recipe_book::RECIPE_BOOK_TAG,
             NbtTag::Compound(self.recipe_book().save()),
@@ -2122,21 +2166,7 @@ impl LivingEntity for Player {
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
-        if self.is_sleeping() {
-            let world = self.get_world();
-            let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
-            if state.is_some_and(|state| {
-                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
-            }) {
-                self.stop_sleep_in_bed(false, true);
-            } else if !self.can_interact_with_level()
-                || self
-                    .sleeping_pos()
-                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
-            {
-                self.stop_sleep_in_bed(true, true);
-            }
-        }
+        self.wake_if_bed_invalid();
 
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {
@@ -2195,6 +2225,7 @@ impl LivingEntity for Player {
                 self.set_sprinting(false);
             }
         }
+        self.send_dirty_post_effects();
 
         self.tick_camera();
 

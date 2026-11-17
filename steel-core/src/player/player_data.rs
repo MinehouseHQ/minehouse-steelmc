@@ -34,7 +34,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 14;
+pub const PLAYER_DATA_VERSION: i32 = 15;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -168,6 +168,9 @@ pub struct PersistentPlayerData {
     /// Vanilla `entered_nether_pos` and `last_explosion_impact_pos`.
     pub movement_positions: SavedMovementPositions,
 
+    /// Vanilla `post_effects`: the applied post-processing shaders, in order.
+    pub post_effects: Vec<Identifier>,
+
     /// When this snapshot was taken, from [`next_capture_order`]. Not saved:
     /// storage uses it to never overwrite a newer snapshot with an older
     /// one when saves of the same player finish out of order.
@@ -241,6 +244,22 @@ pub struct PersistentStat {
     pub count: i32,
 }
 
+/// The non-empty slots of a container, with their indices.
+fn non_empty_slots<'a>(
+    size: usize,
+    item_at: impl Fn(usize) -> &'a ItemStack,
+) -> Vec<PersistentSlot> {
+    (0..size)
+        .filter_map(|slot| {
+            let item = item_at(slot);
+            (!item.is_empty()).then(|| PersistentSlot {
+                slot: slot as i8,
+                item: item.clone(),
+            })
+        })
+        .collect()
+}
+
 impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
@@ -256,29 +275,15 @@ impl PersistentPlayerData {
         let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
-        let mut slots = Vec::new();
         // Main inventory (0-35) and equipment (36-42)
-        for slot in 0..PlayerInventory::CONTAINER_SIZE {
-            let item = inventory.get_item(slot);
-            if !item.is_empty() {
-                slots.push(PersistentSlot {
-                    slot: slot as i8,
-                    item: item.clone(),
-                });
-            }
-        }
+        let slots = non_empty_slots(PlayerInventory::CONTAINER_SIZE, |slot| {
+            inventory.get_item(slot)
+        });
 
         let ender_chest_inventory = player.ender_chest_inventory.lock();
-        let mut ender_items = Vec::new();
-        for slot in 0..ENDER_CHEST_SLOTS {
-            let item = ender_chest_inventory.get_item(slot);
-            if !item.is_empty() {
-                ender_items.push(PersistentSlot {
-                    slot: slot as i8,
-                    item: item.clone(),
-                });
-            }
-        }
+        let ender_items = non_empty_slots(ENDER_CHEST_SLOTS, |slot| {
+            ender_chest_inventory.get_item(slot)
+        });
 
         let (experience_level, experience_progress, experience_total, enchantment_seed) = {
             let lock = player.experience.lock();
@@ -350,6 +355,7 @@ impl PersistentPlayerData {
             recipe_book: player.recipe_book(),
             locator_bar_icon: player.waypoint_icon(),
             movement_positions: player.movement_criteria.lock().saved(),
+            post_effects: player.post_effects(),
             capture_order: next_capture_order(),
         }
     }
@@ -435,6 +441,7 @@ impl Player {
         self.set_seen_credits(false);
         self.set_warden_spawn_tracker(WardenSpawnTracker::default());
         self.set_recipe_book(ServerRecipeBook::default());
+        self.restore_post_effects([]);
     }
 }
 
@@ -610,6 +617,7 @@ impl PersistentPlayerData {
             .movement_criteria
             .lock()
             .restore_saved(self.movement_positions);
+        player.restore_post_effects(self.post_effects.iter().cloned());
 
         // Statistics
         {

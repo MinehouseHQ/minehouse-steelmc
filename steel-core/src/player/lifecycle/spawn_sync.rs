@@ -273,6 +273,7 @@ impl Player {
             self.server().resend_player_context(self);
         }
         self.send_active_effects_for_self();
+        self.send_post_effects();
         world
     }
 
