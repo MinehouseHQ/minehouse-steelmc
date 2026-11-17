@@ -11,12 +11,11 @@ use steel_registry::blocks::{
 };
 use steel_registry::entity_data::EntityPose;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{vanilla_blocks, vanilla_entities};
+use steel_registry::vanilla_entities;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::ai::walk::WalkPathEvaluator;
-use crate::entity::{Entity, LivingEntity, physics_state_for_move};
+use crate::entity::{Entity, LivingEntity, physics_state_for_move, spawn_placements};
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::world::World;
 
@@ -241,17 +240,10 @@ pub(crate) fn is_block_floor_valid(block_floor_height: f64) -> bool {
     !block_floor_height.is_infinite() && block_floor_height < 1.0
 }
 
+/// Vanilla `entity.getType().isBlockDangerous(state)`, which skips the
+/// blocks in the type's `immuneTo` tag.
 fn is_block_dangerous(entity: &dyn Entity, state: BlockStateId) -> bool {
-    // TODO: mirror vanilla entitytype.immuneto when the entity types carry entity specific immune block tag
-    if !entity.fire_immune() && WalkPathEvaluator::is_burning_block(state) {
-        return true;
-    }
-
-    let block = state.get_block();
-    block == &vanilla_blocks::WITHER_ROSE
-        || block == &vanilla_blocks::SWEET_BERRY_BUSH
-        || block == &vanilla_blocks::CACTUS
-        || block == &vanilla_blocks::POWDER_SNOW
+    spawn_placements::is_block_dangerous(entity.entity_type(), state)
 }
 
 /// The poses `passenger` may take when getting off a vehicle.
@@ -312,4 +304,26 @@ pub(crate) fn animal_dismount_location(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
+
+    use super::is_block_dangerous;
+    use crate::entity::entities::{FoxEntity, ZombieEntity};
+
+    #[test]
+    fn dismount_danger_skips_the_entity_types_immune_blocks() {
+        init_vanilla_registry();
+        let berry_bush = vanilla_blocks::SWEET_BERRY_BUSH.default_state();
+        let fox = FoxEntity::new(&vanilla_entities::FOX, 1, DVec3::ZERO, Weak::new());
+        let zombie = ZombieEntity::new(&vanilla_entities::ZOMBIE, 2, DVec3::ZERO, Weak::new());
+
+        assert!(!is_block_dangerous(&fox, berry_bush));
+        assert!(is_block_dangerous(&zombie, berry_bush));
+    }
 }
