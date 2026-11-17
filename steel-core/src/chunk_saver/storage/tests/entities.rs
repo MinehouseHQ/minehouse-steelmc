@@ -691,3 +691,69 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     assert_eq!(saved.long("LootTableSeed"), Some(42));
     assert_eq!(loaded_entity.collect_components().get(REPAIR_COST), Some(3));
 }
+
+#[test]
+fn living_entity_state_survives_chunk_save_load() {
+    use crate::entity::{ENTITIES, MobEffectInstance};
+    use steel_registry::{vanilla_attributes, vanilla_mob_effects};
+
+    init_globals();
+
+    let pos = ChunkPos::new(0, 0);
+    let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let pig = ENTITIES
+        .create(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(5.5, 6.0, 7.5),
+            Weak::new(),
+        )
+        .expect("pig factory");
+    let living = pig.as_living_entity().expect("a pig is living");
+    living
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::MOVEMENT_SPEED, 0.3);
+    living.set_health(3.5);
+    assert!(living.add_mob_effect(MobEffectInstance::with_duration(
+        vanilla_mob_effects::SPEED,
+        200,
+        1
+    )));
+    let uuid = pig.uuid();
+
+    let Some(prepared) =
+        ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Features, &[pig], true)
+    else {
+        panic!("forced runtime entity save should prepare a chunk save");
+    };
+    let loaded = ChunkStorage::persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Full,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded_pig = loaded
+        .pending_entities
+        .iter()
+        .find(|entity| entity.uuid() == uuid)
+        .expect("the pig should load");
+    let loaded_living = loaded_pig.as_living_entity().expect("a pig is living");
+
+    assert_eq!(loaded_living.get_health(), 3.5);
+    assert_eq!(
+        loaded_living
+            .attributes()
+            .lock()
+            .get_base_value(vanilla_attributes::MOVEMENT_SPEED),
+        Some(0.3)
+    );
+    assert!(
+        loaded_living
+            .active_mob_effects()
+            .iter()
+            .any(|effect| effect.effect() == vanilla_mob_effects::SPEED && effect.amplifier() == 1)
+    );
+}

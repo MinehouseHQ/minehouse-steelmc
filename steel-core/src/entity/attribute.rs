@@ -2,6 +2,7 @@
 //!
 use core::iter;
 
+use simdnbt::borrow::{NbtCompound as BorrowedNbtCompound, NbtList as BorrowedNbtList};
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_protocol::packets::game::{AttributeModifierData, AttributeSnapshot};
 pub use steel_registry::attribute::AttributeModifierOperation;
@@ -403,6 +404,35 @@ impl AttributeMap {
         NbtList::Compound(attributes)
     }
 
+    /// Vanilla `AttributeMap.apply` with the `attributes` list read by
+    /// `LivingEntity.readAdditionalSaveData`: sets each known attribute's base
+    /// value and puts back its modifiers as permanent ones. Unknown
+    /// attributes, and attributes this entity does not have, are skipped.
+    pub(crate) fn apply_vanilla_nbt(&mut self, attributes: BorrowedNbtList<'_, '_>) {
+        for packed in attributes.compounds().into_iter().flatten() {
+            let Some(attribute) = packed
+                .string("id")
+                .and_then(|id| id.to_str().parse::<Identifier>().ok())
+                .and_then(|id| REGISTRY.attributes.by_key(&id))
+            else {
+                continue;
+            };
+            if self.get_instance(attribute).is_none() {
+                continue;
+            }
+            self.set_base_value(attribute, packed.double("base").unwrap_or(0.0));
+            for modifier in packed
+                .list("modifiers")
+                .and_then(|modifiers| modifiers.compounds())
+                .into_iter()
+                .flatten()
+                .filter_map(|modifier| packed_modifier(&modifier))
+            {
+                self.set_modifier(attribute, modifier, true);
+            }
+        }
+    }
+
     /// Returns whether an attribute has a modifier with the given ID.
     #[must_use]
     pub fn has_modifier(&self, attribute: AttributeRef, modifier_id: &Identifier) -> bool {
@@ -649,6 +679,15 @@ impl AttributeMap {
             }
         }
     }
+}
+
+/// Vanilla `AttributeModifier.CODEC`: `{id, amount, operation}`.
+fn packed_modifier(modifier: &BorrowedNbtCompound<'_, '_>) -> Option<AttributeModifier> {
+    Some(AttributeModifier {
+        id: modifier.string("id")?.to_str().parse().ok()?,
+        amount: modifier.double("amount")?,
+        operation: AttributeModifierOperation::by_name(&modifier.string("operation")?.to_str())?,
+    })
 }
 
 #[cfg(test)]

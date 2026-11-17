@@ -1548,6 +1548,15 @@ impl LivingEntityBase {
         self.state.lock().current_impulse_impact_pos
     }
 
+    /// Restores the saved impulse context, vanilla
+    /// `current_impulse_context_reset_grace_time` and
+    /// `current_explosion_impact_pos`.
+    pub fn restore_impulse_context(&self, grace_time: i32, impact_pos: Option<DVec3>) {
+        let mut state = self.state.lock();
+        state.current_impulse_context_reset_grace_time = grace_time;
+        state.current_impulse_impact_pos = impact_pos;
+    }
+
     /// Returns ticks remaining before the current impulse context can be reset.
     #[must_use]
     pub fn current_impulse_context_reset_grace_time(&self) -> i32 {
@@ -1860,6 +1869,11 @@ impl LivingEntityBase {
         self.state.lock().hurt_time
     }
 
+    /// Sets the hurt animation timer, as vanilla assigns `hurtTime` directly.
+    pub fn set_hurt_time(&self, hurt_time: i32) {
+        self.state.lock().hurt_time = hurt_time;
+    }
+
     /// Returns the current hurt duration
     #[must_use]
     pub fn hurt_duration(&self) -> i32 {
@@ -2042,6 +2056,11 @@ impl LivingEntityBase {
         }
         state.death_processed = true;
         true
+    }
+
+    /// Sets the death animation time, as vanilla assigns `deathTime` on load.
+    pub fn set_death_time(&self, death_time: i32) {
+        self.state.lock().death_time = death_time;
     }
 
     /// Increments death animation time by 1 and returns the new value.
