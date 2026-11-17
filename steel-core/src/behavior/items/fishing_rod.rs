@@ -88,12 +88,7 @@ impl ItemBehavior for FishingRodItem {
                 Arc::downgrade(world),
             ));
 
-            let player_arc = world
-                .players
-                .get_by_uuid(&player.gameprofile.id())
-                .expect("Failed to obtain `player_arc` for launching fishing hook: `player` must be registered in the world.");
-
-            hook.shoot_from_player(&player_arc, luck as i32, lure_speed as i32);
+            hook.shoot_from_player(player, luck as i32, lure_speed as i32);
 
             let entity: SharedEntity = hook;
 

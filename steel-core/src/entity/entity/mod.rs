@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::block_entity::container_openers::ContainerUser;
 use crate::enchantment_helper;
+use crate::entity::damage::combat_tracker;
 use crate::entity::entities::mobs::hostile::cube_mob::AbstractCubeMob;
 use crate::entity::entities::mobs::hostile::piglin::AbstractPiglin;
 use crate::entity::entities::mobs::passive::AbstractNautilus;
@@ -1451,6 +1452,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .and_then(LivingEntity::brain_memories)
         {
             memories.lock().clear();
+        }
+        if let Some(living) = self.as_living_entity() {
+            combat_tracker::recheck_status(living);
         }
     }
 
@@ -4391,6 +4395,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.reset_fall_distance();
+        // Vanilla `LivingEntity.checkFallDamage`: landing forgets the climbable.
+        if let Some(living) = self.as_living_entity() {
+            living.living_base().clear_last_climbable_pos();
+        }
     }
 
     /// Computes vanilla support state for an on-ground update.

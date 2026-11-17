@@ -35,6 +35,7 @@ use uuid::Uuid;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::damage::combat_tracker::CombatTracker;
 use crate::entity::synced_data::EntitySyncedData;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
@@ -816,6 +817,8 @@ pub struct LivingEntityBase {
     last_block_pos: SyncMutex<Option<BlockPos>>,
     /// Vanilla `LivingEntity.locatorBarIcon`.
     locator_bar_icon: SyncMutex<WaypointIcon>,
+    /// Vanilla `LivingEntity.combatTracker`.
+    combat_tracker: SyncMutex<CombatTracker>,
 }
 
 /// One entry of vanilla `LivingEntity.activeLocationDependentEnchantments`:
@@ -877,6 +880,7 @@ impl LivingEntityBase {
             active_location_enchantments: SyncMutex::new(Vec::new()),
             last_block_pos: SyncMutex::new(None),
             locator_bar_icon: SyncMutex::new(WaypointIcon::default()),
+            combat_tracker: SyncMutex::new(CombatTracker::default()),
         }
     }
 
@@ -1674,6 +1678,17 @@ impl LivingEntityBase {
     /// Records the last climbable block position this living entity touched.
     pub fn set_last_climbable_pos(&self, pos: BlockPos) {
         self.state.lock().last_climbable_pos = Some(pos);
+    }
+
+    /// Forgets the last climbable block, as vanilla does on landing.
+    pub fn clear_last_climbable_pos(&self) {
+        self.state.lock().last_climbable_pos = None;
+    }
+
+    /// Vanilla `LivingEntity.getCombatTracker`.
+    #[must_use]
+    pub const fn combat_tracker(&self) -> &SyncMutex<CombatTracker> {
+        &self.combat_tracker
     }
 
     /// Returns whether vanilla living travel should skip friction damping.
