@@ -354,7 +354,7 @@ impl Runner {
 
     fn current_weather(&self) -> (f32, f32) {
         self.weather.unwrap_or_else(|| {
-            let weather = self.world.weather.lock();
+            let weather = self.world.weather.read();
             (weather.rain_level, weather.thunder_level)
         })
     }
@@ -1532,7 +1532,7 @@ fn resync_sky(player: &Player) {
     let world = player.get_world();
     player.send_packet(world.time_sync_packet());
     let (rain, thunder) = {
-        let weather = world.weather.lock();
+        let weather = world.weather.read();
         (weather.rain_level, weather.thunder_level)
     };
     player.send_packet(CGameEvent {
