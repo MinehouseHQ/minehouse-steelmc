@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use crate::block_entity::add_block_data_to_item;
 use crate::player::advancement::criteria::ANY_BLOCK_USE;
 use crate::world::block_guard;
 
@@ -237,8 +238,8 @@ impl Player {
 
         let include_data = self.has_infinite_materials() && packet.include_data;
 
-        let Some(item_stack) =
-            behavior.get_clone_item_stack(block, state, block_entity, include_data)
+        let Some(mut item_stack) =
+            behavior.get_clone_item_stack(block, state, block_entity.clone(), include_data)
         else {
             return;
         };
@@ -247,7 +248,9 @@ impl Player {
             return;
         }
 
-        // TODO: If include_data, copy the block entity data into the picked item stack.
+        if include_data && let Some(block_entity) = block_entity {
+            add_block_data_to_item(block_entity.as_ref(), &mut item_stack);
+        }
 
         let mut inventory = self.inventory.lock();
 
