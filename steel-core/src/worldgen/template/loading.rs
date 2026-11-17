@@ -274,6 +274,8 @@ impl StructureTemplate {
                 invulnerable: entity_nbt
                     .byte("Invulnerable")
                     .is_some_and(|value| value != 0),
+                invulnerable_time: Self::read_optional_int(&entity_nbt, "invulnerable_time")
+                    .unwrap_or(0),
                 custom_name: Self::read_custom_name(&entity_nbt),
                 custom_name_visible: entity_nbt
                     .byte("CustomNameVisible")

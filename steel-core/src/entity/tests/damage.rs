@@ -373,7 +373,7 @@ fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     assert!(entity.has_mob_effect(vanilla_mob_effects::REGENERATION));
 
     for _ in 0..10 {
-        entity.living_base().decrement_invulnerable_time();
+        entity.living_base().decrement_damage_cooldown_time();
     }
     let absorbed_and_lethal = entity.get_absorption_amount() + 4.0;
     assert!(entity.hurt(test_world(), &source, absorbed_and_lethal));

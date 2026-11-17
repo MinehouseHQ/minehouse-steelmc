@@ -2,6 +2,7 @@
 
 mod armor_stand;
 mod block_display;
+mod cushion;
 mod display;
 mod item_display;
 mod item_frame;
@@ -12,6 +13,7 @@ mod transformation;
 
 pub use armor_stand::{ArmorStandEntity, ArmorStandPose};
 pub use block_display::BlockDisplayEntity;
+pub use cushion::CushionEntity;
 pub use display::{BillboardConstraints, Brightness};
 pub use item_display::{ItemDisplayContext, ItemDisplayEntity};
 pub use item_frame::{ItemFrameEntity, ItemFrameObserver, set_item_frame_observer};

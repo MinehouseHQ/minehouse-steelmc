@@ -93,7 +93,7 @@ fn the_head_takes_full_damage_and_the_wings_a_quarter() {
 
     // Clear the invulnerability window so the next hit lands.
     for _ in 0..20 {
-        dragon.living_base().decrement_invulnerable_time();
+        dragon.living_base().decrement_damage_cooldown_time();
     }
     assert!(dragon.parts()[6].hurt(&fixture.world, &explosion(), 8.0));
     assert!((dragon.get_health() - (max - 13.0)).abs() < 0.001);

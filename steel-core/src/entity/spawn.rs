@@ -305,6 +305,10 @@ fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSav
         .get("Invulnerable")
         .and_then(|tag| tag.byte_value())
         .is_some_and(|value| value != 0);
+    save_data.invulnerable_time = nbt
+        .get("invulnerable_time")
+        .and_then(|tag| tag.int_value())
+        .unwrap_or(0);
     save_data.custom_name = nbt
         .get("CustomName")
         .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()));

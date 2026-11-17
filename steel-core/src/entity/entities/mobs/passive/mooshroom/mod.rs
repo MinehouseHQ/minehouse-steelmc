@@ -410,7 +410,7 @@ impl Shearable for MushroomCowEntity {
             cow.set_custom_name(Some(custom_name));
         }
         cow.set_custom_name_visible(self.is_custom_name_visible());
-        cow.set_invulnerable(self.is_invulnerable());
+        cow.set_invulnerable(self.is_permanently_invulnerable());
         if self.is_no_ai() {
             cow.set_no_ai(true);
         }

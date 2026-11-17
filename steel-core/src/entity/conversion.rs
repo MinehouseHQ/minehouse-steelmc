@@ -230,7 +230,7 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     if let Some(data) = to.synced_data() {
         data.set_base_on_fire_flag(from.is_on_fire() || to.has_visual_fire());
     }
-    to.set_invulnerable(from.is_invulnerable());
+    to.set_invulnerable(from.is_permanently_invulnerable());
     to.set_invulnerable_time(from.invulnerable_time());
     to.set_no_gravity(from.is_no_gravity());
     to.set_portal_cooldown(from.portal_cooldown());

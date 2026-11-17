@@ -772,7 +772,9 @@ impl Entity for ItemEntity {
     }
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if self.is_invulnerable_to_base(source) {
+            return false;
+        }
         if !world.get_game_rule(&MOB_GRIEFING)
             && source
                 .causing_entity()
@@ -783,6 +785,7 @@ impl Entity for ItemEntity {
         if !self.get_item().can_be_hurt_by(source.damage_type) {
             return false;
         }
+        self.mark_hurt();
         let new_health = {
             let mut state = self.item_state.lock();
             state.health = (state.health as f32 - amount) as i32;

@@ -784,6 +784,12 @@ impl EntityBase {
         self.save_data.lock().invulnerable
     }
 
+    /// Returns vanilla `Entity.invulnerableTime`, the remaining ticks of temporary invulnerability.
+    #[inline]
+    pub fn invulnerable_time(&self) -> i32 {
+        self.save_data.lock().invulnerable_time
+    }
+
     /// Returns the optional vanilla custom name.
     #[inline]
     pub fn custom_name(&self) -> Option<TextComponent> {
@@ -1342,9 +1348,16 @@ impl EntityBase {
         state.needs_velocity_sync = true;
     }
 
-    /// Advances this entity's tick counter by one.
+    /// Advances this entity's tick counter by one, counting down its temporary
+    /// invulnerability first like vanilla `Entity.commonTick`.
     #[inline]
     pub fn advance_tick_count(&self) {
+        {
+            let mut save_data = self.save_data.lock();
+            if save_data.invulnerable_time > 0 {
+                save_data.invulnerable_time -= 1;
+            }
+        }
         let mut state = self.state.lock();
         state.tick_count = state.tick_count.wrapping_add(1);
     }
@@ -1456,6 +1469,11 @@ impl EntityBase {
     /// Sets whether this entity is invulnerable to non-bypassing damage.
     pub fn set_invulnerable(&self, invulnerable: bool) {
         self.save_data.lock().invulnerable = invulnerable;
+    }
+
+    /// Sets vanilla `Entity.invulnerableTime`, the remaining ticks of temporary invulnerability.
+    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.save_data.lock().invulnerable_time = invulnerable_time;
     }
 
     /// Sets the optional vanilla custom name.

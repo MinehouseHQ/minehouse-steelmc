@@ -105,6 +105,9 @@ impl ChunkStorage {
             portal_cooldown: persistent.portal_cooldown,
             no_gravity: persistent.no_gravity,
             invulnerable: persistent.invulnerable,
+            // Steel's binary chunk format has no slot for the few ticks of temporary
+            // invulnerability, so it restarts at zero after a chunk reload.
+            invulnerable_time: 0,
             custom_name: Self::custom_name_from_persistent(&persistent.custom_name_nbt, uuid),
             custom_name_visible: persistent.custom_name_visible,
             silent: persistent.silent,
