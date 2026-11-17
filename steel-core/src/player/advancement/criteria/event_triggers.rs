@@ -2,7 +2,8 @@
 //! `CriteriaTriggers` `PLAYER_SHEARED_EQUIPMENT`, `THROWN_ITEM_PICKED_UP_BY_ENTITY`,
 //! `THROWN_ITEM_PICKED_UP_BY_PLAYER`, `KILL_MOB_NEAR_SCULK_CATALYST`,
 //! `AVOID_VIBRATION`, `CURED_ZOMBIE_VILLAGER`, `HONEY_BLOCK_SLIDE`,
-//! `LIGHTNING_STRIKE`, `CHANNELED_LIGHTNING` and `USED_ENDER_EYE`).
+//! `LIGHTNING_STRIKE`, `CHANNELED_LIGHTNING`, `USED_ENDER_EYE` and
+//! `SPEAR_MOBS_TRIGGER`).
 
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{BlockPos, BlockStateId, Identifier};
@@ -42,6 +43,9 @@ pub(crate) const CHANNELED_LIGHTNING: Identifier =
 
 /// Vanilla `CriteriaTriggers.USED_ENDER_EYE`.
 pub(crate) const USED_ENDER_EYE: Identifier = Identifier::vanilla_static("used_ender_eye");
+
+/// Vanilla `CriteriaTriggers.SPEAR_MOBS_TRIGGER`.
+pub(crate) const SPEAR_MOBS: Identifier = Identifier::vanilla_static("spear_mobs");
 
 /// Vanilla `LivingEntity.onItemPickup` (and `ServerPlayer.onItemPickup`):
 /// `picker` takes `stack` from `item_entity`. A player thrower hears
@@ -139,6 +143,17 @@ impl Player {
         let distance_sqr = dx * dx + dz * dz;
         trigger(self, &USED_ENDER_EYE, |conditions| {
             ender_eye_distance_matches(conditions.distance.as_ref(), distance_sqr)
+        });
+    }
+}
+
+impl Player {
+    /// Vanilla `SpearMobsTrigger.trigger(player, number)`: `count` living
+    /// entities stabbed during this charge.
+    pub(crate) fn trigger_spear_mobs(&self, count: usize) {
+        let count = i32::try_from(count).unwrap_or(i32::MAX);
+        trigger(self, &SPEAR_MOBS, |conditions| {
+            conditions.count.is_none_or(|required| count >= required)
         });
     }
 }

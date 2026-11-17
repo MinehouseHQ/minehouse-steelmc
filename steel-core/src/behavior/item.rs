@@ -200,11 +200,7 @@ pub trait ItemBehavior: Send + Sync {
         stack: &mut ItemStack,
         ticks_remaining: i32,
     ) {
-        if let Some(consumable) = stack.get(CONSUMABLE)
-            && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
-        {
-            emit_consume_particles_and_sounds(consumable, stack, user.living());
-        }
+        consumable_use_tick(stack, user, ticks_remaining);
     }
 
     /// Called when active use is released before completion.
@@ -368,6 +364,20 @@ pub trait ItemBehavior: Send + Sync {
 
 /// The tail of vanilla `Item.use`: raise a `blocks_attacks` item, or ready a
 /// `kinetic_weapon` with its sound for everyone else.
+/// Vanilla `ItemStack.onUseTick`'s consumable part: the eating particles and
+/// sounds every few ticks.
+pub(crate) fn consumable_use_tick(
+    stack: &ItemStack,
+    user: LivingEntityRef<'_>,
+    ticks_remaining: i32,
+) {
+    if let Some(consumable) = stack.get(CONSUMABLE)
+        && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
+    {
+        emit_consume_particles_and_sounds(consumable, stack, user.living());
+    }
+}
+
 fn use_blocking_or_kinetic_item(context: &mut UseItemContext) -> InteractionResult {
     let (blocks_attacks, kinetic_sound) = context.inv.with_item(|item| {
         (
