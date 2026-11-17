@@ -2,6 +2,11 @@ use super::{
     Arc, GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, ProfileLookupError, Server,
     Uuid, io, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
+use std::time::{Duration, Instant};
+
+use rustc_hash::FxHashMap;
+
+use crate::player::fetch_session_profile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum UncachedPlayerTarget {
@@ -129,6 +134,28 @@ impl Server {
         if start_worker {
             self.start_known_player_save_worker();
         }
+    }
+
+    /// Vanilla `ProfileResolver.Cached.fetchById`: the full profile with
+    /// signed textures, cached for ten minutes after the last use.
+    pub async fn fetch_profile_by_id(self: &Arc<Self>, id: Uuid) -> Option<GameProfile> {
+        let cached = self.fetched_profiles.lock().get(id);
+        if let CachedProfile::Cached(profile) = cached {
+            return profile;
+        }
+        let profile = fetch_session_profile(&self.profile_lookup_client, id).await;
+        self.fetched_profiles.lock().insert(id, profile.clone());
+        profile
+    }
+
+    /// Vanilla `ProfileResolver.Cached.fetchByName`: the name's id from the
+    /// known players or the profile service, then [`Self::fetch_profile_by_id`].
+    pub async fn fetch_profile_by_name(self: &Arc<Self>, name: &str) -> Option<GameProfile> {
+        if !is_valid_player_name(name) {
+            return None;
+        }
+        let known = self.resolve_player_profile(name).await.ok()?;
+        self.fetch_profile_by_id(known.uuid()).await
     }
 
     /// Resolves a vanilla game-profile command target by name or UUID.
@@ -260,5 +287,52 @@ impl Server {
             .save_known_players_if_current(&players, || true)
             .await
             .map(|_| ())
+    }
+}
+
+/// Vanilla `ProfileResolver.Cached` lifetime: ten minutes after last access.
+const FETCHED_PROFILE_TTL: Duration = Duration::from_secs(600);
+/// Vanilla `ProfileResolver.Cached` size.
+const FETCHED_PROFILE_LIMIT: usize = 256;
+
+/// One [`FetchedProfileCache`] lookup.
+enum CachedProfile {
+    /// Nothing cached: the service must be asked.
+    Unknown,
+    /// The last answer, a miss included.
+    Cached(Option<GameProfile>),
+}
+
+/// Profiles fetched by id, including misses.
+#[derive(Default)]
+pub(super) struct FetchedProfileCache {
+    entries: FxHashMap<Uuid, (Instant, Option<GameProfile>)>,
+}
+
+impl FetchedProfileCache {
+    /// The cached result, refreshing its access time.
+    fn get(&mut self, id: Uuid) -> CachedProfile {
+        let now = Instant::now();
+        self.entries
+            .retain(|_, (accessed, _)| now.duration_since(*accessed) < FETCHED_PROFILE_TTL);
+        let Some((accessed, profile)) = self.entries.get_mut(&id) else {
+            return CachedProfile::Unknown;
+        };
+        *accessed = now;
+        CachedProfile::Cached(profile.clone())
+    }
+
+    fn insert(&mut self, id: Uuid, profile: Option<GameProfile>) {
+        if self.entries.len() >= FETCHED_PROFILE_LIMIT
+            && !self.entries.contains_key(&id)
+            && let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (accessed, _))| *accessed)
+                .map(|(id, _)| *id)
+        {
+            self.entries.remove(&oldest);
+        }
+        self.entries.insert(id, (Instant::now(), profile));
     }
 }

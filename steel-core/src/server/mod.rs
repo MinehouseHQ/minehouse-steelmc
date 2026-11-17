@@ -297,6 +297,7 @@ pub async fn test_server_with_worlds_and_config(
         known_players: SyncMutex::new(KnownPlayerCacheState::new(KnownPlayers::new())),
         known_player_save_idle: Notify::new(),
         profile_lookup_client: reqwest::Client::new(),
+        fetched_profiles: SyncMutex::new(known_players::FetchedProfileCache::default()),
         service_keys: Arc::new(service_keys),
         pending_player_joins: PlayerJoinQueue::new(),
         pending_player_disconnects: PlayerDisconnectQueue::new(),
@@ -598,6 +599,8 @@ pub struct Server {
     known_player_save_idle: Notify,
     /// HTTP client used by online-mode name-to-profile lookups.
     profile_lookup_client: reqwest::Client,
+    /// Vanilla `ProfileResolver.Cached` by-id cache.
+    fetched_profiles: SyncMutex<known_players::FetchedProfileCache>,
     /// Cached Mojang service keys used to validate player-key certificates.
     service_keys: Arc<ServiceKeyStore>,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
@@ -954,6 +957,7 @@ impl Server {
             known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
+            fetched_profiles: SyncMutex::new(known_players::FetchedProfileCache::default()),
             service_keys,
             pending_player_joins: PlayerJoinQueue::new(),
             pending_player_disconnects: PlayerDisconnectQueue::new(),

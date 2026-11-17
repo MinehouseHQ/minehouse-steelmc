@@ -6,7 +6,7 @@ mod lookup;
 pub(crate) use known_players::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup};
 pub use known_players::{KnownPlayer, KnownPlayers};
 pub use lookup::ProfileLookupError;
-pub(crate) use lookup::lookup_online_profile;
+pub(crate) use lookup::{fetch_session_profile, lookup_online_profile};
 
 pub use steel_registry::GameProfile;
 use uuid::{Builder, Uuid, Variant, Version};

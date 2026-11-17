@@ -17,6 +17,7 @@ mod effect;
 mod enchant;
 mod execute;
 mod experience;
+mod fetchprofile;
 mod fill;
 mod fillbiome;
 mod fly;
@@ -120,6 +121,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(enchant::registration())?;
     builder.register(execute::registration())?;
     builder.register(experience::registration())?;
+    builder.register(fetchprofile::registration())?;
     builder.register(fill::registration())?;
     builder.register(fillbiome::registration())?;
     builder.register(fly::registration())?;
@@ -242,6 +244,7 @@ mod tests {
                 "execute",
                 "experience",
                 "xp",
+                "fetchprofile",
                 "fill",
                 "fillbiome",
                 "fly",
