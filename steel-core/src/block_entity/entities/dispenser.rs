@@ -10,6 +10,7 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::data_components::DataComponentMap;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{
@@ -18,7 +19,10 @@ use steel_utils::{
 use text_components::TextComponent;
 
 use crate::block_entity::container_loot::{ContainerLoot, LOOT_TABLE_SEED_TAG, LOOT_TABLE_TAG};
-use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::container_name::{
+    ContainerName, apply_container_component, apply_container_loot_component,
+    collect_container_loot_component, contents_from_items,
+};
 use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
@@ -266,10 +270,17 @@ impl BlockEntity for DispenserBlockEntity {
 
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.name.apply_implicit_components(components);
+        apply_container_component(components, &mut self.container.lock().items);
+        apply_container_loot_component(components, &self.loot);
     }
 
     fn collect_implicit_components(&self, components: &mut DataComponentMap) {
         self.name.collect_implicit_components(components);
+        components.set(
+            CONTAINER,
+            Some(contents_from_items(&self.container.lock().items)),
+        );
+        collect_container_loot_component(components, &self.loot);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {

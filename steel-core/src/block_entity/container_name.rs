@@ -1,20 +1,24 @@
 //! The custom name and lock vanilla `BaseContainerBlockEntity` and
-//! `BeaconBlockEntity` keep.
+//! `BeaconBlockEntity` keep, and the container components they share.
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, LOCK};
-use steel_registry::data_components::{DataComponentMap, LockCode};
-use steel_registry::sound_events;
+use steel_registry::data_components::vanilla_components::{
+    CONTAINER, CONTAINER_LOOT, CUSTOM_NAME, LOCK, SeededContainerLoot,
+};
+use steel_registry::data_components::{DataComponentMap, ItemContainerContents, LockCode};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{ItemStackTemplate, sound_events};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, translations};
 use text_components::TextComponent;
 use text_components::translation::Translation;
 
+use crate::block_entity::container_loot::ContainerLoot;
 use crate::block_entity::{BlockEntity, ImplicitComponentGetter};
 use crate::command::execution::registered_item_predicate_matches;
 use crate::entity::Entity as _;
@@ -207,4 +211,68 @@ pub fn unlocked_menu_title(
         &title,
     )
     .then_some(title)
+}
+
+/// Vanilla `ItemContainerContents.fromItems`: the stacks up to the last
+/// non-empty one, empty slots as `None`.
+#[must_use]
+pub fn contents_from_items(items: &[ItemStack]) -> ItemContainerContents {
+    let Some(last) = items.iter().rposition(|item| !item.is_empty()) else {
+        return ItemContainerContents::empty();
+    };
+    let slots = items[..=last]
+        .iter()
+        .map(|item| {
+            if item.is_empty() {
+                None
+            } else {
+                ItemStackTemplate::from_stack(item).ok()
+            }
+        })
+        .collect();
+    ItemContainerContents::new(slots).unwrap_or_default()
+}
+
+/// Vanilla `ItemContainerContents.copyInto`: every slot of `items` takes the
+/// matching stack of `contents`, or empty past its end.
+pub fn copy_contents_into(contents: &ItemContainerContents, items: &mut [ItemStack]) {
+    for (slot, item) in items.iter_mut().enumerate() {
+        *item = contents
+            .items()
+            .get(slot)
+            .and_then(Option::as_ref)
+            .map_or_else(ItemStack::empty, ItemStackTemplate::create);
+    }
+}
+
+/// Vanilla `BaseContainerBlockEntity.applyImplicitComponents` for the items:
+/// takes `container` into `items`, emptying them when it is absent.
+pub fn apply_container_component(
+    components: &mut ImplicitComponentGetter<'_>,
+    items: &mut [ItemStack],
+) {
+    let contents = components.get_or_default(CONTAINER, ItemContainerContents::empty());
+    copy_contents_into(&contents, items);
+}
+
+/// Vanilla `RandomizableContainerBlockEntity.applyImplicitComponents` for the
+/// loot table: takes `container_loot` into `loot` when present.
+pub fn apply_container_loot_component(
+    components: &mut ImplicitComponentGetter<'_>,
+    loot: &ContainerLoot,
+) {
+    if let Some(seeded) = components.get(CONTAINER_LOOT) {
+        loot.set(seeded.loot_table().clone(), seeded.seed());
+    }
+}
+
+/// Vanilla `RandomizableContainerBlockEntity.collectImplicitComponents` for
+/// the loot table: `container_loot` while one is pending.
+pub fn collect_container_loot_component(components: &mut DataComponentMap, loot: &ContainerLoot) {
+    if let Some(pending) = loot.get() {
+        components.set(
+            CONTAINER_LOOT,
+            Some(SeededContainerLoot::new(pending.table, pending.seed)),
+        );
+    }
 }

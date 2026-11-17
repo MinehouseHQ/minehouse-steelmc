@@ -11,7 +11,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::context_float_provider::ContextFloatProvider;
 use steel_registry::data_components::DataComponentMap;
-use steel_registry::data_components::vanilla_components::BREWING_FUEL;
+use steel_registry::data_components::vanilla_components::{BREWING_FUEL, CONTAINER};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::recipe::{
@@ -27,7 +27,9 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::container_name::{
+    ContainerName, apply_container_component, contents_from_items,
+};
 use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
@@ -424,10 +426,15 @@ impl BlockEntity for BrewingStandBlockEntity {
 
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.name.apply_implicit_components(components);
+        apply_container_component(components, &mut self.container.lock().items);
     }
 
     fn collect_implicit_components(&self, components: &mut DataComponentMap) {
         self.name.collect_implicit_components(components);
+        components.set(
+            CONTAINER,
+            Some(contents_from_items(&self.container.lock().items)),
+        );
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {

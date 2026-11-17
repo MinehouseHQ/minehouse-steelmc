@@ -13,6 +13,7 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::data_components::DataComponentMap;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{
     CachedRecipeCheck, CookingRecipe, RecipeType, SingleItemRecipeInput, TypedRecipeRef,
@@ -25,7 +26,9 @@ use steel_utils::{
     translations, types::UpdateFlags,
 };
 
-use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::container_name::{
+    ContainerName, apply_container_component, contents_from_items,
+};
 use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::inventory::container::Container;
@@ -524,10 +527,12 @@ macro_rules! furnace_block_entity {
 
             fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
                 self.common.name.apply_implicit_components(components);
+                apply_container_component(components, &mut self.common.container.lock().items);
             }
 
             fn collect_implicit_components(&self, components: &mut DataComponentMap) {
                 self.common.name.collect_implicit_components(components);
+                components.set(CONTAINER, Some(contents_from_items(&self.common.container.lock().items)));
             }
 
             fn container_ref(&self) -> Option<ContainerRef> {
