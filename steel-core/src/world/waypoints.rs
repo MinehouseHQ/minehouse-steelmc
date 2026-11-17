@@ -409,7 +409,12 @@ fn update(connection: &Connection, pair: &Pair<'_>) -> Option<Connection> {
         icon: connection.icon.clone(),
         kind,
     };
-    send(pair.receiver, pair.source, &updated, WaypointOperation::Update);
+    send(
+        pair.receiver,
+        pair.source,
+        &updated,
+        WaypointOperation::Update,
+    );
     Some(updated)
 }
 
