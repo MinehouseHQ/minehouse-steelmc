@@ -4,22 +4,16 @@
 //! Vanilla hands all of them to the `ServerLevel` itself; Steel gives them a
 //! live [`WorldGenRegion`], which reads and writes the world the same way.
 
-use std::cell::RefCell;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use glam::IVec3;
 use steel_registry::feature::ConfiguredFeatureRef;
-use steel_registry::structure::LiquidSettingsData;
-use steel_registry::structure_processor::StructureProcessorKind;
 use steel_registry::vanilla_template_pools::vanilla_templates;
 use steel_registry::{REGISTRY, RegistryExt as _};
-use steel_utils::random::RandomSource;
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier, Rotation, translations};
 use steel_worldgen::biomes::obfuscate_biome_seed;
-use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
+use steel_worldgen::structure::StructureMirror;
 use text_components::TextComponent;
 
 use super::execute::loaded_block_position;
@@ -34,11 +28,10 @@ use crate::command::registration::CommandRegistration;
 use crate::world::World;
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{ChunkGenerator as _, StructureStartLevel};
-use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::piece_placer::StructurePiecePlacer;
 use crate::worldgen::structure::{generate_jigsaw, jigsaw_assets};
-use crate::worldgen::template::{
-    StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+use crate::worldgen::template::live::{
+    LivePlacement, chunk_containing, live_region, place_live, template_seed,
 };
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
@@ -319,15 +312,19 @@ fn place_template(context: &Context, options: TemplateOptions) -> Result<i32, Co
     let source = context.source();
     let world = source.world();
     let id = context.identifier("template")?;
-    // Vanilla's template manager also reads the world's `generated` folder;
-    // Steel has only the bundled vanilla templates.
-    let template = StructureTemplate::load_vanilla(&REGISTRY, id).map_err(|_| {
+    let invalid = || {
         CommandSyntaxError::dynamic(
             translations::COMMANDS_PLACE_TEMPLATE_INVALID
                 .message([id.to_string()])
                 .component(),
         )
-    })?;
+    };
+    let template = world
+        .structure_templates()
+        .get(id)
+        .ok_or_else(invalid)?
+        .parse(id)
+        .ok_or_else(invalid)?;
     let pos = options.pos;
     let size = template.size(Rotation::None);
     check_loaded(
@@ -336,60 +333,17 @@ fn place_template(context: &Context, options: TemplateOptions) -> Result<i32, Co
         chunk_containing(BlockPos(pos.0 + size)),
     )?;
 
-    let processors = [StructureProcessorKind::BlockRot {
-        rottable_blocks: None,
-        integrity: options.integrity,
-    }];
-    let seed = template_seed(options.seed);
-    let processor_random = RefCell::new(LegacyRandom::from_seed(seed));
-    let rotting = options.integrity < 1.0;
-    let settings = StructurePlaceSettings {
-        mirror: options.mirror,
-        rotation: options.rotation,
-        rotation_pivot: BlockPos::ZERO,
-        // Vanilla leaves the box unset; the world bounds every write anyway.
-        bounding_box: BoundingBox::new(
-            IVec3::new(i32::MIN, world.get_min_y(), i32::MIN),
-            IVec3::new(
-                i32::MAX,
-                world.get_min_y() + world.get_height() - 1,
-                i32::MAX,
-            ),
-        ),
-        processors: if rotting { &processors } else { &[] },
-        block_ignore: StructureBlockIgnore::None,
-        late_block_ignore: StructureBlockIgnore::None,
-        replace_jigsaws: false,
-        projection: None,
-        processor_random: if rotting {
-            StructureProcessorRandom::Separate(&processor_random)
-        } else {
-            StructureProcessorRandom::Positional
+    let placed = place_live(
+        world,
+        &template,
+        pos,
+        LivePlacement {
+            rotation: options.rotation,
+            mirror: options.mirror,
+            integrity: options.integrity,
+            seed: template_seed(i64::from(options.seed)),
+            strict: options.strict,
         },
-        liquid_settings: LiquidSettingsData::ApplyWaterlogging,
-    };
-    // Vanilla flags `2 | (strict ? 816 : 0)`. Its `setKnownShape(strict)` needs no
-    // field here: Steel's placement reads the shape choice from `UPDATE_KNOWN_SHAPE`,
-    // which 816 carries.
-    let flags = if options.strict {
-        UpdateFlags::UPDATE_CLIENTS
-            | UpdateFlags::UPDATE_KNOWN_SHAPE
-            | UpdateFlags::UPDATE_SUPPRESS_DROPS
-            | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS
-            | UpdateFlags::UPDATE_SKIP_ON_PLACE
-    } else {
-        UpdateFlags::UPDATE_CLIENTS
-    };
-
-    let mut region = live_region(world, chunk_containing(pos));
-    let placed = template.place_in_world(
-        &mut region,
-        &REGISTRY,
-        pos,
-        pos,
-        &settings,
-        &mut LegacyRandom::from_seed(seed),
-        flags,
     );
     if !placed {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -408,30 +362,6 @@ fn place_template(context: &Context, options: TemplateOptions) -> Result<i32, Co
         true,
     );
     Ok(1)
-}
-
-/// The seed of vanilla `StructureBlockEntity.createRandom(seed)`, which `/place
-/// template` calls twice: seed 0 means the clock, the same for both randoms.
-fn template_seed(seed: i32) -> u64 {
-    if seed == 0 {
-        rand::random()
-    } else {
-        i64::from(seed).cast_unsigned()
-    }
-}
-
-/// A live region over `world`, with vanilla's unseeded level random.
-fn live_region(world: &Arc<World>, center: ChunkPos) -> WorldGenRegion<'_> {
-    WorldGenRegion::new_live(
-        &world.chunk_map.world_gen_context,
-        Arc::clone(world),
-        center,
-        RandomSource::Legacy(LegacyRandom::from_seed(rand::random())),
-    )
-}
-
-const fn chunk_containing(pos: BlockPos) -> ChunkPos {
-    ChunkPos::new(pos.x() >> 4, pos.z() >> 4)
 }
 
 /// Vanilla `PlaceCommand.checkLoaded`: every chunk in the range must be loaded.

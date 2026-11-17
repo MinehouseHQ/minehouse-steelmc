@@ -126,11 +126,16 @@ pub(crate) struct StructurePlaceSettings<'a> {
     pub(crate) liquid_settings: LiquidSettingsData,
 }
 
+mod capture;
+pub(crate) mod live;
 mod loading;
+mod manager;
 mod placement;
 mod processors;
 mod state_transforms;
 
+pub(crate) use capture::fill_from_world;
+pub(crate) use manager::{StoredTemplate, StructureTemplateManager, memory_only_manager};
 pub use state_transforms::rotate_block_state;
 
 #[cfg(test)]

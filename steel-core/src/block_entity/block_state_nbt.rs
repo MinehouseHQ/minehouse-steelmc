@@ -31,7 +31,7 @@ pub(crate) fn load(encoded: BorrowedNbtTag<'_, '_>) -> Option<BlockStateId> {
 
 /// Encodes `state` with vanilla `BlockState.FULL_CODEC`.
 #[must_use]
-fn save_full(state: BlockStateId) -> NbtCompound {
+pub(crate) fn save_full(state: BlockStateId) -> NbtCompound {
     let mut encoded = NbtCompound::new();
     encoded.insert("id", state.get_block().key.to_string());
 

@@ -5,7 +5,7 @@ use std::{
     io, mem,
     path::{Path, PathBuf},
     sync::{
-        Arc, LazyLock, Weak,
+        Arc, LazyLock, OnceLock, Weak,
         atomic::{AtomicBool, AtomicI8, Ordering},
     },
     time::Duration,
@@ -162,6 +162,7 @@ mod tests;
 
 pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
+use crate::worldgen::template::{StructureTemplateManager, memory_only_manager};
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 pub(crate) use block_region::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
@@ -303,6 +304,9 @@ pub struct World {
     pub(crate) saved_data: SavedDataManager,
     /// The level folder, `None` when level data is ephemeral.
     pub(crate) level_path: Option<PathBuf>,
+    /// Vanilla `MinecraftServer.structureTemplateManager`, shared by the
+    /// worlds of a domain; unset for a world built outside a server.
+    structure_templates: OnceLock<Arc<StructureTemplateManager>>,
     /// The world seed, fixed for the world's lifetime.
     seed: i64,
     /// Vanilla `BiomeManager.obfuscateSeed` of `seed`, used for biome zoom lookups.
@@ -528,6 +532,7 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 level_path: path.map(Path::to_path_buf),
+                structure_templates: OnceLock::new(),
                 seed,
                 biome_zoom_seed: obfuscate_biome_seed(seed),
                 world_border: SharedWorldBorder::new(world_border),
@@ -633,6 +638,17 @@ impl World {
     #[must_use]
     pub const fn dragon_fight(&self) -> Option<&dragon_fight::EnderDragonFight> {
         self.dragon_fight.as_ref()
+    }
+
+    /// Vanilla `ServerLevel.getStructureTemplateManager`. A world built
+    /// outside a server keeps its templates in memory only.
+    pub(crate) fn structure_templates(&self) -> &Arc<StructureTemplateManager> {
+        self.structure_templates.get_or_init(memory_only_manager)
+    }
+
+    /// Gives this world its domain's template manager; the first call wins.
+    pub(crate) fn set_structure_templates(&self, manager: Arc<StructureTemplateManager>) {
+        let _ = self.structure_templates.set(manager);
     }
 
     /// Returns the domain this loaded world belongs to.

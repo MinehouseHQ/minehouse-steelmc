@@ -38,6 +38,7 @@ mod shulker_box;
 mod sign;
 mod skull;
 mod spawner;
+mod structure_block;
 mod trial_spawner;
 mod unimplemented;
 mod vault;
@@ -107,6 +108,10 @@ pub use skull::SkullBlockEntity;
 pub use spawner::{
     BaseSpawner, BaseSpawnerConfig, CustomSpawnRules, EquipmentTable, LightRange, SpawnData,
     Spawner, SpawnerBlockEntity, WeightedSpawnData,
+};
+pub use structure_block::{
+    MAX_OFFSET_PER_AXIS, MAX_SIZE_PER_AXIS, StructureBlockEntity, StructureBlockSettings,
+    parse_structure_name,
 };
 pub use trial_spawner::{
     DEFAULT_PLAYER_SCAN_RANGE, DEFAULT_TARGET_COOLDOWN_LENGTH,

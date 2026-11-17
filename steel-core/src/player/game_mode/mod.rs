@@ -54,6 +54,7 @@ mod item_interaction;
 mod jigsaw_edit;
 mod kinetic;
 mod player_methods;
+mod structure_block_edit;
 mod swing;
 
 pub(crate) use adventure_mode::can_break;
