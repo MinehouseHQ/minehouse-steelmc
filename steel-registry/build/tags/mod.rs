@@ -47,6 +47,12 @@ simple_tag_builder!(
     "entity_type",
     "EntityTypeRegistry"
 );
+simple_tag_builder!(
+    feature,
+    "worldgen/feature",
+    "feature",
+    "ConfiguredFeatureRegistry"
+);
 simple_tag_builder!(instrument, "instrument", "instrument", "InstrumentRegistry");
 simple_tag_builder!(
     painting_variant,

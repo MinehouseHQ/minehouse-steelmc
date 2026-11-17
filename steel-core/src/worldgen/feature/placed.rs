@@ -3,6 +3,8 @@
     reason = "placed feature modifier chaining mirrors vanilla placement flow"
 )]
 
+use steel_worldgen::biomes::obfuscate_biome_seed;
+
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 
@@ -521,6 +523,19 @@ impl FeatureDecorationRunner {
         }
 
         placed
+    }
+
+    /// Vanilla `PlacedFeature.place(level, generator, random, origin)`, as
+    /// bonemeal calls it: the placement chain without a biome check, on a
+    /// live region over the loaded world.
+    pub(crate) fn place_placed_feature_in_world(
+        region: &mut WorldGenRegion<'_>,
+        feature: &PlacedFeatureRef,
+        random: &mut WorldgenRandom,
+        origin: BlockPos,
+    ) -> bool {
+        let biome_zoom_seed = obfuscate_biome_seed(region.seed());
+        Self::place_placed_feature_ref(region, &REGISTRY, random, origin, feature, biome_zoom_seed)
     }
 
     pub(super) fn place_placed_feature_ref(

@@ -453,6 +453,11 @@ pub mod vanilla_structures;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_feature_tags.rs"]
+pub mod vanilla_feature_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_structure_tags.rs"]
 pub mod vanilla_structure_tags;
 
