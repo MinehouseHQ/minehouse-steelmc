@@ -8,6 +8,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::{
     AbstractMinecartEntityData, CommandBlockMinecartEntityData, VehicleEntityData,
@@ -163,6 +164,11 @@ impl AbstractMinecart for CommandBlockMinecartEntity {
 }
 
 impl Entity for CommandBlockMinecartEntity {
+    /// Vanilla `MinecartCommandBlock.getPickResult`: unlike its drop, the command block minecart itself.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::COMMAND_BLOCK_MINECART))
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

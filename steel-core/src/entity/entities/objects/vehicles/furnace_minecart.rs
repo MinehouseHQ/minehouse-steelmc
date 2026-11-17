@@ -202,6 +202,11 @@ impl AbstractMinecart for FurnaceMinecartEntity {
 }
 
 impl Entity for FurnaceMinecartEntity {
+    /// Vanilla `MinecartFurnace.getPickResult`.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::FURNACE_MINECART))
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

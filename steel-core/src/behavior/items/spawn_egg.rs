@@ -8,8 +8,9 @@ use steel_registry::data_components::components::EntityData;
 use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{vanilla_game_events, vanilla_game_rules};
+use steel_registry::{REGISTRY, vanilla_game_events, vanilla_game_rules};
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, translations};
 use text_components::TextComponent;
@@ -35,6 +36,17 @@ pub struct SpawnEggItem;
 impl SpawnEggItem {
     fn entity_type(stack: &ItemStack) -> Option<EntityTypeRef> {
         stack.get(ENTITY_DATA).map(EntityData::entity_type)
+    }
+
+    /// Vanilla `SpawnEggItem.byId`: the item whose default entity data spawns
+    /// `entity_type`, if there is one.
+    #[must_use]
+    pub fn by_entity_type(entity_type: EntityTypeRef) -> Option<ItemRef> {
+        REGISTRY.items.iter().map(|(_, item)| item).find(|item| {
+            item.components
+                .get_ref(ENTITY_DATA)
+                .is_some_and(|data| data.entity_type() == entity_type)
+        })
     }
 
     fn spawn_mob(

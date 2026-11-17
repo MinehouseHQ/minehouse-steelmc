@@ -307,29 +307,24 @@ impl Player {
             add_block_data_to_item(block_entity.as_ref(), &mut item_stack);
         }
 
+        self.try_pick_item(item_stack);
+    }
+
+    /// Vanilla `ServerGamePacketListenerImpl.tryPickItem`: selects a slot
+    /// already holding `item_stack`, or adds it in creative, then syncs the
+    /// held slot and the inventory.
+    pub(super) fn try_pick_item(&self, item_stack: ItemStack) {
         let mut inventory = self.inventory.lock();
-
-        match inventory.find_slot_matching_item_with_same_components(&item_stack) {
-            Some(slot_with_item) => {
-                if PlayerInventory::is_hotbar_slot(slot_with_item) {
-                    inventory.set_selected_slot(slot_with_item);
-                } else {
-                    let slot = inventory.get_suitable_hotbar_slot();
-
-                    inventory.set_selected_slot(slot);
-                    inventory.pick_slot(slot_with_item);
-                }
+        if let Some(slot_with_item) =
+            inventory.find_slot_matching_item_with_same_components(&item_stack)
+        {
+            if PlayerInventory::is_hotbar_slot(slot_with_item) {
+                inventory.set_selected_slot(slot_with_item);
+            } else {
+                inventory.pick_slot(slot_with_item);
             }
-            None => {
-                if self.has_infinite_materials() {
-                    let slot = inventory.get_suitable_hotbar_slot();
-
-                    inventory.set_selected_slot(slot);
-                    inventory.add_and_pick_item(item_stack);
-                } else {
-                    return;
-                }
-            }
+        } else if self.has_infinite_materials() {
+            inventory.add_and_pick_item(item_stack);
         }
 
         self.send_packet(CSetHeldSlot {

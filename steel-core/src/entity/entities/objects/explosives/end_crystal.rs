@@ -11,9 +11,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
-use steel_registry::{vanilla_damage_types, vanilla_entities, vanilla_game_events};
+use steel_registry::{vanilla_damage_types, vanilla_entities, vanilla_game_events, vanilla_items};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
@@ -131,6 +132,11 @@ impl EndCrystalEntity {
 }
 
 impl Entity for EndCrystalEntity {
+    /// Vanilla `EndCrystal.getPickResult`.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::END_CRYSTAL))
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

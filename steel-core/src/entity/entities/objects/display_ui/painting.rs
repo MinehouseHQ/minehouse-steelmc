@@ -272,6 +272,11 @@ impl BlockAttachedEntity for PaintingEntity {
 }
 
 impl Entity for PaintingEntity {
+    /// Vanilla `Painting.getPickResult`: a plain painting, whatever the variant.
+    fn pick_result(&self) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::PAINTING))
+    }
+
     /// Vanilla `BlockAttachedEntity.thunderHit` ignores lightning.
     fn thunder_hit(&self, _world: &World, _lightning: &LightningBoltEntity) {}
 

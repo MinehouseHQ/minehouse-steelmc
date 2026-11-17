@@ -107,6 +107,7 @@ mod s_move_player;
 mod s_move_vehicle;
 mod s_paddle_boat;
 mod s_pick_item_from_block;
+mod s_pick_item_from_entity;
 mod s_place_recipe;
 mod s_player_abilities;
 mod s_player_action;
@@ -130,6 +131,7 @@ mod s_set_structure_block;
 mod s_set_test_block;
 mod s_sign_update;
 mod s_spectator_action;
+mod s_teleport_to_entity;
 mod s_use_item;
 mod s_use_item_on;
 mod world_border;
@@ -277,6 +279,7 @@ pub use s_move_player::{
 pub use s_move_vehicle::SMoveVehicle;
 pub use s_paddle_boat::SPaddleBoat;
 pub use s_pick_item_from_block::SPickItemFromBlock;
+pub use s_pick_item_from_entity::SPickItemFromEntity;
 pub use s_place_recipe::SPlaceRecipe;
 pub use s_player_abilities::SPlayerAbilities;
 pub use s_player_action::{PlayerAction, SPlayerAction};
@@ -302,6 +305,7 @@ pub use s_set_structure_block::{
 pub use s_set_test_block::SSetTestBlock;
 pub use s_sign_update::SSignUpdate;
 pub use s_spectator_action::SSpectatorAction;
+pub use s_teleport_to_entity::STeleportToEntity;
 pub use s_use_item::SUseItem;
 pub use s_use_item_on::SUseItemOn;
 pub use world_border::{
