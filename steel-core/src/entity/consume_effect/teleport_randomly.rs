@@ -4,10 +4,13 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::consume_effect::{ConsumeEffectData, TeleportRandomlyConsumeEffect};
-use steel_registry::{sound_events, vanilla_game_events};
+use steel_registry::{level_events, sound_events, vanilla_game_events};
+use steel_utils::{BlockPos, Downcast as _};
 
 use super::ConsumeEffectBehavior;
 use crate::entity::LivingEntity;
+use crate::entity::entities::FoxEntity;
+use crate::entity::entities::mobs::hostile::enderman::clamped_pack_difference_in_position;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
@@ -27,14 +30,8 @@ impl ConsumeEffectBehavior for TeleportRandomlyBehavior {
 /// `LivingEntity::random_teleport` (vanilla `Entity.randomTeleport`), and
 /// stops at the first one that lands.
 ///
-// TODO(26.3): Vanilla snapshot 26.3 adds the block tag
-// `#consumable_does_not_teleport_to` — "blocks that entities do not
-// teleport to when they consume food that teleports randomly when eaten"
-// (empty by default). Once that tag exists in the registry extraction, a
-// landing block tagged with it must be rejected here, the same way an
-// unloaded/non-solid candidate already is — this is specific to this
-// consume-effect path, not the shared `Entity.randomTeleport` primitive
-// (Enderman's own random teleport is unaffected by this tag).
+// Vanilla also refuses a landing on `#consumable_does_not_teleport_to`, a
+// block tag that is empty in vanilla 26.3 and not yet in Steel's extraction.
 fn teleport_randomly(
     effect: TeleportRandomlyConsumeEffect,
     world: &Arc<World>,
@@ -64,16 +61,24 @@ fn teleport_randomly(
             old_pos,
             &GameEventContext::new(Some(user.as_entity_event_source()), None),
         );
-        // TODO: Play `FOX_TELEPORT` on `SoundSource::Neutral` instead once Fox
-        // is implemented, mirroring vanilla `TeleportRandomlyConsumeEffect.apply`.
-        world.play_sound_at(
-            &sound_events::ITEM_CHORUS_FRUIT_TELEPORT,
-            SoundSource::Players,
-            user.position(),
-            1.0,
-            1.0,
-            None,
-        );
+        let (sound, source) = if user.downcast_ref::<FoxEntity>().is_some() {
+            (&sound_events::ENTITY_FOX_TELEPORT, SoundSource::Neutral)
+        } else {
+            (
+                &sound_events::ITEM_CHORUS_FRUIT_TELEPORT,
+                SoundSource::Players,
+            )
+        };
+        world.play_sound_at(sound, source, user.position(), 1.0, 1.0, None);
+        if effect.directional_particles() {
+            let origin = BlockPos::containing(old_pos.x, old_pos.y, old_pos.z);
+            world.level_event(
+                level_events::PARTICLES_CONSUME_EFFECT_TELEPORT,
+                origin,
+                clamped_pack_difference_in_position(origin, user.block_position(), 127, 127, 127),
+                None,
+            );
+        }
         user.reset_fall_distance();
         user.reset_current_impulse_context();
         return;
