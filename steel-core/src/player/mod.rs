@@ -70,13 +70,13 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::ptr;
 use std::sync::atomic::{AtomicI8, Ordering};
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
-    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CPlayerRotation, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
-    LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CHurtAnimation, CPlayerCombatEnd, CPlayerCombatEnter, CPlayerCombatKill,
+    CPlayerLookAt, CPlayerRotation, CRespawn, CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot,
+    CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience, TeamVisibility};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -103,10 +103,9 @@ use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
-use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
-    interactivity::{ClickEvent, HoverEvent, Interactivity},
+    interactivity::{ClickEvent, HoverEvent},
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
@@ -121,6 +120,7 @@ use crate::enchantment_helper;
 use crate::entity::LIVING_FLAG_SPIN_ATTACK;
 use crate::entity::LivingEntityRef;
 use crate::entity::damage::DamageSource;
+use crate::entity::damage::combat_tracker;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
@@ -163,7 +163,6 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
-use steel_registry::damage_type::DeathMessageType;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -178,14 +177,6 @@ const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
 const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
-
-static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(|| Interactivity {
-    click: Some(ClickEvent::open_url(
-        "https://bugs.mojang.com/browse/MCPE-28723",
-    )),
-    hover: Some(HoverEvent::show_text("MCPE-28723")),
-    ..Interactivity::new()
-});
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
@@ -1078,8 +1069,8 @@ impl Player {
             );
         }
 
-        // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
+            combat_tracker::record_damage(self, source, damage);
             self.cause_food_exhaustion(source.damage_type.exhaustion);
             self.set_health(self.get_health() - damage);
             if damage < f32::MAX {
@@ -1089,41 +1080,6 @@ impl Player {
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
-        }
-    }
-
-    fn get_death_message(&self, source: &DamageSource) -> TextComponent {
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        match source.damage_type.death_message_type {
-            DeathMessageType::IntentionalGameDesign => {
-                let mut link = translations::CHAT_SQUARE_BRACKETS
-                    .message([TranslatedMessage {
-                        key: format!("{death_key}.link").into(),
-                        fallback: None,
-                        args: None,
-                    }
-                    .component()])
-                    .component();
-                link.interactions = INTENTIONAL_GAME_DESIGN_STYLE.clone();
-
-                TranslatedMessage {
-                    key: format!("{death_key}.message").into(),
-                    fallback: None,
-                    args: Some(Box::new([self.display_name(), link])),
-                }
-                .component()
-            }
-            DeathMessageType::Default | DeathMessageType::FallVariants => {
-                // TODO: use CombatTracker for killer name items and fall variants
-                TranslatedMessage {
-                    key: death_key.into(),
-                    fallback: None,
-                    args: Some(Box::new([TextComponent::plain(
-                        self.gameprofile.name().to_owned(),
-                    )])),
-                }
-                .component()
-            }
         }
     }
 
@@ -1159,7 +1115,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        let death_message = self.get_death_message(source);
+        let death_message = combat_tracker::death_message(self);
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -1210,6 +1166,7 @@ impl Player {
 
         self.clear_fire();
         self.set_ticks_frozen(0);
+        combat_tracker::recheck_status(self);
 
         if world.get_game_rule(&IMMEDIATE_RESPAWN) {
             self.respawn();
@@ -2112,6 +2069,21 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 }
 
 impl LivingEntity for Player {
+    /// Vanilla `ServerPlayer.onEnterCombat`.
+    fn on_enter_combat(&self) {
+        self.send_packet(CPlayerCombatEnter);
+    }
+
+    /// Vanilla `ServerPlayer.onLeaveCombat`.
+    fn on_leave_combat(&self) {
+        let duration = self
+            .living_base
+            .combat_tracker()
+            .lock()
+            .combat_duration(self.tick_count());
+        self.send_packet(CPlayerCombatEnd { duration });
+    }
+
     fn dismount_poses(&self) -> &'static [EntityPose] {
         &[
             EntityPose::Standing,

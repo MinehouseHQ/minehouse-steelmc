@@ -1,5 +1,6 @@
 //! Exact damage attribution and server-owned recent damage history.
 
+pub mod combat_tracker;
 mod history;
 mod source;
 

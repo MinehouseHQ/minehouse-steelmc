@@ -11,20 +11,18 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::CSystemChat;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::damage_type::DeathMessageType;
 use steel_registry::data_components::components::FoodProperties;
 use steel_registry::data_components::vanilla_components::FOOD;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::SHOW_DEATH_MESSAGES;
+use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, translations};
-use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
 use uuid::Uuid;
 
 use crate::entity::ai::path::{PathType, PathfindingContext};
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::damage::DamageSource;
+use crate::entity::damage::combat_tracker;
 use crate::entity::{Animal, Entity, EntityReference, LivingEntity, SharedEntity};
 use crate::physics::{WorldCollisionProvider, has_collision};
 use crate::player::Player;
@@ -271,7 +269,7 @@ pub trait TamableAnimal: Animal {
     }
 
     /// Vanilla `TamableAnimal.die`: tells the owner how the pet died.
-    fn announce_death_to_owner(&self, source: &DamageSource) {
+    fn announce_death_to_owner(&self, _source: &DamageSource) {
         let Some(world) = self.level() else {
             return;
         };
@@ -285,7 +283,7 @@ pub trait TamableAnimal: Animal {
             return;
         };
         player.send_packet(CSystemChat {
-            content: death_message(self.display_name(), source),
+            content: combat_tracker::death_message(self),
             overlay: false,
         });
     }
@@ -310,34 +308,5 @@ pub trait TamableAnimal: Animal {
         let sitting = nbt.byte(TAG_SITTING).is_some_and(|sitting| sitting != 0);
         self.set_ordered_to_sit(sitting);
         self.set_in_sitting_pose(sitting);
-    }
-}
-
-/// Vanilla `CombatTracker.getDeathMessage` for a victim without a combat log.
-fn death_message(name: TextComponent, source: &DamageSource) -> TextComponent {
-    let key = format!("death.attack.{}", source.damage_type.message_id);
-    match source.damage_type.death_message_type {
-        DeathMessageType::IntentionalGameDesign => {
-            let link = translations::CHAT_SQUARE_BRACKETS
-                .message([TranslatedMessage {
-                    key: format!("{key}.link").into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component()])
-                .component();
-            TranslatedMessage {
-                key: format!("{key}.message").into(),
-                fallback: None,
-                args: Some(Box::new([name, link])),
-            }
-            .component()
-        }
-        DeathMessageType::Default | DeathMessageType::FallVariants => TranslatedMessage {
-            key: key.into(),
-            fallback: None,
-            args: Some(Box::new([name])),
-        }
-        .component(),
     }
 }

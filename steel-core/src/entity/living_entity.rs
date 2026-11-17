@@ -17,6 +17,7 @@ use crate::behavior::{
 use crate::entity::ai::brain::Memories;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+use crate::entity::damage::combat_tracker;
 use crate::entity::entity::compute_modified_friction;
 use crate::entity::get_kill_credit;
 use crate::entity::kinetic::{damage_entities, mob_stab_attack};
@@ -31,6 +32,7 @@ use crate::player::advancement::criteria::report_durability_change;
 use crate::world::waypoints;
 use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::damage_type::DamageType;
+use steel_utils::text::DisplayResolutor;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 /// Vanilla `DATA_LIVING_ENTITY_FLAGS` bit 1: using an item.
@@ -1201,6 +1203,7 @@ pub trait LivingEntity: Entity {
         }
 
         if damage != 0.0 {
+            combat_tracker::record_damage(self, source, damage);
             self.set_health(self.get_health() - damage);
             self.set_absorption_amount(self.get_absorption_amount() - damage);
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
@@ -1559,6 +1562,14 @@ pub trait LivingEntity: Entity {
             killer.award_kill_score(self.as_entity_event_source(), source);
         }
 
+        if self.custom_name().is_some() {
+            log::info!(
+                "Named entity {} died: {}",
+                self.uuid(),
+                combat_tracker::death_message(self).to_plain(&DisplayResolutor)
+            );
+        }
+
         self.handle_killing_blow();
 
         // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
@@ -1606,6 +1617,14 @@ pub trait LivingEntity: Entity {
     /// replace it: bosses playing a death animation clamp their health and enter a
     /// dying state here instead of falling over.
     fn handle_killing_blow(&self) {}
+
+    /// Vanilla `LivingEntity.onEnterCombat`: the combat log started because a
+    /// living attacker hit this entity.
+    fn on_enter_combat(&self) {}
+
+    /// Vanilla `LivingEntity.onLeaveCombat`: the combat log timed out or the
+    /// entity died.
+    fn on_leave_combat(&self) {}
 
     /// Returns vanilla `LivingEntity.shouldDropLoot`.
     /// Returns whether this entity should drop loot on death: not a baby,
@@ -2926,6 +2945,9 @@ pub trait LivingEntity: Entity {
             entity_data.set_stinger_count(count);
         }
         self.detect_equipment_updates();
+        if self.tick_count() % 20 == 0 {
+            combat_tracker::recheck_status(self);
+        }
 
         if !self.is_removed() {
             self.ai_step(entity);
