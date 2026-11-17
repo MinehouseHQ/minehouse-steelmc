@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 //! Vanilla `ServerGamePacketListenerImpl.handleSetCommandBlock` and
 //! `handleSetCommandMinecart`.
 
@@ -6,6 +7,13 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     CommandBlockPacketMode, SSetCommandBlock, SSetCommandMinecart,
 };
+=======
+//! Vanilla `ServerGamePacketListenerImpl.handleSetCommandBlock`.
+
+use std::sync::Arc;
+
+use steel_protocol::packets::game::{CommandBlockPacketMode, SSetCommandBlock};
+>>>>>>> origin/master
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
@@ -15,7 +23,10 @@ use steel_utils::{Downcast as _, translations};
 use text_components::TextComponent;
 
 use crate::block_entity::entities::{CommandBlockEntity, CommandBlockMode};
+<<<<<<< HEAD
 use crate::entity::entities::CommandBlockMinecartEntity;
+=======
+>>>>>>> origin/master
 use crate::player::Player;
 
 impl Player {
@@ -71,6 +82,7 @@ impl Player {
             // Vanilla `onUpdated`.
             world.send_block_updated(pos);
         }
+<<<<<<< HEAD
         self.confirm_command_set(packet.command, enabled);
     }
 
@@ -106,12 +118,19 @@ impl Player {
     /// Tells the editor the command was saved, or that command blocks are off.
     fn confirm_command_set(&self, command: String, enabled: bool) {
         if !command.is_empty() {
+=======
+        if !packet.command.is_empty() {
+>>>>>>> origin/master
             let message = if enabled {
                 &translations::ADV_MODE_SET_COMMAND_SUCCESS
             } else {
                 &translations::ADV_MODE_SET_COMMAND_DISABLED
             };
+<<<<<<< HEAD
             self.send_message(&message.message([command]).component());
+=======
+            self.send_message(&message.message([packet.command]).component());
+>>>>>>> origin/master
         }
     }
 }
