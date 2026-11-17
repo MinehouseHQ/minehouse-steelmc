@@ -6,6 +6,8 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::shapes;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
@@ -14,9 +16,9 @@ use steel_registry::{sound_events, vanilla_attributes, vanilla_entities, vanilla
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey};
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentPostAttackContext};
 use crate::entity::SpawnRule;
 use crate::entity::ai::goal::{
@@ -26,6 +28,9 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::pushing::EntityPush;
+use crate::entity::spawn_placements::{
+    is_valid_empty_spawn_block, is_valid_empty_spawn_block_with_fluid,
+};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
     EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, NeutralMob, NeutralMobState,
@@ -34,7 +39,7 @@ use crate::entity::{
 use crate::inventory::prelude::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{ServerLevelAccessor, World};
 
 const PLAYER_CREATED_FLAG: i8 = 1;
 const IRON_INGOT_HEAL_AMOUNT: f32 = 25.0;
@@ -373,6 +378,25 @@ impl Mob for IronGolemEntity {
         &self.mob_base
     }
 
+    /// Vanilla `IronGolem.checkSpawnObstruction`: standing ground below, two
+    /// clear blocks above, and no entity in the way. The golem's own block may
+    /// hold a fluid.
+    fn check_spawn_obstruction(&self, level: &dyn ServerLevelAccessor) -> bool {
+        let pos = self.block_position();
+        let below = pos.below();
+        let below_state = level.get_block_state(below);
+        let below_shape = BLOCK_BEHAVIORS
+            .get_behavior(below_state.get_block())
+            .get_collision_shape(below_state, level, below, BlockCollisionContext::empty());
+        if !shapes::is_face_full(below_shape, Direction::Up) {
+            return false;
+        }
+        let golem = &vanilla_entities::IRON_GOLEM;
+        (1..3).all(|i| is_valid_empty_spawn_block(level, pos.above_n(i), golem))
+            && is_valid_empty_spawn_block_with_fluid(level, pos, golem, false)
+            && level.is_unobstructed_by_entities(self)
+    }
+
     fn tick_goal_selectors(&self, entity: &SharedEntity) {
         PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
@@ -512,5 +536,57 @@ mod tests {
             IronGolemEntity::new(&vanilla_entities::IRON_GOLEM, 2, DVec3::ZERO, Weak::new());
         loaded.load_additional((&borrowed).into());
         assert!(loaded.is_player_created());
+    }
+
+    #[test]
+    fn a_golem_spawns_on_solid_ground_under_two_clear_blocks() {
+        use std::sync::Arc;
+
+        use steel_registry::blocks::BlockRef;
+        use steel_registry::vanilla_blocks;
+        use steel_utils::types::UpdateFlags;
+        use steel_utils::{BlockPos, ChunkPos};
+
+        use crate::behavior::init_behaviors;
+        use crate::entity::Mob as _;
+        use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("iron_golem_spawn_obstruction");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let golem = IronGolemEntity::new(
+            &vanilla_entities::IRON_GOLEM,
+            1,
+            DVec3::new(8.5, 65.0, 8.5),
+            Arc::downgrade(world),
+        );
+        let set = |y: i32, block: BlockRef| {
+            world.set_block(
+                BlockPos::new(8, y, 8),
+                block.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+        };
+
+        assert!(!golem.check_spawn_obstruction(world.as_ref()), "no ground");
+        set(64, &vanilla_blocks::STONE);
+        assert!(golem.check_spawn_obstruction(world.as_ref()));
+
+        set(65, &vanilla_blocks::WATER);
+        assert!(
+            golem.check_spawn_obstruction(world.as_ref()),
+            "the golem's own block may hold water"
+        );
+        set(66, &vanilla_blocks::WATER);
+        assert!(!golem.check_spawn_obstruction(world.as_ref()));
+        set(66, &vanilla_blocks::AIR);
+        set(65, &vanilla_blocks::AIR);
+        set(67, &vanilla_blocks::STONE);
+        assert!(
+            !golem.check_spawn_obstruction(world.as_ref()),
+            "two clear blocks above"
+        );
     }
 }

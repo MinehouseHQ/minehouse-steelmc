@@ -94,6 +94,17 @@ pub(crate) fn is_valid_empty_spawn_block(
     pos: BlockPos,
     entity_type: EntityTypeRef,
 ) -> bool {
+    is_valid_empty_spawn_block_with_fluid(level, pos, entity_type, true)
+}
+
+/// Vanilla `NaturalSpawner.isValidEmptySpawnBlock` with the state at `pos` and
+/// either its own fluid or, when `check_fluid` is false, an empty one.
+pub(crate) fn is_valid_empty_spawn_block_with_fluid(
+    level: &dyn LevelReader,
+    pos: BlockPos,
+    entity_type: EntityTypeRef,
+    check_fluid: bool,
+) -> bool {
     let state = level.get_block_state(pos);
     let collision_shape = BLOCK_BEHAVIORS
         .get_behavior(state.get_block())
@@ -102,7 +113,7 @@ pub(crate) fn is_valid_empty_spawn_block(
         && !BLOCK_BEHAVIORS
             .get_behavior(state.get_block())
             .is_signal_source(state, SignalQueryContext::DEFAULT)
-        && state.get_fluid_state().is_empty()
+        && (!check_fluid || state.get_fluid_state().is_empty())
         && !state
             .get_block()
             .has_tag(&BlockTag::PREVENT_MOB_SPAWNING_INSIDE)
