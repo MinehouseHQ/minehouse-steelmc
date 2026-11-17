@@ -18,7 +18,7 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::{LootContext, LootTableRef};
+use steel_registry::loot_table::{BlockEntityRef, LootContext, LootTableRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
@@ -70,14 +70,24 @@ pub(crate) fn default_can_be_replaced(
 pub(crate) fn drop_from_block_interact_loot_table(
     key: LootTableRef,
     interacted_block_state: BlockStateId,
-    _interacted_block_entity: Option<SharedBlockEntity>,
+    interacted_block_entity: Option<SharedBlockEntity>,
     tool: Option<&ItemStack>,
     interacting_entity: Option<&dyn Entity>,
     rng: &mut ThreadRng,
 ) -> Vec<ItemStack> {
     let mut ctx = LootContext::new(rng).with_block_state(interacted_block_state);
 
-    // TODO: Add the block entity to the context when it can be done.
+    let block_entity_components = interacted_block_entity
+        .as_deref()
+        .map(BlockEntity::collect_components);
+    if let Some(block_entity) = interacted_block_entity.as_deref() {
+        ctx = ctx.with_block_entity(BlockEntityRef {
+            block_entity_type: Some(&block_entity.get_type().key),
+            custom_name: None,
+            inventory: None,
+            components: block_entity_components.as_ref(),
+        });
+    }
 
     let interacting_equipment = interacting_entity.and_then(loot_equipment);
     if let Some(interacting_entity) = interacting_entity {

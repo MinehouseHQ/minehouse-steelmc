@@ -260,8 +260,8 @@ impl PistonBaseBlock {
         let mut to_update = Vec::with_capacity(to_push.len() + to_destroy.len());
         for &pos in to_destroy.iter().rev() {
             let state = world.get_block_state(pos);
-            // TODO: Pass the block entity to loot evaluation once block-entity components and
-            // post-refactor container item slices are available, as Vanilla does here.
+            // Vanilla passes the destroyed block's entity to `dropResources`;
+            // `drop_resources` reads it from the world before the block is removed.
             world.drop_resources(state, pos);
             world.set_block(
                 pos,
