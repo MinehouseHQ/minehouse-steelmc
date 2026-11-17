@@ -559,6 +559,26 @@ pub trait LivingEntity: Entity {
         self.make_sound(self.death_sound());
     }
 
+    /// Vanilla `LivingEntity.playSecondaryHurtSound`: thorns damage also plays
+    /// the thorns hit sound at the entity's position.
+    fn play_secondary_hurt_sound(&self, world: &World, source: &DamageSource) {
+        if source.damage_type == &vanilla_damage_types::THORNS {
+            let sound_source = if self.as_player().is_some() {
+                SoundSource::Players
+            } else {
+                SoundSource::Hostile
+            };
+            world.play_sound_at(
+                &sound_events::ENCHANT_THORNS_HIT,
+                sound_source,
+                self.position(),
+                1.0,
+                1.0,
+                None,
+            );
+        }
+    }
+
     /// Returns the render scale from age: 0.5 for babies, 1.0 for adults.
     fn get_age_scale(&self) -> f32 {
         if self.is_baby() { 0.5 } else { 1.0 }
@@ -963,13 +983,14 @@ pub trait LivingEntity: Entity {
             if !self.check_totem_death_protection(source) {
                 if took_full_damage {
                     self.play_death_sound();
+                    self.play_secondary_hurt_sound(world, source);
                 }
                 self.die(source);
             }
         } else if took_full_damage {
             self.play_hurt_sound(source);
+            self.play_secondary_hurt_sound(world, source);
         }
-        // TODO: Play secondary hurt sounds once equipment effects expose them.
 
         let success = !blocked || damage > 0.0;
         if success {
