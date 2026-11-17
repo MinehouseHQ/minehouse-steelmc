@@ -1,4 +1,5 @@
 use super::*;
+use std::hash::Hash;
 
 #[test]
 fn client_tracking_range_is_converted_to_blocks() {
@@ -82,4 +83,50 @@ fn vehicle_effective_tracking_range_uses_widest_passenger_range() {
         effective.block_radius.to_bits(),
         (f64::from(passenger.entity_type().client_tracking_range) * BLOCKS_PER_CHUNK).to_bits()
     );
+}
+
+fn indexed_ids<K: Eq + Hash>(index: &scc::HashMap<K, FxHashSet<i32>>, key: &K) -> Vec<i32> {
+    let mut ids = index
+        .read_sync(key, |_, ids| ids.iter().copied().collect::<Vec<_>>())
+        .unwrap_or_default();
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn player_refresh_indexes_follow_chunk_moves_and_removal() {
+    init_vanilla_registry();
+
+    let tracker = EntityTracker::new();
+    let entity = PairingTestEntity::shared(Vec::new());
+    let entity_id = entity.id();
+    let start = ChunkPos::from_entity_pos(entity.position());
+    let far = ChunkPos::new(start.0.x + 40, start.0.y);
+    let player_id = 7;
+
+    track_entity_for_player(&tracker, &entity, player_id);
+    assert_eq!(
+        indexed_ids(&tracker.chunk_entities, &start),
+        vec![entity_id]
+    );
+    assert_eq!(
+        indexed_ids(&tracker.player_entities, &player_id),
+        vec![entity_id]
+    );
+
+    // No player tracks the far chunk, so the move drops the pairing and both indexes follow.
+    tracker.on_entity_section_change(entity_id, start, far, |_| Vec::new(), |_| None);
+    assert_eq!(
+        indexed_ids(&tracker.chunk_entities, &start),
+        Vec::<i32>::new()
+    );
+    assert_eq!(indexed_ids(&tracker.chunk_entities, &far), vec![entity_id]);
+    assert_eq!(
+        indexed_ids(&tracker.player_entities, &player_id),
+        Vec::<i32>::new()
+    );
+
+    tracker.remove(entity_id, |_| None);
+    assert_eq!(tracker.chunk_entities.len(), 0);
+    assert_eq!(tracker.player_entities.len(), 0);
 }
