@@ -1,8 +1,11 @@
-//! Vanilla `ServerGamePacketListenerImpl.handleSetCommandBlock`.
+//! Vanilla `ServerGamePacketListenerImpl.handleSetCommandBlock` and
+//! `handleSetCommandMinecart`.
 
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{CommandBlockPacketMode, SSetCommandBlock};
+use steel_protocol::packets::game::{
+    CommandBlockPacketMode, SSetCommandBlock, SSetCommandMinecart,
+};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
@@ -12,6 +15,7 @@ use steel_utils::{Downcast as _, translations};
 use text_components::TextComponent;
 
 use crate::block_entity::entities::{CommandBlockEntity, CommandBlockMode};
+use crate::entity::entities::CommandBlockMinecartEntity;
 use crate::player::Player;
 
 impl Player {
@@ -67,13 +71,47 @@ impl Player {
             // Vanilla `onUpdated`.
             world.send_block_updated(pos);
         }
-        if !packet.command.is_empty() {
+        self.confirm_command_set(packet.command, enabled);
+    }
+
+    /// Vanilla `handleSetCommandMinecart`: saves what a game master entered on
+    /// a command block minecart's screen.
+    pub fn handle_set_command_minecart(&self, packet: &SSetCommandMinecart) {
+        if !self.can_use_game_master_blocks() {
+            self.send_message(&TextComponent::translated(
+                translations::ADV_MODE_NOT_ALLOWED.msg(),
+            ));
+            return;
+        }
+        let world = self.get_world();
+        let Some(entity) = world.get_entity_by_id(packet.entity) else {
+            return;
+        };
+        let Some(cart) = entity.downcast_ref::<CommandBlockMinecartEntity>() else {
+            return;
+        };
+        let command_block = cart.command_block();
+        command_block.set_command(packet.command.clone());
+        command_block.set_track_output(packet.track_output);
+        if !packet.track_output {
+            command_block.set_last_output(None);
+        }
+        let enabled = world.get_game_rule(&COMMAND_BLOCKS_WORK);
+        if enabled {
+            cart.sync_command_block();
+        }
+        self.confirm_command_set(packet.command.clone(), enabled);
+    }
+
+    /// Tells the editor the command was saved, or that command blocks are off.
+    fn confirm_command_set(&self, command: String, enabled: bool) {
+        if !command.is_empty() {
             let message = if enabled {
                 &translations::ADV_MODE_SET_COMMAND_SUCCESS
             } else {
                 &translations::ADV_MODE_SET_COMMAND_DISABLED
             };
-            self.send_message(&message.message([packet.command]).component());
+            self.send_message(&message.message([command]).component());
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::block_entity::BlockEntity as _;
 use crate::block_entity::entities::{CommandBlockEntity, CommandBlockMode, is_command_block};
 use crate::command::command_block::CommandBlockRunner;
 use crate::player::Player;
-use crate::world::{SignalGetter as _, World};
+use crate::world::{CommandBlockRun, SignalGetter as _, World};
 
 /// Vanilla `CommandBlock`.
 #[block_behavior]
@@ -92,7 +92,7 @@ impl BlockBehavior for CommandBlock {
     /// domain, so the server runs the tick once every world has ticked; see
     /// [`run_command_block_tick`].
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        world.queue_command_block_tick(pos);
+        world.queue_command_block_run(CommandBlockRun::Block(pos));
     }
 
     /// Vanilla `useWithoutItem`: game masters get the block's data, which opens

@@ -4,6 +4,8 @@ use super::tick_watchdog::{TickStep, TickStepTimes, TickWatchdog};
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use crate::behavior::blocks::run_command_block_tick;
 use crate::command::command_block::CommandBlockRunner;
+use crate::entity::entities::CommandBlockMinecartEntity;
+use crate::world::CommandBlockRun;
 
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_REQUESTS_PER_TICK,
@@ -529,8 +531,15 @@ impl Server {
             pending,
         };
         for world in self.worlds.values() {
-            for pos in world.drain_command_block_ticks() {
-                run_command_block_tick(world, pos, &mut runner);
+            for run in world.drain_command_block_runs() {
+                match run {
+                    CommandBlockRun::Block(pos) => run_command_block_tick(world, pos, &mut runner),
+                    CommandBlockRun::Minecart(id) => {
+                        if let Some(entity) = world.get_entity_by_id(id) {
+                            CommandBlockMinecartEntity::run_command(&entity, world, &mut runner);
+                        }
+                    }
+                }
             }
         }
     }
