@@ -19,6 +19,7 @@ use super::super::super::{
     },
 };
 use super::super::bossbar;
+use super::super::data::accessor::DataAccessor;
 use super::{
     condition::{invalid_block_data_source, loaded_block_position},
     objective, source_command_storage, source_scoreboard,
@@ -31,7 +32,6 @@ type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 
 pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
-    // TODO: Add entity after live entity NBT can reload every command-visible field.
     literal(name)
         .then(
             literal("score").then(
@@ -60,6 +60,12 @@ pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
             literal("block").then(
                 argument("targetPos", SteelArgumentType::block_pos())
                     .then(data_path(StoreDataTarget::Block, store_result)),
+            ),
+        )
+        .then(
+            literal("entity").then(
+                argument("target", SteelArgumentType::entity())
+                    .then(data_path(StoreDataTarget::Entity, store_result)),
             ),
         )
         .then(
@@ -112,6 +118,7 @@ fn data_type(
 #[derive(Clone, Copy)]
 enum StoreDataTarget {
     Block,
+    Entity,
     Storage,
 }
 
@@ -147,6 +154,7 @@ fn store_data(
 ) -> Result<CommandSource, CommandSyntaxError> {
     match target {
         StoreDataTarget::Block => store_block_data(context, data_type, store_result),
+        StoreDataTarget::Entity => store_entity_data(context, data_type, store_result),
         StoreDataTarget::Storage => store_storage_data(context, data_type, store_result),
     }
 }
@@ -169,6 +177,29 @@ fn store_block_data(
         let value = stored_value(store_result, success, result);
         if store_block_data_value(&block_entity, &path, data_type.tag(value, scale)).is_ok() {
             world.send_block_updated(position);
+        }
+    });
+    let callback = CommandResultCallback::chain(source.callback(), callback);
+    Ok(source.with_callback(callback))
+}
+
+/// Vanilla `storeData` with an entity accessor: a player's data cannot be
+/// written, and a failed write is ignored like vanilla's swallowed exception.
+fn store_entity_data(
+    context: &SteelCommandContext<CommandSource>,
+    data_type: StoreDataType,
+    store_result: bool,
+) -> Result<CommandSource, CommandSyntaxError> {
+    let entity = context.entity("target")?;
+    let path = parsed_path(context)?;
+    let scale = parsed_scale(context)?;
+    let source = context.source();
+    let callback = CommandResultCallback::new(move |success, result| {
+        let accessor = DataAccessor::Entity(Arc::clone(&entity));
+        let value = stored_value(store_result, success, result);
+        if let Ok(data) = mutate_compound_path(accessor.data(), &path, data_type.tag(value, scale))
+        {
+            let _ = accessor.set_data(data);
         }
     });
     let callback = CommandResultCallback::chain(source.callback(), callback);

@@ -54,3 +54,30 @@ fn summon_loads_the_given_data_and_passengers() {
         );
     });
 }
+
+#[test]
+fn execute_store_writes_into_entity_data() {
+    init_vanilla_registry();
+    init_behaviors();
+    init_entities();
+    with_server_world("execute_store_entity", |server, world| {
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let pig = "@e[type=minecraft:pig,limit=1]";
+        assert_eq!(run(server, "summon minecraft:pig 4.5 65 4.5"), Some(1));
+        assert!(run(server, "scoreboard objectives add stored dummy").is_some());
+        assert!(run(server, "scoreboard players set value stored 123").is_some());
+        assert_eq!(
+            run(
+                server,
+                &format!(
+                    "execute store result entity {pig} Air short 1 run scoreboard players get value stored"
+                )
+            ),
+            Some(123)
+        );
+        assert_eq!(
+            run(server, &format!("data get entity {pig} Air")),
+            Some(123)
+        );
+    });
+}
