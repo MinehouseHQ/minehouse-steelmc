@@ -13,6 +13,7 @@ use std::sync::Weak;
 use crate::entity::entities::{EnderDragonEntity, EnderDragonPartEntity};
 use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
 use crate::world::game_event::DynamicListenerAction;
+use crate::world::waypoints::{self, WaypointManager};
 
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
@@ -83,6 +84,22 @@ impl World {
         );
         self.track_navigating_mob(entity);
         self.update_dynamic_game_event_listeners(entity, DynamicListenerAction::Add);
+        // Vanilla `EntityCallbacks.onTrackingStart` waypoint step.
+        if entity.as_player().is_some()
+            && let Some(player) = self.players.get_by_entity_id(entity.id())
+            && waypoints::is_receiving(&player)
+        {
+            self.waypoint_manager.add_player(&player);
+        }
+        if waypoints::is_transmitting(&**entity) {
+            self.waypoint_manager.track_waypoint(entity);
+        }
+    }
+
+    /// Vanilla `ServerLevel.getWaypointManager`.
+    #[must_use]
+    pub const fn waypoint_manager(&self) -> &WaypointManager {
+        &self.waypoint_manager
     }
 
     /// Vanilla `ServerLevel.EntityCallbacks` `onTrackingStart`, `onTrackingEnd`
@@ -100,6 +117,9 @@ impl World {
             self.players.get_by_entity_id(player_id)
         });
         self.untrack_navigating_mob(entity_id);
+        // Vanilla `onTrackingEnd` and `LivingEntity.onRemoval`.
+        self.waypoint_manager.remove_player(entity_id);
+        self.waypoint_manager.untrack_waypoint(entity_id);
     }
 
     pub(crate) fn apply_entity_lifecycle_changes(

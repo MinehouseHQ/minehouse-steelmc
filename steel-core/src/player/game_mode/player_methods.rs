@@ -161,10 +161,27 @@ impl Player {
     /// Updates interaction range attribute modifiers based on game mode.
     ///
     /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
-    /// range modifiers every tick.
+    /// range modifiers and hides a crouching player's waypoint every tick.
     pub(in crate::player) fn update_player_attributes(&self) {
         let is_creative = self.game_mode() == GameType::Creative;
+        let is_crouching = self.is_crouching();
         let mut attrs = self.attributes().lock();
+        if is_crouching {
+            attrs.set_modifier(
+                vanilla_attributes::WAYPOINT_TRANSMIT_RANGE,
+                AttributeModifier {
+                    id: Identifier::vanilla_static("waypoint_transmit_range_crouch"),
+                    amount: -1.0,
+                    operation: AttributeModifierOperation::AddMultipliedTotal,
+                },
+                false,
+            );
+        } else {
+            attrs.remove_modifier(
+                vanilla_attributes::WAYPOINT_TRANSMIT_RANGE,
+                &Identifier::vanilla_static("waypoint_transmit_range_crouch"),
+            );
+        }
 
         if is_creative {
             attrs.set_modifier(

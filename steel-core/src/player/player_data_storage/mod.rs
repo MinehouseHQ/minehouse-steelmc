@@ -41,14 +41,16 @@ use crate::player::Player;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::memory_storage::MemoryPlayerDataStorage;
 use crate::player::recipe_book::ServerRecipeBook;
+use crate::player::shoulder::{shoulder_tag_from_bytes, shoulder_tag_to_bytes};
 use crate::player::warden_spawn_tracker::WardenSpawnTracker;
+use crate::world::waypoints;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 15;
+const PLAYER_STORAGE_VERSION: u16 = 16;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -121,6 +123,9 @@ struct PlayerDataFile {
     warden_spawn_tracker: Vec<[i32; 3]>,
     /// Vanilla `recipeBook` as compound NBT bytes; empty for an empty book.
     recipe_book: Vec<u8>,
+    /// Vanilla `locator_bar_icon` as compound NBT bytes; empty for the
+    /// default icon.
+    locator_bar_icon: Vec<u8>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -490,6 +495,11 @@ impl PlayerDataFile {
                 data.warden_spawn_tracker.cooldown_ticks(),
             ]],
             recipe_book: data.recipe_book.to_bytes(),
+            locator_bar_icon: if data.locator_bar_icon.has_data() {
+                shoulder_tag_to_bytes(&waypoints::icon_to_nbt(&data.locator_bar_icon))
+            } else {
+                Vec::new()
+            },
         })
     }
 
@@ -578,6 +588,10 @@ impl PlayerDataFile {
                 },
             ),
             recipe_book: ServerRecipeBook::from_bytes(&self.recipe_book),
+            locator_bar_icon: waypoints::icon_from_nbt(&shoulder_tag_from_bytes(
+                &self.locator_bar_icon,
+            ))
+            .unwrap_or_default(),
             capture_order: next_capture_order(),
         })
     }
@@ -698,18 +712,21 @@ fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
     // fields are appended empty before decoding: (storage version, data version, missing).
     let legacy = match stored_version(bytes) {
         // Before shoulder entities, active effects, the raid omen position,
-        // the warden spawn tracker and the recipe book.
-        Some(10) => Some((10, 7, 6)),
+        // the warden spawn tracker, the recipe book and the locator bar icon.
+        Some(10) => Some((10, 7, 7)),
         // Before active effects, the raid omen position, the warden spawn
-        // tracker and the recipe book.
-        Some(11) => Some((11, 8, 4)),
-        // Before the raid omen position, the warden spawn tracker and the
-        // recipe book.
-        Some(12) => Some((12, 9, 3)),
-        // Before the warden spawn tracker and the recipe book.
-        Some(13) => Some((13, 10, 2)),
-        // Before the recipe book.
-        Some(14) => Some((14, 11, 1)),
+        // tracker, the recipe book and the locator bar icon.
+        Some(11) => Some((11, 8, 5)),
+        // Before the raid omen position, the warden spawn tracker, the
+        // recipe book and the locator bar icon.
+        Some(12) => Some((12, 9, 4)),
+        // Before the warden spawn tracker, the recipe book and the locator
+        // bar icon.
+        Some(13) => Some((13, 10, 3)),
+        // Before the recipe book and the locator bar icon.
+        Some(14) => Some((14, 11, 2)),
+        // Before the locator bar icon.
+        Some(15) => Some((15, 12, 1)),
         _ => None,
     };
     let Some((storage_version, data_version, missing_fields)) = legacy else {

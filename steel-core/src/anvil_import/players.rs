@@ -17,6 +17,7 @@ use rustc_hash::FxHashMap;
 use serde_json::Value;
 use simdnbt::borrow;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;
@@ -39,6 +40,7 @@ use crate::player::player_data::{
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::recipe_book::{RECIPE_BOOK_TAG, ServerRecipeBook};
 use crate::player::warden_spawn_tracker::WardenSpawnTracker;
+use crate::world::waypoints;
 
 /// Vanilla `EntityEquipment` keys and the player container slots Steel stores them in.
 const EQUIPMENT_SLOTS: [(&str, i8); 7] = [
@@ -354,6 +356,7 @@ fn convert_player_data(
         recipe_book: root
             .compound(RECIPE_BOOK_TAG)
             .map_or_else(ServerRecipeBook::default, ServerRecipeBook::load),
+        locator_bar_icon: locator_bar_icon(root),
         capture_order: next_capture_order(),
     })
 }
@@ -507,4 +510,11 @@ fn read_json(path: &Path) -> Result<Option<Value>, String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!("{}: {error}", path.display())),
     }
+}
+
+/// Vanilla `LivingEntity.readAdditionalSaveData` for `locator_bar_icon`.
+fn locator_bar_icon(root: &NbtCompound) -> WaypointIcon {
+    root.compound("locator_bar_icon")
+        .and_then(waypoints::icon_from_nbt)
+        .unwrap_or_default()
 }

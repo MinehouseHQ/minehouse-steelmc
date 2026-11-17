@@ -10,7 +10,9 @@ use std::{array, mem, sync::Arc};
 use glam::DVec3;
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
+use steel_protocol::packets::game::{
+    CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags, WaypointIcon,
+};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimation;
@@ -808,6 +810,8 @@ pub struct LivingEntityBase {
         SyncMutex<[Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()]>,
     active_location_enchantments: SyncMutex<Vec<ActiveLocationEnchantment>>,
     last_block_pos: SyncMutex<Option<BlockPos>>,
+    /// Vanilla `LivingEntity.locatorBarIcon`.
+    locator_bar_icon: SyncMutex<WaypointIcon>,
 }
 
 /// One entry of vanilla `LivingEntity.activeLocationDependentEnchantments`:
@@ -868,7 +872,13 @@ impl LivingEntityBase {
             equipment_attribute_modifiers: SyncMutex::new(array::from_fn(|_| Vec::new())),
             active_location_enchantments: SyncMutex::new(Vec::new()),
             last_block_pos: SyncMutex::new(None),
+            locator_bar_icon: SyncMutex::new(WaypointIcon::default()),
         }
+    }
+
+    /// Vanilla `LivingEntity.locatorBarIcon`.
+    pub const fn locator_bar_icon(&self) -> &SyncMutex<WaypointIcon> {
+        &self.locator_bar_icon
     }
 
     /// Records vanilla `LivingEntity.lastPos`; returns whether it changed.

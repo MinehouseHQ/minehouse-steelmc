@@ -121,6 +121,29 @@ impl TeamColor {
         }
     }
 
+    /// Vanilla `rgb`: the text color as `0xRRGGBB`.
+    #[must_use]
+    pub const fn rgb(self) -> i32 {
+        match self {
+            Self::Black => 0x00_0000,
+            Self::DarkBlue => 0x00_00AA,
+            Self::DarkGreen => 0x00_AA00,
+            Self::DarkAqua => 0x00_AAAA,
+            Self::DarkRed => 0xAA_0000,
+            Self::DarkPurple => 0xAA_00AA,
+            Self::Gold => 0xFF_AA00,
+            Self::Gray => 0xAA_AAAA,
+            Self::DarkGray => 0x55_5555,
+            Self::Blue => 0x55_55FF,
+            Self::Green => 0x55_FF55,
+            Self::Aqua => 0x55_FFFF,
+            Self::Red => 0xFF_5555,
+            Self::LightPurple => 0xFF_55FF,
+            Self::Yellow => 0xFF_FF55,
+            Self::White => 0xFF_FFFF,
+        }
+    }
+
     /// Vanilla `displaySlot`: the team's sidebar.
     #[must_use]
     pub const fn display_slot(self) -> DisplaySlot {

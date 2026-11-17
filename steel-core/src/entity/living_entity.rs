@@ -24,6 +24,8 @@ use crate::inventory::slot_range::{
     BODY_SLOT, CHEST_SLOT, FEET_SLOT, HEAD_SLOT, LEGS_SLOT, MAINHAND_SLOT, OFFHAND_SLOT,
     SADDLE_SLOT,
 };
+use crate::world::waypoints;
+use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::damage_type::DamageType;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -401,6 +403,13 @@ pub trait LivingEntity: Entity {
         }
 
         nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
+        let icon = self.waypoint_icon();
+        if icon.has_data() {
+            nbt.insert(
+                "locator_bar_icon",
+                NbtTag::Compound(waypoints::icon_to_nbt(&icon)),
+            );
+        }
         if let Some(pos) = self.sleeping_pos() {
             nbt.insert(
                 "sleeping_pos",
@@ -4094,9 +4103,65 @@ pub trait LivingEntity: Entity {
                 }
             } else if attr.key == vanilla_attributes::SCALE.key {
                 self.refresh_dimensions();
+            } else if attr.key == vanilla_attributes::WAYPOINT_TRANSMIT_RANGE.key {
+                self.on_waypoint_transmit_range_changed();
+            } else if attr.key == vanilla_attributes::WAYPOINT_RECEIVE_RANGE.key {
+                self.on_waypoint_receive_range_changed();
             }
-            // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
         }
+    }
+
+    /// Vanilla `LivingEntity.onAttributeUpdated` for the transmit range: a
+    /// positive range puts the entity on locator bars.
+    fn on_waypoint_transmit_range_changed(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let manager = world.waypoint_manager();
+        let range = self
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::WAYPOINT_TRANSMIT_RANGE)
+            .unwrap_or(0.0);
+        if range <= 0.0 {
+            manager.untrack_waypoint(self.id());
+        } else if let Some(entity) = world.entity_manager().get_by_id(self.id()) {
+            manager.track_waypoint(&entity);
+        }
+    }
+
+    /// Vanilla `ServerPlayer.onAttributeUpdated` for the receive range.
+    fn on_waypoint_receive_range_changed(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(player) = world.players.get_by_entity_id(self.id()) else {
+            return;
+        };
+        if waypoints::is_receiving(&player) {
+            world.waypoint_manager().add_player(&player);
+        } else {
+            world.waypoint_manager().remove_player(self.id());
+        }
+    }
+
+    /// Vanilla `LivingEntity.waypointIcon`, as a copy.
+    fn waypoint_icon(&self) -> WaypointIcon {
+        self.living_base().locator_bar_icon().lock().clone()
+    }
+
+    /// Replaces vanilla `LivingEntity.locatorBarIcon`.
+    fn set_waypoint_icon(&self, icon: WaypointIcon) {
+        *self.living_base().locator_bar_icon().lock() = icon;
+    }
+
+    /// Vanilla `LivingEntity.readAdditionalSaveData` for `locator_bar_icon`.
+    fn load_waypoint_icon(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let icon = nbt
+            .compound("locator_bar_icon")
+            .and_then(|icon| waypoints::icon_from_nbt(&icon.to_owned()))
+            .unwrap_or_default();
+        self.set_waypoint_icon(icon);
     }
 
     /// Vanilla `LivingEntity.randomTeleport`: returns `true` and commits the

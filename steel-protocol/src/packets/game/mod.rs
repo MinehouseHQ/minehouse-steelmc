@@ -79,6 +79,7 @@ mod c_take_item_entity;
 mod c_teleport_entity;
 mod c_ticking_state;
 mod c_ticking_step;
+mod c_tracked_waypoint;
 mod c_update_advancement;
 mod c_update_attributes;
 mod c_update_mob_effect;
@@ -224,6 +225,10 @@ pub use c_take_item_entity::CTakeItemEntity;
 pub use c_teleport_entity::CTeleportEntity;
 pub use c_ticking_state::CTickingState;
 pub use c_ticking_step::CTickingStep;
+pub use c_tracked_waypoint::{
+    CTrackedWaypoint, DEFAULT_WAYPOINT_STYLE, TrackedWaypoint, WaypointIcon, WaypointId,
+    WaypointOperation, WaypointPosition,
+};
 pub use c_update_advancement::CUpdateAdvancements;
 pub use c_update_attributes::{
     AttributeModifierData, AttributeModifierOperation, AttributeSnapshot, CUpdateAttributes,
