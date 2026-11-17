@@ -7,6 +7,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty};
 use steel_utils::{BlockStateId, Direction};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::entity::ai::path::PathComputationType;
 
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 
@@ -25,6 +26,14 @@ impl EndRodBlock {
 }
 
 impl BlockBehavior for EndRodBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let clicked_face = context.clicked_face();
         let adjacent_pos = context.place_pos().relative(clicked_face.opposite());

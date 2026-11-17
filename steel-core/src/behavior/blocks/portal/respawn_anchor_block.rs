@@ -20,6 +20,7 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::damage::DamageSource;
 use crate::entity::dismount_helper;
 use crate::fluid::get_fluid_state;
@@ -292,6 +293,14 @@ impl RespawnAnchorBlock {
 }
 
 impl BlockBehavior for RespawnAnchorBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

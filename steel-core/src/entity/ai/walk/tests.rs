@@ -178,6 +178,49 @@ fn block_state_pathfindable_uses_behavior_overrides() {
 }
 
 #[test]
+fn partial_blocks_that_vanilla_marks_unpathable_block_paths() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    for block in [
+        &vanilla_blocks::CHEST,
+        &vanilla_blocks::TRAPPED_CHEST,
+        &vanilla_blocks::ENDER_CHEST,
+        &vanilla_blocks::OAK_STAIRS,
+        &vanilla_blocks::OAK_FENCE,
+        &vanilla_blocks::ANVIL,
+        &vanilla_blocks::HOPPER,
+        &vanilla_blocks::FARMLAND,
+        &vanilla_blocks::CAKE,
+        &vanilla_blocks::CAMPFIRE,
+        &vanilla_blocks::END_ROD,
+        &vanilla_blocks::POINTED_DRIPSTONE,
+        &vanilla_blocks::AZALEA,
+        &vanilla_blocks::OAK_WALL_HANGING_SIGN,
+    ] {
+        let state = block.default_state();
+        assert!(
+            !state.is_pathfindable(PathComputationType::Land),
+            "{} must not be land-pathfindable",
+            block.key
+        );
+    }
+
+    let dry_slab = vanilla_blocks::OAK_SLAB
+        .default_state()
+        .set_value(&BlockStateProperties::WATERLOGGED, false);
+    let wet_slab = dry_slab.set_value(&BlockStateProperties::WATERLOGGED, true);
+    assert!(!dry_slab.is_pathfindable(PathComputationType::Land));
+    assert!(!dry_slab.is_pathfindable(PathComputationType::Water));
+    assert!(wet_slab.is_pathfindable(PathComputationType::Water));
+    assert!(!wet_slab.is_pathfindable(PathComputationType::Air));
+    let copper_slab = vanilla_blocks::CUT_COPPER_SLAB
+        .default_state()
+        .set_value(&BlockStateProperties::WATERLOGGED, true);
+    assert!(copper_slab.is_pathfindable(PathComputationType::Water));
+}
+
+#[test]
 fn walk_node_evaluator_applies_vanilla_door_adjustments_for_mobs() {
     init_vanilla_registry();
     init_behaviors();

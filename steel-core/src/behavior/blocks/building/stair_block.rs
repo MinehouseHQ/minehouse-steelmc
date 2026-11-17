@@ -15,6 +15,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext},
     world::{LevelReader, ScheduledTickAccess, World},
@@ -99,6 +100,14 @@ impl StairBlock {
 }
 
 impl BlockBehavior for StairBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let half = if context.clicked_face() != Direction::Down
             && (context.clicked_face() == Direction::Up
@@ -161,6 +170,14 @@ impl WeatheringCopperStairBlock {
 }
 
 impl BlockBehavior for WeatheringCopperStairBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.stair.get_state_for_placement(context)
     }

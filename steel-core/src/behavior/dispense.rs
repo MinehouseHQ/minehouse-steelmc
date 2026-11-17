@@ -544,12 +544,18 @@ fn default_execute(source: &BlockSource<'_>, mut stack: ItemStack) -> ItemStack 
     stack
 }
 
+/// Vanilla `FlintAndSteelDispenseItemBehavior.execute`: success starts true
+/// and is only cleared when TNT refuses to prime, so a blocked target still
+/// wears the flint and steel down.
 fn flint_and_steel(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool) {
     let world = source.world;
     let direction = source.facing();
     let pos = source.target();
     let state = world.get_block_state(pos);
-    let success = if FireBlock::can_be_placed_at(world, pos, direction) {
+    let mut success = true;
+    if try_ignite_explosive_entities(source) {
+        // A sulfur cube in front takes the spark instead of the block.
+    } else if FireBlock::can_be_placed_at(world, pos, direction) {
         world.set_block(
             pos,
             FireBlock::get_state(world.as_ref(), pos),
@@ -560,7 +566,6 @@ fn flint_and_steel(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack
             pos,
             &GameEventContext::new(None, None),
         );
-        true
     } else if can_light(state) {
         world.set_block(
             pos,
@@ -572,21 +577,46 @@ fn flint_and_steel(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack
             pos,
             &GameEventContext::new(None, None),
         );
-        true
     } else if state.get_block() == &vanilla_blocks::TNT {
         if TntBlock::prime(world, pos) {
             world.remove_block(pos, false);
-            true
         } else {
-            false
+            success = false;
         }
-    } else {
-        false
-    };
+    }
     if success {
         stack.hurt_and_break(1, false);
     }
     (stack, success)
+}
+
+/// Vanilla `FlintAndSteelDispenseItemBehavior.tryIgniteExplosiveEntities`:
+/// lights the first sulfur cube in front that can still explode.
+fn try_ignite_explosive_entities(source: &BlockSource<'_>) -> bool {
+    let target = source.target();
+    let search_box = WorldAabb::new(
+        f64::from(target.x()),
+        f64::from(target.y()),
+        f64::from(target.z()),
+        f64::from(target.x() + 1),
+        f64::from(target.y() + 1),
+        f64::from(target.z() + 1),
+    );
+    let cubes = source
+        .world
+        .get_entities_in_aabb_matching(&search_box, |entity| {
+            entity
+                .downcast_ref::<SulfurCubeEntity>()
+                .is_some_and(SulfurCubeEntity::can_explode)
+        });
+    let Some(cube) = cubes
+        .first()
+        .and_then(|entity| entity.downcast_ref::<SulfurCubeEntity>())
+    else {
+        return false;
+    };
+    cube.prime_time(false);
+    true
 }
 
 fn bone_meal(source: &BlockSource<'_>, mut stack: ItemStack) -> (ItemStack, bool) {

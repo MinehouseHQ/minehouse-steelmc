@@ -13,6 +13,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, translations};
 use text_components::TextComponent;
 
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::blocks::FallingBlock,
     behavior::{BlockBehavior, BlockPlaceContext, Fallable, InteractionResult, InventoryAccess},
@@ -98,6 +99,14 @@ impl Fallable for AnvilBlock {
 }
 
 impl BlockBehavior for AnvilBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn on_place(
         &self,
         _state: BlockStateId,

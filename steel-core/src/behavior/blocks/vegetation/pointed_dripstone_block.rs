@@ -19,6 +19,7 @@ use crate::behavior::block::{
     schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::FallingBlockEntity;
 use crate::entity::projectile::Projectile;
@@ -75,6 +76,14 @@ impl PointedDripstoneBlock {
 }
 
 impl BlockBehavior for PointedDripstoneBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         self.speleothem().can_survive(state, world, pos)
     }
@@ -148,6 +157,14 @@ impl SulfurSpikeBlock {
 }
 
 impl BlockBehavior for SulfurSpikeBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         self.speleothem().can_survive(state, world, pos)
     }

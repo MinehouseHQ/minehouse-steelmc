@@ -5,6 +5,7 @@ use steel_registry::{blocks::BlockRef, items::item::BlockHitResult};
 use steel_utils::{BlockPos, BlockStateId, Direction, translations};
 use text_components::TextComponent;
 
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
@@ -32,6 +33,14 @@ impl GrindstoneBlock {
 }
 
 impl BlockBehavior for GrindstoneBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.face_attached.state_for_placement(context)
     }

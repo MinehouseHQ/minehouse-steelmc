@@ -16,6 +16,7 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
+use crate::entity::ai::path::PathComputationType;
 use crate::world::Explosion;
 use crate::{
     behavior::{
@@ -45,6 +46,14 @@ impl CandleCakeBlock {
 }
 
 impl BlockBehavior for CandleCakeBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     /// Vanilla `onExplosionHit`: wind bursts trigger this block.
     fn on_explosion_hit(
         &self,

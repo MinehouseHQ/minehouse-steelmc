@@ -34,6 +34,7 @@ use crate::block_entity::container_name::{ContainerName, block_center, check_con
 use crate::block_entity::entities::ChestBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::entity::TamableAnimal;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::entities::CatEntity;
 use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -595,6 +596,14 @@ macro_rules! impl_chest_block {
         }
 
         impl BlockBehavior for $name {
+            fn is_pathfindable(
+                &self,
+                _state: BlockStateId,
+                _computation_type: PathComputationType,
+            ) -> bool {
+                false
+            }
+
             fn get_state_for_placement(
                 &self,
                 context: &BlockPlaceContext<'_>,
