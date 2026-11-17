@@ -10,11 +10,43 @@ use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
+use steel_worldgen::structure::jigsaw::JigsawPieceData;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 use super::StructurePiecePlacer;
 
 impl StructurePiecePlacer {
+    /// Vanilla `PoolElementStructurePiece.place`, keeping the pool element's
+    /// jigsaw blocks when `keep_jigsaws` is set.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors PoolElementStructurePiece.place inputs"
+    )]
+    pub(crate) fn place_jigsaw_piece(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        data: &JigsawPieceData,
+        reference_pos: BlockPos,
+        clip: BoundingBox,
+        random: &mut WorldgenRandom,
+        biome_zoom_seed: i64,
+        keep_jigsaws: bool,
+    ) -> bool {
+        Self::place_pool_element(
+            region,
+            registry,
+            &data.pool_element,
+            BlockPos::new(data.position.x, data.position.y, data.position.z),
+            reference_pos,
+            data.rotation,
+            clip,
+            random,
+            data.liquid_settings,
+            biome_zoom_seed,
+            keep_jigsaws,
+        )
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "mirrors StructurePoolElement.place inputs"
@@ -30,6 +62,7 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
         liquid_settings: LiquidSettingsData,
         biome_zoom_seed: i64,
+        keep_jigsaws: bool,
     ) -> bool {
         match element {
             PoolElement::Single {
@@ -50,6 +83,7 @@ impl StructurePiecePlacer {
                 clip,
                 random,
                 liquid_settings,
+                keep_jigsaws,
             ),
             PoolElement::LegacySingle {
                 location,
@@ -69,6 +103,7 @@ impl StructurePiecePlacer {
                 clip,
                 random,
                 liquid_settings,
+                keep_jigsaws,
             ),
             PoolElement::Empty => true,
             PoolElement::Feature { feature, .. } => {
@@ -94,6 +129,7 @@ impl StructurePiecePlacer {
                         random,
                         liquid_settings,
                         biome_zoom_seed,
+                        keep_jigsaws,
                     ) {
                         return false;
                     }
@@ -121,6 +157,7 @@ impl StructurePiecePlacer {
         clip: BoundingBox,
         random: &mut WorldgenRandom,
         liquid_settings: LiquidSettingsData,
+        keep_jigsaws: bool,
     ) -> bool {
         let template = match StructureTemplate::load_vanilla(registry, location) {
             Ok(template) => template,
@@ -135,7 +172,7 @@ impl StructurePiecePlacer {
             processors: processor_list,
             block_ignore,
             late_block_ignore,
-            replace_jigsaws: true,
+            replace_jigsaws: !keep_jigsaws,
             projection: Some(projection),
             processor_random: StructureProcessorRandom::Positional,
             liquid_settings,

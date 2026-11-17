@@ -8,11 +8,9 @@ use std::cell::RefCell;
 use std::sync::{Arc, LazyLock};
 
 use glam::IVec3;
-use rustc_hash::FxHashMap;
 use steel_registry::feature::ConfiguredFeatureRef;
-use steel_registry::structure::{DimensionPadding, JigsawConfig, LiquidSettingsData, StartHeight};
+use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::StructureProcessorKind;
-use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::vanilla_templates;
 use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::random::RandomSource;
@@ -21,9 +19,7 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier, Rotation, translations};
 use steel_worldgen::biomes::obfuscate_biome_seed;
-use steel_worldgen::structure::{
-    StructureBlockIgnore, StructureMirror, jigsaw, vanilla_template_assets,
-};
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 use text_components::TextComponent;
 
 use super::execute::loaded_block_position;
@@ -40,6 +36,7 @@ use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{ChunkGenerator as _, StructureStartLevel};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::piece_placer::StructurePiecePlacer;
+use crate::worldgen::structure::{generate_jigsaw, jigsaw_assets};
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
@@ -163,12 +160,12 @@ fn place_feature(context: &Context, pos: BlockPos) -> Result<i32, CommandSyntaxE
     Ok(1)
 }
 
-/// Vanilla `PlaceCommand.placeJigsaw`, with `JigsawPlacement.generateJigsaw`.
+/// Vanilla `PlaceCommand.placeJigsaw`.
 fn place_jigsaw(context: &Context, pos: BlockPos) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
     let world = source.world();
     let pool = context.identifier("pool")?;
-    let (pools, templates) = jigsaw_assets(world);
+    let (pools, _) = jigsaw_assets(world);
     if !pools.contains_key(pool) {
         return Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_PLACE_JIGSAW_INVALID
@@ -180,61 +177,10 @@ fn place_jigsaw(context: &Context, pos: BlockPos) -> Result<i32, CommandSyntaxEr
     let max_depth = context.integer("max_depth")?;
     let chunk = chunk_containing(pos);
     check_loaded(world, chunk, chunk)?;
-
-    // `addPieces` with `generateJigsaw`'s fixed arguments: no expansion hack, no
-    // heightmap projection, distance 128, no aliases, the default padding and
-    // liquid settings. A constant start height takes nothing from the random.
-    let config = JigsawConfig {
-        start_pool: pool.clone(),
-        max_depth,
-        use_expansion_hack: false,
-        project_start_to_heightmap: None,
-        start_height: StartHeight::Constant(pos.y()),
-        max_distance_from_center: 128,
-        start_jigsaw_name: Some(target.clone()),
-        dimension_padding: DimensionPadding { bottom: 0, top: 0 },
-        pool_aliases: Vec::new(),
-        liquid_settings: LiquidSettingsData::ApplyWaterlogging,
-    };
-    // The generation context's random: `setLargeFeatureSeed` at the start chunk.
-    let mut rng = LegacyRandom::from_seed(0);
-    rng.set_large_feature_seed(world.seed(), chunk.0.x, chunk.0.y);
-    let min_y = world.get_min_y();
-    let assembly = jigsaw::assemble(
-        &config,
-        &mut rng,
-        pos.x(),
-        pos.z(),
-        pools,
-        templates,
-        &FxHashMap::default(),
-        // Only read for heightmap projection, which `generateJigsaw` never asks for.
-        &mut |_, _| min_y,
-        min_y,
-        min_y + world.get_height(),
-    )
-    .ok_or_else(|| {
-        CommandSyntaxError::dynamic(TextComponent::from(
+    if !generate_jigsaw(world, pool, target, max_depth, pos, false) {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
             &translations::COMMANDS_PLACE_JIGSAW_FAILED,
-        ))
-    })?;
-
-    // Vanilla places every piece with an infinite box. Its `ServerLevel` loads
-    // any chunk a piece reaches; Steel's live region writes loaded chunks only.
-    let infinite = BoundingBox::new(IVec3::splat(i32::MIN), IVec3::splat(i32::MAX));
-    let mut region = live_region(world, chunk);
-    let mut random = WorldgenRandom::from_seed(rand::random());
-    let biome_zoom_seed = obfuscate_biome_seed(world.seed());
-    for mut piece in assembly.into_structure_pieces(config.liquid_settings) {
-        StructurePiecePlacer::place_piece(
-            &mut region,
-            &REGISTRY,
-            &mut piece,
-            pos,
-            infinite,
-            &mut random,
-            biome_zoom_seed,
-        );
+        )));
     }
     source.send_success(
         &translations::COMMANDS_PLACE_JIGSAW_SUCCESS
@@ -247,25 +193,6 @@ fn place_jigsaw(context: &Context, pos: BlockPos) -> Result<i32, CommandSyntaxEr
         true,
     );
     Ok(1)
-}
-
-/// The template pools and templates jigsaw assembly reads: the world
-/// generator's, or the bundled vanilla ones for a generator without structures.
-fn jigsaw_assets(
-    world: &World,
-) -> (
-    &FxHashMap<Identifier, TemplatePoolData>,
-    &FxHashMap<Identifier, TemplateData>,
-) {
-    match world
-        .chunk_map
-        .world_gen_context
-        .generator
-        .structure_generator()
-    {
-        Some(generator) => (generator.template_pools(), generator.templates()),
-        None => vanilla_template_assets(),
-    }
 }
 
 /// Vanilla `PlaceCommand.placeStructure`.

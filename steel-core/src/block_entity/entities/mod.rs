@@ -25,6 +25,7 @@ mod end_gateway;
 mod end_portal;
 mod ender_chest;
 mod hopper;
+mod jigsaw;
 mod jukebox;
 mod lectern;
 mod piston_moving;
@@ -84,6 +85,7 @@ pub use hopper::{HOPPER_SLOTS, HopperBlockEntity};
 pub(crate) use hopper::{
     add_item_entity as hopper_add_item_entity, suck_in_items as hopper_suck_in_items,
 };
+pub use jigsaw::{DEFAULT_FINAL_STATE, JigsawBlockEntity, JigsawSettings, default_joint};
 pub use jukebox::JukeboxBlockEntity;
 pub use lectern::{LecternBlockEntity, LecternBook, PAGE_CHANGE_IMPULSE_TICKS};
 pub(crate) use lectern::{
