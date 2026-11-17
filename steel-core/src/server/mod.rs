@@ -14,6 +14,7 @@ pub mod registry_cache;
 mod run_loop;
 mod service_keys;
 pub mod tab_list;
+mod thread_priority;
 mod tick_overload;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
@@ -749,6 +750,10 @@ impl Server {
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            if thread_priority::lower_generation_priority_enabled() {
+                builder =
+                    builder.start_handler(|_| thread_priority::lower_current_thread_priority());
+            }
             if let Some(chunk_generation_threads) =
                 configured_chunk_generation_threads(config.chunk_generation_threads)
             {

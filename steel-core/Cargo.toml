@@ -44,6 +44,7 @@ crossbeam.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true
 scc.workspace = true
+libc.workspace = true
 
 # Data structures
 bitflags.workspace = true

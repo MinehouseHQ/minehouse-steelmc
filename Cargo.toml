@@ -74,6 +74,7 @@ crossbeam = "0.8.5"
 parking_lot = { version = "0.13.0", features = ["nightly", "arc_lock"] }
 rayon = "1.12.0"
 scc = "3.8.8"
+libc = "0.2.191"
 arc-swap = "1.9.3"
 
 # Data structures
