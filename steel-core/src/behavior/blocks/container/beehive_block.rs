@@ -116,6 +116,27 @@ impl BeehiveBlock {
         }
     }
 
+    /// Vanilla `dropHoneycomb`: pops the hive's harvest loot, sheared with
+    /// `tool`, at `pos`.
+    pub fn drop_honeycomb(
+        world: &Arc<World>,
+        tool: &ItemStack,
+        state: BlockStateId,
+        pos: BlockPos,
+        player: Option<&Player>,
+    ) {
+        for drop in drop_from_block_interact_loot_table(
+            &vanilla_loot_tables::HARVEST_BEEHIVE,
+            state,
+            world.get_block_entity(pos),
+            Some(tool),
+            player.map(|player| player as &dyn Entity),
+            &mut rand::rng(),
+        ) {
+            world.pop_resource(pos, drop);
+        }
+    }
+
     /// Vanilla `resetHoneyLevel`.
     pub fn reset_honey_level(world: &Arc<World>, state: BlockStateId, pos: BlockPos) {
         world.set_block(
@@ -259,16 +280,7 @@ impl BlockBehavior for BeehiveBlock {
         if honey_level >= MAX_HONEY_LEVELS {
             let held = inv.with_item(|item| item.clone());
             if held.is(&vanilla_items::SHEARS) {
-                for drop in drop_from_block_interact_loot_table(
-                    &vanilla_loot_tables::HARVEST_BEEHIVE,
-                    state,
-                    world.get_block_entity(pos),
-                    Some(&held),
-                    Some(player),
-                    &mut rand::rng(),
-                ) {
-                    world.pop_resource(pos, drop);
-                }
+                Self::drop_honeycomb(world, &held, state, pos, Some(player));
                 world.play_sound_at(
                     &sound_events::BLOCK_BEEHIVE_SHEAR,
                     SoundSource::Blocks,
