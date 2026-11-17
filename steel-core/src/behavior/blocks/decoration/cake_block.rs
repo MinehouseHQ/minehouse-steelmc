@@ -16,6 +16,7 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, candle_cakes,
@@ -71,6 +72,14 @@ impl CakeBlock {
 }
 
 impl BlockBehavior for CakeBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context
             .world

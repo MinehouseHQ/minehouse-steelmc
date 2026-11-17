@@ -6,12 +6,13 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureKind};
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
+use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::feature::FeatureDecorationRunner;
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
@@ -49,6 +50,18 @@ impl NetherFungusBlock {
 }
 
 impl BlockBehavior for NetherFungusBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        survival_update_shape(self, state, world, pos)
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &self.support_blocks)
     }
@@ -148,6 +161,32 @@ mod tests {
             &vanilla_configured_features::WARPED_FUNGUS_PLANTED,
             BlockTag::SUPPORTS_WARPED_FUNGUS,
         )
+    }
+
+    #[test]
+    fn fungus_pops_off_when_its_support_is_removed() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("fungus_support_loss");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let support = BlockPos::new(4, 64, 4);
+        world.set_block(
+            support,
+            vanilla_blocks::SOUL_SOIL.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        world.set_block(
+            support.above(),
+            vanilla_blocks::CRIMSON_FUNGUS.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        world.set_block(
+            support,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        assert!(world.get_block_state(support.above()).is_air());
     }
 
     fn crimson_fungus() -> NetherFungusBlock {

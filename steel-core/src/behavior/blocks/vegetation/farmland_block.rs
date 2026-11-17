@@ -11,6 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::ai::path::PathComputationType;
 use crate::world::World;
 
 use super::turn_to_dirt;
@@ -101,6 +102,14 @@ impl FarmlandBlock {
 }
 
 impl BlockBehavior for FarmlandBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Farmland is placed with moisture 0
         Some(self.block.default_state().set_value(MOISTURE, 0u8))

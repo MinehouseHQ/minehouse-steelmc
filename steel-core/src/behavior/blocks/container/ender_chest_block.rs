@@ -5,20 +5,23 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 use text_components::TextComponent;
 
 use super::anger_nearby_piglins;
 use crate::behavior::InventoryAccess;
-use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
+use crate::behavior::block::{
+    BlockBehavior, BlockEntityCreation, schedule_water_tick_if_waterlogged,
+};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::EnderChestBlockEntity;
+use crate::entity::ai::path::PathComputationType;
 use crate::inventory::menu::kinds::ender_chest;
 use crate::player::Player;
-use crate::world::{World, is_redstone_conductor};
+use crate::world::{ScheduledTickAccess, World, is_redstone_conductor};
 
 /// The ender chest block behavior.
 #[block_behavior]
@@ -35,6 +38,14 @@ impl EnderChestBlock {
 }
 
 impl BlockBehavior for EnderChestBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let facing = context.horizontal_direction().opposite();
 
@@ -47,6 +58,19 @@ impl BlockBehavior for EnderChestBlock {
                     context.is_water_source(),
                 ),
         )
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        state
     }
 
     fn use_without_item(
@@ -125,5 +149,40 @@ impl BlockBehavior for EnderChestBlock {
             pos,
             state,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
+
+    use super::*;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn waterlogged_ender_chests_schedule_water_on_neighbor_updates() {
+        init_vanilla_registry();
+        let behavior = EnderChestBlock::new(&vanilla_blocks::ENDER_CHEST);
+        let pos = BlockPos::new(0, 64, 0);
+        let level = TestLevel::default();
+        for (waterlogged, expected) in [(false, 0), (true, 1)] {
+            let state = vanilla_blocks::ENDER_CHEST
+                .default_state()
+                .set_value(&BlockStateProperties::WATERLOGGED, waterlogged);
+            let updated = behavior.update_shape(
+                state,
+                &level,
+                pos,
+                Direction::East,
+                pos.east(),
+                vanilla_blocks::AIR.default_state(),
+            );
+            assert_eq!(updated, state);
+            assert_eq!(level.scheduled_fluid_ticks.borrow().len(), expected);
+        }
+        assert_eq!(
+            level.scheduled_fluid_ticks.borrow()[0].fluid,
+            &vanilla_fluids::WATER
+        );
     }
 }

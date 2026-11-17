@@ -23,6 +23,7 @@ use steel_utils::{
 
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
+use crate::entity::ai::path::PathComputationType;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::LevelReader;
@@ -190,6 +191,14 @@ impl CampfireBlock {
 }
 
 impl BlockBehavior for CampfireBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let waterlogged = context.is_water_source();
         let below_state = context.world.get_block_state(context.place_pos().below());

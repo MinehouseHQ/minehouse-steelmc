@@ -35,6 +35,7 @@ use crate::behavior::{
 };
 use crate::block_entity::{BlockEntity, BlockEntityTicker, entities::SignBlockEntity};
 use crate::entity::Entity;
+use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
 
@@ -733,6 +734,14 @@ impl WallHangingSignBlock {
 }
 
 impl BlockBehavior for WallHangingSignBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
         true
     }

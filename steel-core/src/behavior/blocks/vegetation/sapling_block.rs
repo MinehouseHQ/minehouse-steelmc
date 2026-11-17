@@ -6,12 +6,13 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
+use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, TreeGrower, default_surviving_state, survives_on_tag};
 
@@ -71,6 +72,18 @@ impl SaplingBlock {
 }
 
 impl BlockBehavior for SaplingBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        survival_update_shape(self, state, world, pos)
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &BlockTag::SUPPORTS_VEGETATION)
     }
@@ -120,5 +133,45 @@ impl Bonemealable for SaplingBlock {
         pos: BlockPos,
     ) {
         self.advance_tree(world, pos, state, rng);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use steel_utils::ChunkPos;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn sapling_pops_off_when_its_soil_is_removed() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("sapling_support_loss");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let soil = BlockPos::new(4, 64, 4);
+        world.set_block(
+            soil,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        world.set_block(
+            soil.above(),
+            vanilla_blocks::OAK_SAPLING.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        assert_eq!(
+            world.get_block_state(soil.above()).get_block(),
+            &vanilla_blocks::OAK_SAPLING
+        );
+        world.set_block(
+            soil,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        assert!(world.get_block_state(soil.above()).is_air());
     }
 }

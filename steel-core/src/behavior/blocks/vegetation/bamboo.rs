@@ -13,6 +13,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation::bonemealable::Bonemealable},
     world::{LevelReader, ScheduledTickAccess, World},
@@ -171,6 +172,14 @@ impl Bonemealable for BambooStalkBlock {
 }
 
 impl BlockBehavior for BambooStalkBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if !context
             .world

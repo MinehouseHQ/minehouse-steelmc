@@ -107,3 +107,31 @@ fn a_powder_snow_bucket_places_powder_snow() {
         &vanilla_blocks::POWDER_SNOW
     );
 }
+
+#[test]
+fn flint_and_steel_wears_down_even_against_solid_stone() {
+    let world = world("dispense_flint_blocked");
+    put_in_front(&world, vanilla_blocks::STONE.default_state());
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::FLINT_AND_STEEL));
+    assert_eq!(
+        world.get_block_state(FRONT).get_block(),
+        &vanilla_blocks::STONE
+    );
+    assert_eq!(rest.get_damage_value(), 1);
+}
+
+#[test]
+fn flint_and_steel_sets_fire_to_air_in_front() {
+    let world = world("dispense_flint_fire");
+    world.set_block(
+        FRONT.below(),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    );
+    let rest = dispense(&world, ItemStack::new(&vanilla_items::FLINT_AND_STEEL));
+    assert_eq!(
+        world.get_block_state(FRONT).get_block(),
+        &vanilla_blocks::FIRE
+    );
+    assert_eq!(rest.get_damage_value(), 1);
+}

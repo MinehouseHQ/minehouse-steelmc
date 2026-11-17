@@ -20,6 +20,7 @@ use crate::block_entity::entities::HopperBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::entity::Entity;
 use crate::entity::InsideBlockEffectCollector;
+use crate::entity::ai::path::PathComputationType;
 use crate::entity::entities::ItemEntity;
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -53,6 +54,14 @@ impl HopperBlock {
 }
 
 impl BlockBehavior for HopperBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let direction = context.clicked_face().opposite();
         let facing = if direction.axis() == Axis::Y {

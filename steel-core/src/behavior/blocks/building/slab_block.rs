@@ -19,6 +19,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
@@ -56,6 +57,12 @@ impl SlabBlock {
 }
 
 impl BlockBehavior for SlabBlock {
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        // Vanilla `SlabBlock.isPathfindable`: only water paths, through a
+        // waterlogged slab.
+        computation_type == PathComputationType::Water && state.get_value(WATERLOGGED)
+    }
+
     /// Vanilla `SlabBlock.canBeReplaced`: a single slab takes a matching slab
     /// clicked into its free half, making a double slab.
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
@@ -146,6 +153,10 @@ impl WeatheringCopperSlabBlock {
 }
 
 impl BlockBehavior for WeatheringCopperSlabBlock {
+    fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
+        self.slab.is_pathfindable(state, computation_type)
+    }
+
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         self.slab.can_be_replaced(state, context)
     }

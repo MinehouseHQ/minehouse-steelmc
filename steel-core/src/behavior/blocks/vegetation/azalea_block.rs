@@ -8,6 +8,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::entity::ai::path::PathComputationType;
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
@@ -41,6 +42,14 @@ impl AzaleaBlock {
 }
 
 impl BlockBehavior for AzaleaBlock {
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
