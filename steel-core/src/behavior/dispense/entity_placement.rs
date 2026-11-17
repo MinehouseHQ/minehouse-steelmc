@@ -28,7 +28,7 @@ pub(super) const fn direction_y_rot(direction: Direction) -> f32 {
 }
 
 /// The unit box of the block in front of the dispenser (Vanilla `new AABB(pos)`).
-fn target_box(source: &BlockSource<'_>) -> WorldAabb {
+pub(super) fn target_box(source: &BlockSource<'_>) -> WorldAabb {
     let target = source.target();
     WorldAabb::new(
         f64::from(target.x()),

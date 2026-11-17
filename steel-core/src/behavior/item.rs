@@ -25,7 +25,7 @@ use text_components::{Modifier as _, TextComponent};
 
 use crate::behavior::items::{
     BannerItem, BlockItem, BoatItem, DefaultItemBehavior, MinecartItem, MobBucketItem,
-    SpawnEggItem, block_transformer,
+    SolidBucketItem, SpawnEggItem, block_transformer,
 };
 use crate::behavior::projectile_item::ProjectileItem;
 use crate::behavior::{
@@ -343,6 +343,11 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Returns this item behavior as a `BoatItem`.
     fn as_boat_item(&self) -> Option<&BoatItem> {
+        None
+    }
+
+    /// Returns this item behavior as a `SolidBucketItem`.
+    fn as_solid_bucket_item(&self) -> Option<&SolidBucketItem> {
         None
     }
 

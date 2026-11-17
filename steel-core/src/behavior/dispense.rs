@@ -35,6 +35,7 @@ use crate::inventory::prelude::EquipmentSlot;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
+mod block_interactions;
 mod entity_placement;
 mod vehicles;
 
@@ -116,12 +117,22 @@ pub(crate) enum DispenseBehavior {
     Boat(EntityTypeRef),
     /// Puts a minecart of this type on the rail in front, or drops it.
     Minecart(EntityTypeRef),
+    /// Places the powder snow in front, or drops the bucket.
+    SolidBucket,
+    /// Fills a bottle from a full hive or water in front.
+    GlassBottle,
+    /// Charges the respawn anchor in front.
+    Glowstone,
+    /// Brushes a scute off the armadillo in front.
+    Brush,
+    /// Waxes the copper block in front.
+    Honeycomb,
+    /// Turns the dirt in front into mud with a water bottle.
+    Potion,
 }
 
 impl DispenseBehavior {
     /// The behavior Vanilla registers for `item` in `DispenserBlock.DISPENSER_REGISTRY`.
-    // TODO: Powder snow buckets, glowstone, brushes, honeycomb, glass bottles and
-    // water potions still use the default drop.
     pub(crate) fn for_item(item: &ItemStack) -> Self {
         if item.is(&vanilla_items::WATER_BUCKET) {
             Self::FilledBucket(&vanilla_fluids::WATER)
@@ -153,6 +164,18 @@ impl DispenseBehavior {
             Self::ArmorStand
         } else if item.is(&vanilla_items::CHEST) {
             Self::Chest
+        } else if item.is(&vanilla_items::POWDER_SNOW_BUCKET) {
+            Self::SolidBucket
+        } else if item.is(&vanilla_items::GLASS_BOTTLE) {
+            Self::GlassBottle
+        } else if item.is(&vanilla_items::GLOWSTONE) {
+            Self::Glowstone
+        } else if item.is(&vanilla_items::BRUSH) {
+            Self::Brush
+        } else if item.is(&vanilla_items::HONEYCOMB) {
+            Self::Honeycomb
+        } else if item.is(&vanilla_items::POTION) {
+            Self::Potion
         } else if let Some(boat) = ITEM_BEHAVIORS.get_behavior(item.item).as_boat_item() {
             Self::Boat(boat.entity_type())
         } else if let Some(cart) = ITEM_BEHAVIORS.get_behavior(item.item).as_minecart_item() {
@@ -205,6 +228,8 @@ impl DispenseBehavior {
             | Self::ArmorStand
             | Self::Boat(_)
             | Self::Minecart(_)
+            | Self::SolidBucket
+            | Self::Potion
             | Self::SulfurCubeBlock => {
                 let result = self.execute_dropping_on_failure(source, stack);
                 play_default_sound_and_animation(source);
@@ -216,7 +241,11 @@ impl DispenseBehavior {
             | Self::Shears
             | Self::Tnt
             | Self::CarvedPumpkin
-            | Self::WitherSkeletonSkull => {
+            | Self::WitherSkeletonSkull
+            | Self::GlassBottle
+            | Self::Glowstone
+            | Self::Brush
+            | Self::Honeycomb => {
                 let (result, success) = match self {
                     Self::FlintAndSteel => flint_and_steel(source, stack),
                     Self::BoneMeal => bone_meal(source, stack),
@@ -224,6 +253,10 @@ impl DispenseBehavior {
                     Self::Tnt => tnt(source, stack),
                     Self::CarvedPumpkin => carved_pumpkin(source, stack),
                     Self::WitherSkeletonSkull => wither_skeleton_skull(source, stack),
+                    Self::GlassBottle => block_interactions::glass_bottle(source, stack),
+                    Self::Glowstone => block_interactions::glowstone(source, stack),
+                    Self::Brush => block_interactions::brush(source, stack),
+                    Self::Honeycomb => block_interactions::honeycomb(source, stack),
                     _ => shulker_box(source, stack),
                 };
                 source.world.level_event(
@@ -254,6 +287,8 @@ impl DispenseBehavior {
             Self::ArmorStand => return entity_placement::armor_stand(source, stack),
             Self::Boat(entity_type) => return vehicles::boat(source, stack, entity_type),
             Self::Minecart(entity_type) => return vehicles::minecart(source, stack, entity_type),
+            Self::SolidBucket => return block_interactions::solid_bucket(source, stack),
+            Self::Potion => return block_interactions::water_potion(source, stack),
             Self::Equipment => dispense_equipment(source, &mut stack),
             Self::Chest => entity_placement::chest_on_chested_horse(source, &mut stack),
             Self::SulfurCubeBlock => dispense_into_sulfur_cube(source, &mut stack),
