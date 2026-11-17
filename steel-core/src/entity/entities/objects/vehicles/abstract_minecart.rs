@@ -470,7 +470,7 @@ pub(super) fn is_rail(state: BlockStateId) -> bool {
 
 /// Vanilla `AbstractMinecart.comeOffTrack`.
 pub(super) fn come_off_track<M: AbstractMinecart>(minecart: &Arc<M>) {
-    let max_speed = minecart.max_speed();
+    let max_speed = off_track(&**minecart).unwrap_or_else(|| minecart.max_speed());
     let movement = minecart.velocity();
     minecart.set_velocity(DVec3::new(
         movement.x.clamp(-max_speed, max_speed),
@@ -566,6 +566,14 @@ pub trait MinecartObserver: Send + Sync {
 
     /// `cart` left its world for `reason`.
     fn removed(&self, _cart: &dyn Entity, _reason: RemovalReason) {}
+
+    /// `cart` is off the track this tick and about to move by the server's rules there.
+    /// `Some(limit)` takes the place of the server's limit on its speed along each axis,
+    /// blocks a tick, so it keeps more of the speed it had on the rails; the observer may
+    /// also change its velocity first. `None` keeps the server's limit.
+    fn off_track(&self, _cart: &dyn Entity, _world: &Arc<World>) -> Option<f64> {
+        None
+    }
 }
 
 static MINECART_OBSERVER: OnceLock<&'static dyn MinecartObserver> = OnceLock::new();
@@ -606,6 +614,13 @@ pub(super) fn drive(cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut(
 /// Whether the observer lets `cart` and `other` go through each other.
 pub(super) fn passes_through(cart: &dyn Entity, other: &dyn Entity) -> bool {
     minecart_observer().is_some_and(|observer| observer.passes_through(cart, other))
+}
+
+/// The observer's limit on the speed of `cart` off the track, if it sets one.
+fn off_track<M: AbstractMinecart + ?Sized>(minecart: &M) -> Option<f64> {
+    let (observer, cart) = observed(minecart)?;
+    let world = minecart.level()?;
+    observer.off_track(cart, &world)
 }
 
 /// Whether the observer has another cart put `cart` in place.

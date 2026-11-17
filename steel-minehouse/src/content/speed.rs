@@ -32,7 +32,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 use uuid::Uuid;
 
-use super::{end_lock, ride, trains};
+use super::{end_lock, flight, ride, trains};
 
 /// What every powered rail passed adds to a fast cart, blocks a second.
 const BOOST_PER_RAIL: f64 = 6.0;
@@ -171,6 +171,13 @@ fn substeps(cart: &dyn Entity, world: &Arc<World>, pass: &mut dyn FnMut()) {
         let share = step / scale;
         let from = cart.position();
         set_horizontal(cart, direction * share);
+        if rail.get_block().has_tag(&BlockTag::RAILS) {
+            flight::on_track(
+                cart,
+                world,
+                rail.get_value(&BlockStateProperties::RAIL_SHAPE),
+            );
+        }
         pass();
         // The first rail's activator is run by the server right after this; the others
         // are ours.
