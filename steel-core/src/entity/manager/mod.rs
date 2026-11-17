@@ -5,11 +5,16 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
+use std::array;
+use std::cell::UnsafeCell;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::{collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, slice};
 
+use crossbeam::utils::CachePadded;
 use glam::DVec3;
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use steel_registry::vanilla_entities;
@@ -835,9 +840,103 @@ impl EntityTickList {
     }
 }
 
+/// Read shards of [`ManagerStateLock`].
+const MANAGER_STATE_SHARDS: usize = 8;
+
+/// The manager state's lock: a read-write lock split into shards.
+///
+/// Every island reads the state many times per entity tick (collisions,
+/// pushing, tick checks) while moves write it far less often. With a single
+/// reader count, island threads spent much of their time on that one
+/// contended cache line. A reader now takes only its thread's shard; a
+/// writer takes every shard, in order, so it still excludes all readers and
+/// other writers.
+struct ManagerStateLock {
+    shards: [CachePadded<SyncRwLock<()>>; MANAGER_STATE_SHARDS],
+    state: UnsafeCell<ManagerState>,
+}
+
+// SAFETY: the state is only reached through `read` and `write`, which hold
+// one shard's read lock or every shard's write lock, so shared access never
+// overlaps exclusive access, as with `RwLock<ManagerState>`.
+unsafe impl Sync for ManagerStateLock where ManagerState: Send + Sync {}
+
+/// A read guard of [`ManagerStateLock`].
+struct ManagerStateRead<'a> {
+    _shard: RwLockReadGuard<'a, ()>,
+    state: &'a ManagerState,
+}
+
+impl Deref for ManagerStateRead<'_> {
+    type Target = ManagerState;
+
+    fn deref(&self) -> &ManagerState {
+        self.state
+    }
+}
+
+/// A write guard of [`ManagerStateLock`].
+struct ManagerStateWrite<'a> {
+    _shards: SmallVec<[RwLockWriteGuard<'a, ()>; MANAGER_STATE_SHARDS]>,
+    state: &'a mut ManagerState,
+}
+
+impl Deref for ManagerStateWrite<'_> {
+    type Target = ManagerState;
+
+    fn deref(&self) -> &ManagerState {
+        self.state
+    }
+}
+
+impl DerefMut for ManagerStateWrite<'_> {
+    fn deref_mut(&mut self) -> &mut ManagerState {
+        self.state
+    }
+}
+
+impl ManagerStateLock {
+    fn new(state: ManagerState) -> Self {
+        Self {
+            shards: array::from_fn(|_| CachePadded::new(SyncRwLock::new(()))),
+            state: UnsafeCell::new(state),
+        }
+    }
+
+    /// This thread's read shard, assigned round robin on first use.
+    fn shard_index() -> usize {
+        static NEXT_SHARD: AtomicUsize = AtomicUsize::new(0);
+        thread_local! {
+            static SHARD: usize = NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % MANAGER_STATE_SHARDS;
+        }
+        SHARD.with(|shard| *shard)
+    }
+
+    fn read(&self) -> ManagerStateRead<'_> {
+        let shard = self.shards[Self::shard_index()].read();
+        // SAFETY: a shard's read lock is held, so no writer holds every shard.
+        let state = unsafe { &*self.state.get() };
+        ManagerStateRead {
+            _shard: shard,
+            state,
+        }
+    }
+
+    fn write(&self) -> ManagerStateWrite<'_> {
+        let shards = self.shards.iter().map(|shard| shard.write()).collect();
+        // SAFETY: every shard's write lock is held, so no reader or other
+        // writer can reach the state.
+        let state = unsafe { &mut *self.state.get() };
+        ManagerStateWrite {
+            _shards: shards,
+            state,
+        }
+    }
+}
+
 /// Central world entity manager.
 pub struct WorldEntityManager {
-    state: SyncRwLock<ManagerState>,
+    state: ManagerStateLock,
 }
 
 impl fmt::Debug for WorldEntityManager {
@@ -856,7 +955,7 @@ impl WorldEntityManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            state: SyncRwLock::new(ManagerState::default()),
+            state: ManagerStateLock::new(ManagerState::default()),
         }
     }
 
