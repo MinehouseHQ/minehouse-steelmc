@@ -337,4 +337,110 @@ mod triggers {
             "minecraft:zombie"
         ));
     }
+
+    #[test]
+    fn totem_beacon_trade_and_loot_triggers_grant_their_advancements() {
+        use super::super::USED_TOTEM;
+
+        setup();
+        let fixture = fresh_test_world("criteria_interactions");
+        let player = player_in(&fixture.world, "Explorer");
+
+        player.trigger_item_criteria(&USED_TOTEM, &ItemStack::new(&vanilla_items::DIRT));
+        assert!(!criterion_done(
+            &player,
+            "minecraft:adventure/totem_of_undying",
+            "used_totem"
+        ));
+        player.trigger_item_criteria(
+            &USED_TOTEM,
+            &ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING),
+        );
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/totem_of_undying",
+            "used_totem"
+        ));
+
+        player.trigger_construct_beacon(1);
+        assert!(criterion_done(
+            &player,
+            "minecraft:nether/create_beacon",
+            "beacon"
+        ));
+        assert!(!criterion_done(
+            &player,
+            "minecraft:nether/create_full_beacon",
+            "beacon"
+        ));
+        player.trigger_construct_beacon(4);
+        assert!(criterion_done(
+            &player,
+            "minecraft:nether/create_full_beacon",
+            "beacon"
+        ));
+
+        player.trigger_trade(player.as_ref(), &ItemStack::new(&vanilla_items::EMERALD));
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/trade",
+            "traded"
+        ));
+
+        let desert_well: Identifier = "minecraft:archaeology/desert_well"
+            .parse()
+            .expect("loot table id parses");
+        player.trigger_generate_loot(&desert_well);
+        assert!(criterion_done(
+            &player,
+            "minecraft:adventure/salvage_sherd",
+            "desert_well"
+        ));
+    }
+
+    #[test]
+    fn mounting_a_boat_with_a_goat_grants_started_riding() {
+        use crate::entity::{
+            SharedEntity, create_entity_instance, init_entities, start_riding_entities,
+            start_riding_entities_with,
+        };
+        use glam::DVec3;
+        use steel_registry::vanilla_entities;
+        use steel_utils::ChunkPos;
+
+        setup();
+        init_entities();
+        let fixture = fresh_test_world("criteria_started_riding");
+        let world = &fixture.world;
+        let position = DVec3::new(8.5, 64.0, 8.5);
+        insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
+        let player = player_in(world, "Rider");
+        let player_entity: SharedEntity = Arc::clone(&player) as SharedEntity;
+        let spawn = |entity_type| {
+            let entity = create_entity_instance(world, entity_type, position)
+                .expect("the entity can be created");
+            world
+                .try_add_entity(Arc::clone(&entity))
+                .expect("the entity should attach to the loaded chunk");
+            entity
+        };
+        let boat = spawn(&vanilla_entities::OAK_BOAT);
+        let goat = spawn(&vanilla_entities::GOAT);
+        assert!(start_riding_entities_with(&goat, &boat, true, false));
+
+        // A quiet mount, as after a conversion, grants nothing.
+        assert!(start_riding_entities_with(
+            &player_entity,
+            &boat,
+            true,
+            false
+        ));
+        let criterion = "ride_a_boat_with_a_goat";
+        let advancement = "minecraft:husbandry/ride_a_boat_with_a_goat";
+        assert!(!criterion_done(&player, advancement, criterion));
+        player_entity.stop_riding();
+
+        assert!(start_riding_entities(&player_entity, &boat, true));
+        assert!(criterion_done(&player, advancement, criterion));
+    }
 }

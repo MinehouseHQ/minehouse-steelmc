@@ -11,6 +11,7 @@
     reason = "conditions of every trigger are decoded now; the triggers that read them are wired one group at a time"
 )]
 
+mod interaction_triggers;
 pub(crate) mod predicates;
 pub(crate) mod triggers;
 
@@ -33,6 +34,7 @@ use predicates::{
     ItemCondition, LocationPredicate, MobEffectsPredicate, StateCondition,
 };
 
+pub(crate) use interaction_triggers::*;
 pub(crate) use triggers::*;
 
 /// Vanilla `TagPredicate<DamageType>`: the tag is written `#namespace:path`

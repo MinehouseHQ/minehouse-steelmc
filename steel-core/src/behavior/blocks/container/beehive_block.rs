@@ -228,6 +228,8 @@ impl BlockBehavior for BeehiveBlock {
             world.update_neighbor_for_output_signal(pos, state.get_block());
             Self::anger_nearby_bees(world, pos);
         }
+        let bees_inside = i32::try_from(hive.occupant_count()).unwrap_or(i32::MAX);
+        player.trigger_bee_nest_destroyed(state, tool, bees_inside);
     }
 
     fn on_explosion_hit(

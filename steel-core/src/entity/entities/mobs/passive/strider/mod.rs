@@ -41,6 +41,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::mobs::hostile::ZombieGroupData;
 use crate::entity::entity::EntityEventSource as _;
 use crate::entity::spawn::{AgeableMobGroupData, create_entity_instance};
+use crate::entity::start_riding_entities_with;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, ItemBasedSteering,
@@ -415,7 +416,8 @@ impl Entity for StriderEntity {
             && let Some(world) = self.level()
             && let Some(vehicle) = world.get_entity_by_id(self.id())
         {
-            let _ = jockey.start_riding(&vehicle, false);
+            // Vanilla `Strider.spawnJockey`: `startRiding(this, true, false)`.
+            let _ = start_riding_entities_with(&jockey, &vehicle, true, false);
         }
         self.tick_heat_and_sounds();
         let entity = Arc::clone(&self).into_shared_entity();

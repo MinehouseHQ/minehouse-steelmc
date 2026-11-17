@@ -10,6 +10,7 @@ use std::{
     },
 };
 
+use crate::player::advancement::criteria::START_RIDING;
 use glam::DVec3;
 use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
@@ -1003,12 +1004,24 @@ impl EntityAnchor {
     }
 }
 
-/// Vanilla `Entity.startRiding`: `force` skips the passenger's and the
-/// vehicle's own boarding rules, like `/ride`.
+/// Vanilla `Entity.startRiding(entity, force)`: `force` skips the
+/// passenger's and the vehicle's own boarding rules, like `/ride`.
 pub(crate) fn start_riding_entities(
     passenger: &SharedEntity,
     entity_to_ride: &SharedEntity,
     force: bool,
+) -> bool {
+    start_riding_entities_with(passenger, entity_to_ride, force, true)
+}
+
+/// Vanilla `Entity.startRiding(entity, force, sendEventAndTriggers)`: without
+/// `send_event_and_triggers` nothing hears the mount, as for a conversion or a
+/// spawned jockey.
+pub(crate) fn start_riding_entities_with(
+    passenger: &SharedEntity,
+    entity_to_ride: &SharedEntity,
+    force: bool,
+    send_event_and_triggers: bool,
 ) -> bool {
     if !entity_to_ride.could_accept_passenger() {
         return false;
@@ -1048,7 +1061,20 @@ pub(crate) fn start_riding_entities(
     {
         mob.drop_leash();
     }
-    // TODO: Emit ENTITY_MOUNT game event and riding advancement trigger once those foundations exist.
+    if send_event_and_triggers {
+        if let Some(world) = passenger.level() {
+            world.game_event_at(
+                &vanilla_game_events::ENTITY_MOUNT,
+                entity_to_ride.position(),
+                &GameEventContext::new(Some(passenger.as_ref()), None),
+            );
+        }
+        for rider in indirect_passengers(entity_to_ride.as_ref()) {
+            if let Some(player) = rider.as_player() {
+                player.trigger_player_criteria(&START_RIDING);
+            }
+        }
+    }
     true
 }
 

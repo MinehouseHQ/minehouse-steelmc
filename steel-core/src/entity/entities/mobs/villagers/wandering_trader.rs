@@ -27,6 +27,7 @@ use super::trading::{MerchantOffers, TradeContext, add_offers_from_trade_set};
 use super::{FIRE_IN_NEIGHBOR_MALUS, FIRE_MALUS, INVENTORY_SIZE, load_inventory, save_inventory};
 use super::{
     Merchant, open_trading_screen, play_trade_updated_sound, record_trade, spawn_trade_experience,
+    trigger_trade,
 };
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
@@ -440,14 +441,15 @@ impl Merchant for WanderingTraderEntity {
 
     /// Vanilla `AbstractVillager.notifyTrade` with `WanderingTrader.rewardTradeXp`.
     fn notify_trade(&self, offer: usize) {
-        // Vanilla also fires the `TRADE` advancement trigger; Steel has no advancements.
-        let Some((_, reward_exp)) = self.with_offers(|offers| record_trade(self, offers, offer))
+        let Some((_, reward_exp, result)) =
+            self.with_offers(|offers| record_trade(self, offers, offer))
         else {
             return;
         };
         if reward_exp && let Some(world) = self.level() {
             spawn_trade_experience(&world, self.position(), 3 + rand::random_range(0..4));
         }
+        trigger_trade(self, &result);
     }
 
     fn notify_trade_updated(&self, result: &ItemStack) {

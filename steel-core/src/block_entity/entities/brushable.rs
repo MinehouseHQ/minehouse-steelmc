@@ -222,9 +222,10 @@ impl BrushableBlockEntity {
         player: &Player,
         brush: &ItemStack,
     ) {
+        // Vanilla `BrushableBlockEntity.unpackLootTable`.
+        player.trigger_generate_loot(loot_table_key);
         let loot = match loot_table {
             Some(table) => {
-                // TODO: Trigger CriteriaTriggers.GENERATE_LOOT once criteria triggers exist.
                 let equipment = living_loot_equipment(player);
                 let mut ctx = LootContext::new(rng)
                     .with_luck(player.get_luck())

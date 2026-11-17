@@ -132,7 +132,9 @@ impl ContainerLoot {
         let Some(pending) = self.get() else {
             return LootUnpack::Nothing;
         };
-        // TODO: Trigger CriteriaTriggers.GENERATE_LOOT once that trigger exists.
+        if let Some(player) = player {
+            player.trigger_generate_loot(&pending.table);
+        }
         let Some(table) = REGISTRY.loot_tables.by_key(&pending.table) else {
             log::warn!("Unknown container loot table {}", pending.table);
             self.clear();

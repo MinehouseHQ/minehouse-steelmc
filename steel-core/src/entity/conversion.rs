@@ -6,6 +6,7 @@ use steel_utils::types::Difficulty;
 use crate::entity::registry::ENTITIES;
 use crate::entity::{
     Entity, Mob, RemovalReason, SharedEntity, next_entity_id, start_riding_entities,
+    start_riding_entities_with,
 };
 use crate::inventory::equipment::EquipmentSlot;
 
@@ -147,7 +148,7 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
 
     if let Some(vehicle) = from.vehicle() {
         from.stop_riding();
-        start_riding_entities(to_arc, &vehicle, false);
+        start_riding_entities_with(to_arc, &vehicle, false, false);
     }
 
     if params.keep_equipment {

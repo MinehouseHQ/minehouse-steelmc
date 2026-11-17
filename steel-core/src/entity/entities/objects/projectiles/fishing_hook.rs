@@ -516,7 +516,16 @@ impl FishingHookEntity {
 
                 if let Some(hooked_in) = hooked_in {
                     self.pull_entity(&hooked_in);
-                    // TODO: criteria triggers (advancements)
+                    let hooked_item = hooked_in
+                        .as_ref()
+                        .downcast_ref::<ItemEntity>()
+                        .map(ItemEntity::get_item);
+                    player.trigger_fishing_rod_hooked(
+                        rod,
+                        hooked_in.as_ref(),
+                        hooked_item.as_ref(),
+                        &[],
+                    );
                     self.broadcast_entity_event(EntityStatus::FishingRodReelIn);
                     damage = if hooked_in.as_ref().is::<ItemEntity>() {
                         DMG_ITEM_ENTITY
@@ -543,7 +552,7 @@ impl FishingHookEntity {
                         let items =
                             vanilla_loot_tables::GAMEPLAY_FISHING.get_random_items(&mut loot_ctx);
 
-                        // TODO: criteria triggers (advancements)
+                        player.trigger_fishing_rod_hooked(rod, self, None, &items);
 
                         let Some(world) = self.level() else {
                             return damage;

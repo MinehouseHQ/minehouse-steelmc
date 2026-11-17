@@ -1008,7 +1008,23 @@ impl Player {
         }
 
         let animation = self.interact_animation(packet.hand);
+        let used_stack = self.inventory.lock().get_item_in_hand(packet.hand).clone();
         let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
+        // Vanilla `PLAYER_INTERACTED_WITH_ENTITY` on every `Success`: the used
+        // stack unless the interaction was not an item one.
+        match result {
+            InteractionResult::Success
+            | InteractionResult::SuccessServer
+            | InteractionResult::Consume => {
+                self.trigger_interacted_with_entity(&used_stack, target.as_ref());
+            }
+            InteractionResult::SuccessWithoutItem => {
+                self.trigger_interacted_with_entity(&ItemStack::empty(), target.as_ref());
+            }
+            InteractionResult::Fail
+            | InteractionResult::Pass
+            | InteractionResult::TryEmptyHandInteraction => {}
+        }
         self.swing_after_interaction(packet.hand, animation, result);
         self.broadcast_inventory_changes_and_trigger();
     }
