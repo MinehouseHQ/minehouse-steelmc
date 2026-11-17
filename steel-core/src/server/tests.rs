@@ -4891,6 +4891,7 @@ mod help_command;
 mod jigsaw_block;
 mod lava_fire;
 mod locate_biome;
+mod locate_poi;
 mod loot_command;
 mod place_command;
 mod projectile_owners;

@@ -11,6 +11,7 @@ mod message;
 mod nbt;
 mod particle;
 mod permission;
+mod poi_type;
 mod profile;
 mod queue;
 mod response_tracker;
@@ -34,6 +35,7 @@ pub(crate) use dialog::CommandDialog;
 pub use item::{ExtensionItems, extension_item_stack, set_extension_items};
 pub(crate) use item_predicate::{ItemPredicate, registered_item_predicate_matches};
 pub(crate) use permission::PermissionGroupName;
+pub(crate) use poi_type::PoiTypeOrTag;
 pub(crate) use profile::GameProfileArgument;
 pub use queue::CommandSuspensionOrder;
 pub(crate) use queue::{
