@@ -86,6 +86,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         locator_bar_icon: Vec::new(),
         entered_nether_pos: Vec::new(),
         last_explosion_impact_pos: Vec::new(),
+        post_effects: Vec::new(),
     }
 }
 
@@ -555,6 +556,7 @@ fn player_files_with_shoulders_but_without_effects_still_load() {
         payload.len()
             - icon.len()
             - movement_positions_len(&file)
+            - post_effects_len(&file)
             - effects.len()
             - omen.len()
             - tracker.len()
@@ -1007,6 +1009,7 @@ fn player_files_without_raid_omen_position_still_load() {
         payload.len()
             - icon.len()
             - movement_positions_len(&file)
+            - post_effects_len(&file)
             - omen.len()
             - tracker.len()
             - book.len(),
@@ -1047,7 +1050,12 @@ fn player_files_without_warden_spawn_tracker_still_load() {
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
     payload.truncate(
-        payload.len() - icon.len() - movement_positions_len(&file) - tracker.len() - book.len(),
+        payload.len()
+            - icon.len()
+            - movement_positions_len(&file)
+            - post_effects_len(&file)
+            - tracker.len()
+            - book.len(),
     );
     let encoded = encode_file(PLAYER_MAGIC, 13, Ok(payload)).expect("v13 file should encode");
 
@@ -1083,7 +1091,13 @@ fn player_files_without_recipe_book_still_load() {
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let book = wincode::serialize(&file.recipe_book).expect("recipe book should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len() - movement_positions_len(&file) - book.len());
+    payload.truncate(
+        payload.len()
+            - icon.len()
+            - movement_positions_len(&file)
+            - post_effects_len(&file)
+            - book.len(),
+    );
     let encoded = encode_file(PLAYER_MAGIC, 14, Ok(payload)).expect("v14 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 14 file should decode");
@@ -1246,7 +1260,9 @@ fn player_files_without_locator_bar_icon_still_load() {
     let file = sample_player_file(12);
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
     let icon = wincode::serialize(&file.locator_bar_icon).expect("icon should serialize");
-    payload.truncate(payload.len() - icon.len() - movement_positions_len(&file));
+    payload.truncate(
+        payload.len() - icon.len() - movement_positions_len(&file) - post_effects_len(&file),
+    );
     let encoded = encode_file(PLAYER_MAGIC, 15, Ok(payload)).expect("v15 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 15 file should decode");
@@ -1264,12 +1280,51 @@ fn movement_positions_len(file: &PlayerDataFile) -> usize {
             .len()
 }
 
+/// Encoded length of the trailing post effects (storage v18).
+fn post_effects_len(file: &PlayerDataFile) -> usize {
+    wincode::serialize(&file.post_effects)
+        .expect("post effects should serialize")
+        .len()
+}
+
+#[test]
+fn player_files_without_post_effects_still_load() {
+    // Storage version 17 is the current layout without the trailing post effects.
+    let file = sample_player_file(14);
+    let mut payload = wincode::serialize(&file).expect("player file should serialize");
+    payload.truncate(payload.len() - post_effects_len(&file));
+    let encoded = encode_file(PLAYER_MAGIC, 17, Ok(payload)).expect("v17 file should encode");
+
+    let decoded = decode_player_file(&encoded).expect("a storage version 17 file should decode");
+    assert_eq!(decoded.data_version, PLAYER_DATA_VERSION);
+    assert_eq!(decoded.post_effects, Vec::<String>::new());
+}
+
+#[test]
+fn post_effects_roundtrip() {
+    init_vanilla_registry();
+    let mut persistent = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+    persistent.post_effects = vec![
+        Identifier::vanilla_static("creeper"),
+        Identifier::new_static("example", "glow"),
+    ];
+    let file = PlayerDataFile::from_persistent(&persistent).expect("player file should build");
+    let encoded = encode_player_file(&file).expect("player file should encode");
+    let decoded = decode_player_file(&encoded)
+        .expect("player file should decode")
+        .into_persistent()
+        .expect("player file should convert");
+    assert_eq!(decoded.post_effects, persistent.post_effects);
+}
+
 #[test]
 fn player_files_without_movement_positions_still_load() {
     // Storage version 16 is the current layout without the trailing positions.
     let file = sample_player_file(13);
     let mut payload = wincode::serialize(&file).expect("player file should serialize");
-    payload.truncate(payload.len() - movement_positions_len(&file));
+    payload.truncate(payload.len() - movement_positions_len(&file) - post_effects_len(&file));
     let encoded = encode_file(PLAYER_MAGIC, 16, Ok(payload)).expect("v16 file should encode");
 
     let decoded = decode_player_file(&encoded).expect("a storage version 16 file should decode");

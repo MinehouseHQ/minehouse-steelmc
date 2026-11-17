@@ -79,6 +79,10 @@ impl Player {
             .lock()
             .restore_from(&old_player.movement_criteria.lock());
         self.set_recipe_book(old_player.recipe_book());
+        // Vanilla `PlayerList.respawn` adds each of the old player's post effects.
+        for effect in old_player.post_effects() {
+            self.add_post_effect(effect);
+        }
         self.set_waypoint_icon(old_player.waypoint_icon());
         self.set_shoulder_entity_left(old_player.shoulder_entity_left());
         self.set_shoulder_entity_right(old_player.shoulder_entity_right());

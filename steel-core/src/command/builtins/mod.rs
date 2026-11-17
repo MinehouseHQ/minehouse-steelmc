@@ -40,6 +40,7 @@ mod perms;
 mod place;
 mod playsound;
 mod position;
+mod posteffect;
 mod random;
 mod recipe;
 mod reload;
@@ -145,6 +146,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(place::registration())?;
     builder.register(particle::registration())?;
     builder.register(playsound::registration())?;
+    builder.register(posteffect::registration())?;
     builder.register(random::registration())?;
     builder.register(recipe::registration())?;
     builder.register(reload::registration())?;
@@ -270,6 +272,7 @@ mod tests {
                 "place",
                 "particle",
                 "playsound",
+                "posteffect",
                 "random",
                 "recipe",
                 "reload",

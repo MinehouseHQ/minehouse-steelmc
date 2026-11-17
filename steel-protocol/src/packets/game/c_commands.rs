@@ -484,6 +484,7 @@ pub enum SuggestionType {
     AllRecipes,
     AvailableSounds,
     SummonableEntities,
+    PostEffects,
 }
 
 impl SuggestionType {
@@ -493,6 +494,7 @@ impl SuggestionType {
             SuggestionType::AllRecipes => "minecraft:all_recipes",
             SuggestionType::AvailableSounds => "minecraft:available_sounds",
             SuggestionType::SummonableEntities => "minecraft:summonable_entities",
+            SuggestionType::PostEffects => "minecraft:post_effects",
         }
     }
 }

@@ -51,7 +51,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 17;
+const PLAYER_STORAGE_VERSION: u16 = 18;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -131,6 +131,8 @@ struct PlayerDataFile {
     entered_nether_pos: Vec<[f64; 3]>,
     /// Vanilla `last_explosion_impact_pos`; empty or one `[x, y, z]`.
     last_explosion_impact_pos: Vec<[f64; 3]>,
+    /// Vanilla `post_effects`, as identifiers in their applied order.
+    post_effects: Vec<String>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -508,6 +510,7 @@ impl PlayerDataFile {
             },
             entered_nether_pos: positions.entered_nether_pos.into_iter().collect(),
             last_explosion_impact_pos: positions.last_explosion_impact_pos.into_iter().collect(),
+            post_effects: data.post_effects.iter().map(ToString::to_string).collect(),
         })
     }
 
@@ -604,6 +607,11 @@ impl PlayerDataFile {
                 entered_nether_pos: self.entered_nether_pos.first().copied(),
                 last_explosion_impact_pos: self.last_explosion_impact_pos.first().copied(),
             },
+            post_effects: self
+                .post_effects
+                .iter()
+                .filter_map(|effect| effect.parse().ok())
+                .collect(),
             capture_order: next_capture_order(),
         })
     }
@@ -724,26 +732,31 @@ fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
     // fields are appended empty before decoding: (storage version, data version, missing).
     let legacy = match stored_version(bytes) {
         // Before shoulder entities, active effects, the raid omen position,
-        // the warden spawn tracker, the recipe book, the locator bar icon and
-        // the movement trigger positions.
-        Some(10) => Some((10, 7, 9)),
+        // the warden spawn tracker, the recipe book, the locator bar icon,
+        // the movement trigger positions and the post effects.
+        Some(10) => Some((10, 7, 10)),
         // Before active effects, the raid omen position, the warden spawn
-        // tracker, the recipe book, the locator bar icon and the movement
-        // trigger positions.
-        Some(11) => Some((11, 8, 7)),
+        // tracker, the recipe book, the locator bar icon, the movement
+        // trigger positions and the post effects.
+        Some(11) => Some((11, 8, 8)),
         // Before the raid omen position, the warden spawn tracker, the
-        // recipe book, the locator bar icon and the movement trigger positions.
-        Some(12) => Some((12, 9, 6)),
+        // recipe book, the locator bar icon, the movement trigger positions
+        // and the post effects.
+        Some(12) => Some((12, 9, 7)),
         // Before the warden spawn tracker, the recipe book, the locator bar
-        // icon and the movement trigger positions.
-        Some(13) => Some((13, 10, 5)),
-        // Before the recipe book, the locator bar icon and the movement
-        // trigger positions.
-        Some(14) => Some((14, 11, 4)),
-        // Before the locator bar icon and the movement trigger positions.
-        Some(15) => Some((15, 12, 3)),
-        // Before `entered_nether_pos` and `last_explosion_impact_pos`.
-        Some(16) => Some((16, 13, 2)),
+        // icon, the movement trigger positions and the post effects.
+        Some(13) => Some((13, 10, 6)),
+        // Before the recipe book, the locator bar icon, the movement trigger
+        // positions and the post effects.
+        Some(14) => Some((14, 11, 5)),
+        // Before the locator bar icon, the movement trigger positions and
+        // the post effects.
+        Some(15) => Some((15, 12, 4)),
+        // Before `entered_nether_pos`, `last_explosion_impact_pos` and the
+        // post effects.
+        Some(16) => Some((16, 13, 3)),
+        // Before the post effects.
+        Some(17) => Some((17, 14, 1)),
         _ => None,
     };
     let Some((storage_version, data_version, missing_fields)) = legacy else {
