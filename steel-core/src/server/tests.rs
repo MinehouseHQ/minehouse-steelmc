@@ -4887,6 +4887,7 @@ mod place_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;
+mod spectate_command;
 mod stopwatch_command;
 mod world_log;
 

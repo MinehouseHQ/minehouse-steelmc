@@ -66,11 +66,11 @@ impl Player {
             self.remove_entities_on_shoulder();
             // TODO: Stop item use once living item-use state is implemented.
             enchantment_helper::stop_location_based_effects(self);
-        } else if was_spectator {
-            self.send_packet(CSetCamera {
-                camera_id: self.id(),
-            });
-            enchantment_helper::run_location_changed_effects(&self.get_world(), self);
+        } else {
+            self.set_camera(None);
+            if was_spectator {
+                enchantment_helper::run_location_changed_effects(&self.get_world(), self);
+            }
         }
 
         self.send_abilities();
@@ -307,14 +307,10 @@ impl Player {
             return;
         };
 
-        // TODO: Store the camera entity and apply world-border/cross-world
-        // setCamera semantics once those foundations exist.
         if self.is_within_entity_interaction_range(target.bounding_box(), 3.0)
             && target.is_pickable()
         {
-            self.send_packet(CSetCamera {
-                camera_id: target.id(),
-            });
+            self.set_camera(Some(target));
         }
     }
 

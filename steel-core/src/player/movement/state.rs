@@ -82,6 +82,11 @@ impl MovementState {
         Some(self.client_vehicle_movement.good_positions())
     }
 
+    /// Vanilla `ServerGamePacketListenerImpl.resetPosition`.
+    pub(in crate::player) const fn reset_position(&mut self, position: DVec3) {
+        self.client_movement.reset_position(position);
+    }
+
     /// Resets movement validation bases after a server position sync.
     pub(in crate::player) const fn reset_for_position_sync(&mut self, position: DVec3) {
         self.client_movement.reset_for_position_sync(position);

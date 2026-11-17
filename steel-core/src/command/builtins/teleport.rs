@@ -3,7 +3,7 @@
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
-use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
+use steel_protocol::packets::game::RelativeMovement;
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -273,9 +273,7 @@ pub(super) fn teleport_entity_to(target: &SharedEntity, transition: &TeleportTra
         if player.is_sleeping() {
             player.stop_sleeping();
         }
-        player.send_packet(CSetCamera {
-            camera_id: player.id(),
-        });
+        player.set_camera(None);
     }
     change_entity_world(Arc::clone(target), transition).is_some()
 }

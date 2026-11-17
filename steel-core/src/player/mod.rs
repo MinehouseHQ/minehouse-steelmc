@@ -2,6 +2,7 @@
 mod abilities;
 pub mod advancement;
 pub mod books;
+pub mod camera;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -317,6 +318,9 @@ pub struct Player {
     raid_omen_position: SyncMutex<Option<BlockPos>>,
     /// Vanilla `ServerPlayer.wardenSpawnTracker`.
     warden_spawn_tracker: SyncMutex<WardenSpawnTracker>,
+    /// Vanilla `ServerPlayer.camera`: the entity a spectator watches
+    /// through, `None` while it is the player.
+    camera: SyncMutex<Option<SharedEntity>>,
     /// Vanilla `ServerPlayer.recipeBook`.
     recipe_book: SyncMutex<recipe_book::ServerRecipeBook>,
     /// Vanilla `shoulderEntityLeft`/`shoulderEntityRight`: perched parrots.
@@ -734,6 +738,7 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             raid_omen_position: SyncMutex::new(None),
             warden_spawn_tracker: SyncMutex::new(WardenSpawnTracker::default()),
+            camera: SyncMutex::new(None),
             recipe_book: SyncMutex::new(recipe_book::ServerRecipeBook::default()),
             shoulder_entities: SyncMutex::new(shoulder::ShoulderEntities::default()),
             fishing: SyncMutex::new(None),
@@ -1766,7 +1771,7 @@ impl Entity for Player {
 
     fn broadcast_to_player(&self, player: &Player) -> bool {
         if player.is_spectator() {
-            true
+            self.is_own_camera()
         } else {
             !self.is_spectator()
         }
@@ -2172,10 +2177,10 @@ impl LivingEntity for Player {
             }
         }
 
-        if self.disconnect_if_floating_too_long() {
-            return;
-        }
-        if self.disconnect_if_vehicle_floating_too_long() {
+        self.tick_camera();
+
+        if self.disconnect_if_floating_too_long() || self.disconnect_if_vehicle_floating_too_long()
+        {
             return;
         }
 

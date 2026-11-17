@@ -79,6 +79,13 @@ impl ClientAuthoredMovementState {
         self.known_move_packet_count = self.received_move_packet_count;
     }
 
+    /// Vanilla `ServerGamePacketListenerImpl.resetPosition`: both validation
+    /// bases move to `position`.
+    pub(crate) const fn reset_position(&mut self, position: DVec3) {
+        self.first_good_position = position;
+        self.last_good_position = position;
+    }
+
     /// Resets validation bases after a server position sync.
     pub(crate) const fn reset_for_position_sync(&mut self, position: DVec3) {
         self.last_good_position = position;
