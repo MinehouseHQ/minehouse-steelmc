@@ -10,7 +10,7 @@ use simdnbt::{
     owned::{NbtCompound, NbtList, NbtTag},
 };
 use steel_registry::{
-    ItemStackTemplate, REGISTRY,
+    REGISTRY,
     blocks::{
         behavior::PushReaction, block_state_ext::BlockStateExt, properties::BlockStateProperties,
     },
@@ -31,7 +31,7 @@ use steel_registry::{sound_events, vanilla_game_events};
 
 use crate::{
     behavior::{ITEM_BEHAVIORS, blocks::ShulkerBoxBlock},
-    block_entity::container_name::ContainerName,
+    block_entity::container_name::{ContainerName, apply_container_component, contents_from_items},
     block_entity::container_openers::container_sound_pitch,
     block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter},
     entity::Entity as _,
@@ -281,28 +281,10 @@ impl ShulkerBoxBlockEntity {
         self.container.lock().is_empty()
     }
 
-    /// Collect all the items inside the shulker box into an `ItemContainerContents`
-    ///
-    /// # Panics
-    /// Panics if shulker box somehow has more than 256 slots. This should never happen
+    /// The shulker box's items as vanilla `ItemContainerContents.fromItems`.
     #[must_use]
     pub fn container_contents(&self) -> ItemContainerContents {
-        let container = self.container.lock();
-
-        let size = container.get_container_size();
-        let slots: Vec<Option<ItemStackTemplate>> = (0..size)
-            .map(|i| {
-                let item = container.get_item(i);
-                if item.is_empty() {
-                    None
-                } else {
-                    ItemStackTemplate::from_stack(item).ok()
-                }
-            })
-            .collect();
-
-        ItemContainerContents::new(slots)
-            .expect("shulker box slot count is always within the 256 container-contents limit")
+        contents_from_items(&self.container.lock().items)
     }
 
     /// Interpolated progress for smooth rendering between ticks.
@@ -398,22 +380,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
 
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.name.apply_implicit_components(components);
-        let contents = components.get_or_default(CONTAINER, ItemContainerContents::empty());
-
-        let mut container = self.container.lock();
-        container.items.fill(ItemStack::empty());
-        for (slot, template) in contents.items().iter().enumerate() {
-            if slot >= SHULKER_BOX_SLOTS {
-                break;
-            }
-            if let Some(template) = template {
-                container.items_mut()[slot] = ItemStack::with_count_and_patch(
-                    template.item(),
-                    template.count(),
-                    template.components().clone(),
-                );
-            }
-        }
+        apply_container_component(components, &mut self.container.lock().items);
     }
 
     /// Stores the block entity inventory in the container component

@@ -6,16 +6,20 @@ use std::sync::Arc;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, ChestType, Direction};
-use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, LOCK};
+use steel_registry::data_components::ItemContainerContents;
+use steel_registry::data_components::vanilla_components::{
+    CONTAINER, CONTAINER_LOOT, CUSTOM_NAME, LOCK, SeededContainerLoot,
+};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
 use steel_utils::types::{InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos};
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 use text_components::TextComponent;
 
 use super::scoreboard_command::with_server_world;
 use super::{insert_ready_full_chunk, test_player_with_packets};
 use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+use crate::block_entity::container_name::contents_from_items;
 use crate::block_entity::init_block_entities;
 use crate::entity::{init_entities, next_entity_id};
 use crate::player::Player;
@@ -198,4 +202,66 @@ fn a_beacon_keeps_its_name_and_lock() {
         hold(&player, ItemStack::new(&vanilla_items::DIAMOND));
         assert!(open(world, pos, &player));
     });
+}
+
+#[test]
+fn a_placed_barrel_takes_the_stacks_contents_and_loot() {
+    init();
+    with_server_world("container_locks_barrel_contents", |_server, world| {
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let pos = BlockPos::new(4, 64, 4);
+        world.set_block(
+            pos,
+            vanilla_blocks::BARREL.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        let Some(barrel) = world.get_block_entity(pos) else {
+            panic!("a barrel");
+        };
+        let mut stack = ItemStack::new(&vanilla_items::BARREL);
+        let mut items = vec![ItemStack::empty(); 3];
+        items[2] = ItemStack::with_count(&vanilla_items::DIAMOND, 5);
+        stack.set(CONTAINER, contents_from_items(&items));
+        barrel.apply_components_from_item_stack(&stack);
+
+        let collected = barrel.collect_components();
+        let Some(contents) = collected.get(CONTAINER) else {
+            panic!("the barrel reports its contents");
+        };
+        assert_eq!(
+            contents.items().len(),
+            3,
+            "trailing empty slots are trimmed"
+        );
+        let Some(Some(diamonds)) = contents.items().get(2) else {
+            panic!("the diamonds sit in the third slot");
+        };
+        assert_eq!(diamonds.count(), 5);
+
+        let mut looted = ItemStack::new(&vanilla_items::BARREL);
+        looted.set(
+            CONTAINER_LOOT,
+            SeededContainerLoot::new(Identifier::vanilla_static("chests/simple_dungeon"), 7),
+        );
+        barrel.apply_components_from_item_stack(&looted);
+        let saved = barrel.save_custom_only();
+        assert_eq!(
+            saved.string("LootTable").map(ToString::to_string),
+            Some("minecraft:chests/simple_dungeon".to_owned())
+        );
+        assert_eq!(saved.long("LootTableSeed"), Some(7));
+        assert!(
+            barrel.collect_components().get(CONTAINER_LOOT).is_some(),
+            "a broken barrel keeps its pending loot"
+        );
+    });
+}
+
+#[test]
+fn an_empty_container_collects_empty_contents() {
+    init_vanilla_registry();
+    assert_eq!(
+        contents_from_items(&[ItemStack::empty(), ItemStack::empty()]),
+        ItemContainerContents::empty()
+    );
 }

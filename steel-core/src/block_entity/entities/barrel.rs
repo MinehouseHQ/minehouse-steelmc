@@ -16,6 +16,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::data_components::DataComponentMap;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{sound_events, vanilla_block_entity_types};
@@ -25,7 +26,10 @@ use steel_utils::{
 };
 
 use crate::block_entity::container_loot::ContainerLoot;
-use crate::block_entity::container_name::ContainerName;
+use crate::block_entity::container_name::{
+    ContainerName, apply_container_component, apply_container_loot_component,
+    collect_container_loot_component, contents_from_items,
+};
 use crate::block_entity::container_openers::{
     ContainerOpenersCounter, ContainerOpenersHooks, container_sound_pitch,
 };
@@ -239,10 +243,17 @@ impl BlockEntity for BarrelBlockEntity {
 
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.name.apply_implicit_components(components);
+        apply_container_component(components, &mut self.container.lock().items);
+        apply_container_loot_component(components, &self.loot);
     }
 
     fn collect_implicit_components(&self, components: &mut DataComponentMap) {
         self.name.collect_implicit_components(components);
+        components.set(
+            CONTAINER,
+            Some(contents_from_items(&self.container.lock().items)),
+        );
+        collect_container_loot_component(components, &self.loot);
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
