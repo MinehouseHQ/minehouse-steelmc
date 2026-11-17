@@ -68,7 +68,7 @@ impl ScaffoldingBlockItem {
                 if placement_pos.y() > context.world.get_max_y()
                     && let Some(player) = context.player()
                 {
-                    player.send_build_limit_too_high_message(context.world.get_max_y());
+                    player.send_build_limit_message(true, context.world.get_max_y());
                 }
                 break;
             }

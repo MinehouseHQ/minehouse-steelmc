@@ -181,11 +181,12 @@ impl World {
         self.get_min_y() + self.get_height()
     }
 
-    /// Checks if a player may interact with the world at the given position.
-    /// Currently only checks if position is within world bounds.
+    /// Vanilla `ServerLevel.mayInteract` for a player: the position must be
+    /// inside the world border. Steel has no dedicated-server spawn
+    /// protection, the vanilla `spawn-protection=0` behavior.
     #[must_use]
-    pub const fn may_interact(&self, _player: &Player, pos: BlockPos) -> bool {
-        self.is_in_valid_bounds(pos)
+    pub fn may_interact(&self, _player: &Player, pos: BlockPos) -> bool {
+        self.is_block_within_world_border(pos)
     }
 
     /// Checks if a block's collision shape at the given position is unobstructed by entities.
