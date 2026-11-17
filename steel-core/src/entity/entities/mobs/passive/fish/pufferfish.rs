@@ -23,7 +23,7 @@ use crate::entity::ai::goal::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::entity::EntityEventSource as _;
-use crate::entity::fish::check_surface_water_animal_spawn_rules;
+use crate::entity::fish::{FISH_MAX_SPAWN_CLUSTER_SIZE, check_surface_water_animal_spawn_rules};
 use crate::entity::{
     AbstractFish, DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectInstance,
@@ -440,6 +440,11 @@ impl Mob for PufferfishEntity {
 
     fn requires_custom_persistence(&self) -> bool {
         self.fish_requires_custom_persistence()
+    }
+
+    /// Vanilla `AbstractFish.getMaxSpawnClusterSize`.
+    fn max_spawn_cluster_size(&self) -> i32 {
+        FISH_MAX_SPAWN_CLUSTER_SIZE
     }
 
     fn mob_can_be_leashed(&self) -> bool {

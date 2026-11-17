@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -251,6 +252,8 @@ pub struct TropicalFishEntity {
     mob_base: MobBase,
     entity_data: SyncMutex<TropicalFishEntityData>,
     school: SyncMutex<SchoolState>,
+    /// Vanilla `isSchool`: false once spawned with a random variant.
+    is_school: AtomicBool,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `TropicalFishEntity`.
@@ -307,6 +310,7 @@ impl TropicalFishEntity {
             mob_base,
             entity_data: SyncMutex::new(entity_data),
             school: SyncMutex::new(SchoolState::new()),
+            is_school: AtomicBool::new(true),
         }
     }
 
@@ -509,6 +513,17 @@ impl Mob for TropicalFishEntity {
         self.fish_requires_custom_persistence()
     }
 
+    /// Vanilla `AbstractSchoolingFish.getMaxSpawnClusterSize`.
+    fn max_spawn_cluster_size(&self) -> i32 {
+        self.max_school_size()
+    }
+
+    /// Vanilla `TropicalFish.isMaxGroupSizeReached`: a lone random-variant
+    /// fish ends its spawn group.
+    fn is_max_group_size_reached(&self, _group_size: i32) -> bool {
+        !self.is_school.load(Ordering::Relaxed)
+    }
+
     fn mob_can_be_leashed(&self) -> bool {
         false
     }
@@ -539,8 +554,7 @@ impl Mob for TropicalFishEntity {
             });
             (variant, Some(group_data))
         } else {
-            // TODO(spawn-clusters): vanilla also clears `isSchool` here, which
-            // only feeds `isMaxGroupSizeReached`; Steel has no cluster hook.
+            self.is_school.store(false, Ordering::Relaxed);
             let colors = DyeColor::VALUES;
             let variant = TropicalFishVariant::new(
                 TropicalFishPattern::VALUES
