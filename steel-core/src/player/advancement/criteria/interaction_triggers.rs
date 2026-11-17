@@ -1,13 +1,15 @@
 //! Item, block and entity interaction triggers (vanilla `CriteriaTriggers`
 //! `GENERATE_LOOT`, `USED_TOTEM`, `START_RIDING`, `PLAYER_INTERACTED_WITH_ENTITY`,
 //! `CONSTRUCT_BEACON`, `USING_ITEM`, `ITEM_DURABILITY_CHANGED`, `TRADE`,
-//! `FISHING_ROD_HOOKED`, `TARGET_BLOCK_HIT` and `BEE_NEST_DESTROYED`).
+//! `FISHING_ROD_HOOKED`, `TARGET_BLOCK_HIT`, `BEE_NEST_DESTROYED`,
+//! `DEFAULT_BLOCK_USE`, `ANY_BLOCK_USE` and `ALLAY_DROP_ITEM_ON_BLOCK`).
 
+use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::{DurabilityChange, ItemStack};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _};
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use super::predicates::ConditionContext;
 use super::trigger;
@@ -40,6 +42,14 @@ pub(crate) const FISHING_ROD_HOOKED: Identifier = Identifier::vanilla_static("fi
 pub(crate) const TARGET_BLOCK_HIT: Identifier = Identifier::vanilla_static("target_hit");
 /// Vanilla `CriteriaTriggers.BEE_NEST_DESTROYED`.
 pub(crate) const BEE_NEST_DESTROYED: Identifier = Identifier::vanilla_static("bee_nest_destroyed");
+/// Vanilla `CriteriaTriggers.DEFAULT_BLOCK_USE`.
+pub(crate) const DEFAULT_BLOCK_USE: Identifier = Identifier::vanilla_static("default_block_use");
+/// Vanilla `CriteriaTriggers.ANY_BLOCK_USE`, an `ItemUsedOnLocationTrigger`.
+pub(crate) const ANY_BLOCK_USE: Identifier = Identifier::vanilla_static("any_block_use");
+/// Vanilla `CriteriaTriggers.ALLAY_DROP_ITEM_ON_BLOCK`, an
+/// `ItemUsedOnLocationTrigger`.
+pub(crate) const ALLAY_DROP_ITEM_ON_BLOCK: Identifier =
+    Identifier::vanilla_static("allay_drop_item_on_block");
 
 /// Vanilla `applyDamage`'s `ITEM_DURABILITY_CHANGED` for a stack worn by
 /// `owner`: only players have advancements.
@@ -53,6 +63,26 @@ pub(crate) fn report_durability_change<E: Entity + ?Sized>(
 }
 
 impl Player {
+    /// Vanilla `DefaultBlockInteractionTrigger.trigger(player, pos)`: the
+    /// `location` conditions see the block without a tool.
+    pub(crate) fn trigger_default_block_use(&self, pos: BlockPos) {
+        let world = self.get_world();
+        let context = ConditionContext {
+            world: &world,
+            origin: Some(DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            )),
+            this: Some(self),
+            tool: None,
+            block_state: Some(world.get_block_state(pos)),
+        };
+        trigger(self, &DEFAULT_BLOCK_USE, |conditions| {
+            test_context(conditions.location.as_ref(), &context)
+        });
+    }
+
     /// Vanilla `ItemStack.hurtAndBreak(amount, player, hand)` on the held
     /// stack, firing `ITEM_DURABILITY_CHANGED` once the inventory unlocks.
     pub(crate) fn hurt_item_in_hand(&self, hand: InteractionHand, amount: i32) {
