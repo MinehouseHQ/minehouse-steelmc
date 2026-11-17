@@ -64,6 +64,8 @@ const LOOK_AT_MOB_PROBABILITY: f32 = 0.02;
 const ATTACK_BOX_DEFLATE: f64 = 0.05;
 const TAG_ATTACK_TICK: &str = "AttackTick";
 const TAG_STUN_TICK: &str = "StunTick";
+/// Vanilla stun length after a shield blocks the ravager.
+const STUNNED_TICKS: i32 = 40;
 const TAG_ROAR_TICK: &str = "RoarTick";
 
 fn is_raider(entity: &SharedEntity) -> bool {
@@ -324,6 +326,22 @@ impl RavagerEntity {
         self.broadcast_entity_event(EntityStatus::RavagerRoared);
     }
 
+    /// The body of vanilla `Ravager.blockedByItem`, with its coin flip made.
+    fn blocked_by_shield(&self, defender: &dyn LivingEntity, stun: bool) {
+        if self.ticks.lock().roar != 0 {
+            return;
+        }
+        if stun {
+            self.ticks.lock().stunned = STUNNED_TICKS;
+            self.play_sound(&sound_events::ENTITY_RAVAGER_STUNNED, 1.0, 1.0);
+            self.broadcast_entity_event(EntityStatus::RavagerStunned);
+            defender.push_entity(self);
+        } else {
+            self.strong_knockback(defender);
+        }
+        defender.mark_velocity_sync();
+    }
+
     /// Vanilla `strongKnockback`.
     fn strong_knockback(&self, target: &dyn Entity) {
         let xd = target.position().x - self.position().x;
@@ -464,9 +482,17 @@ impl LivingEntity for RavagerEntity {
         ticks.stunned <= 0 && ticks.roar <= 0 && self.default_has_line_of_sight(target)
     }
 
-    // TODO: Vanilla `blockedByItem` (a shield block stuns the ravager half the
-    // time, otherwise throws the defender back) comes with item blocking in
-    // `hurtServer`.
+    /// Vanilla `Ravager.blockedByItem`: a shield block stuns a ravager that is
+    /// not roaring half the time, and otherwise throws the defender back.
+    fn blocked_by_item(
+        &self,
+        defender: &dyn LivingEntity,
+        _source: &DamageSource,
+        _damage: f32,
+        _fully_blocked: bool,
+    ) {
+        self.blocked_by_shield(defender, rand::random::<f64>() < 0.5);
+    }
 
     fn server_ai_step(&self, entity: &SharedEntity) {
         Mob::mob_server_ai_step(self, entity);
@@ -762,6 +788,49 @@ mod tests {
             vindicator.velocity().x < 0.0,
             "illagers are still thrown back"
         );
+    }
+
+    #[test]
+    fn a_shield_block_stuns_the_ravager_or_throws_the_defender() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("ravager_shield_block");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        stone_floor(world);
+        let (ravager, _) = ravager(world, DVec3::new(8.5, 65.0, 8.5));
+        let cow = |x: f64| {
+            add(
+                world,
+                CowEntity::new(
+                    &vanilla_entities::COW,
+                    next_entity_id(),
+                    DVec3::new(x, 65.0, 8.5),
+                    Arc::downgrade(world),
+                ),
+            )
+            .0
+        };
+
+        let thrown = cow(10.5);
+        ravager.blocked_by_shield(thrown.as_ref(), false);
+        assert_eq!(ravager.stunned_tick(), 0);
+        assert!(
+            thrown.velocity().x > 1.0,
+            "the defender is thrown hard away from the ravager"
+        );
+
+        let pushed = cow(9.5);
+        ravager.blocked_by_shield(pushed.as_ref(), true);
+        assert_eq!(ravager.stunned_tick(), 40, "the ravager is stunned");
+        assert!(pushed.velocity().x > 0.0, "the defender is pushed apart");
+        assert!(pushed.velocity().x < 1.0, "a stun only nudges the defender");
+
+        load_ticks(&ravager, 0, 0, 5);
+        let roaring = cow(10.5);
+        ravager.blocked_by_shield(roaring.as_ref(), true);
+        assert_eq!(ravager.stunned_tick(), 0, "a roaring ravager shrugs it off");
+        assert_eq!(roaring.velocity(), DVec3::ZERO);
     }
 
     #[test]
