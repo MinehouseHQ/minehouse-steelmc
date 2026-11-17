@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 use scc::hash_map::Entry;
 use simdnbt::owned::NbtCompound;
@@ -39,6 +40,67 @@ enum ConnectionKind {
     Block(BlockPos),
     /// `EntityChunkConnection`: the chunk.
     Chunk(ChunkPos),
+}
+
+/// One end of a connection, read once per update: each read locks the
+/// entity, and every player's move otherwise read every other player's state
+/// several times per pair.
+#[derive(Clone, Copy)]
+struct Endpoint {
+    position: DVec3,
+    spectator: bool,
+    /// Transmit range for a source, receive range for a receiver.
+    range: f64,
+}
+
+impl Endpoint {
+    fn source(source: &SharedEntity) -> Self {
+        Self {
+            position: source.position(),
+            spectator: source.is_spectator(),
+            range: source.as_living_entity().map_or(0.0, |living| {
+                living
+                    .attributes()
+                    .lock()
+                    .get_value(vanilla_attributes::WAYPOINT_TRANSMIT_RANGE)
+                    .unwrap_or(0.0)
+            }),
+        }
+    }
+
+    fn receiver(receiver: &Player) -> Self {
+        Self {
+            position: receiver.position(),
+            spectator: receiver.is_spectator(),
+            range: receiver
+                .attributes()
+                .lock()
+                .get_value(vanilla_attributes::WAYPOINT_RECEIVE_RANGE)
+                .unwrap_or(0.0),
+        }
+    }
+
+    /// Vanilla `Entity.blockPosition`.
+    const fn block_position(&self) -> BlockPos {
+        BlockPos::new(
+            self.position.x.floor() as i32,
+            self.position.y.floor() as i32,
+            self.position.z.floor() as i32,
+        )
+    }
+
+    /// Vanilla `Entity.chunkPosition`.
+    const fn chunk_position(&self) -> ChunkPos {
+        ChunkPos::from_block_pos(self.block_position())
+    }
+}
+
+/// A source and a receiver with their state read.
+struct Pair<'a> {
+    source: &'a SharedEntity,
+    from: Endpoint,
+    receiver: &'a Player,
+    to: Endpoint,
 }
 
 #[derive(Clone, Debug)]
@@ -100,8 +162,17 @@ impl WaypointManager {
         let Some(waypoint) = registry.waypoints.get(&waypoint_id) else {
             return;
         };
+        let mut from = None;
         for player in registry.players.values() {
-            self.refresh_connection(player, waypoint);
+            if is_receiver(player, waypoint) {
+                let from = *from.get_or_insert_with(|| Endpoint::source(waypoint));
+                self.refresh_connection(&Pair {
+                    source: waypoint,
+                    from,
+                    receiver: player,
+                    to: Endpoint::receiver(player),
+                });
+            }
         }
     }
 
@@ -132,8 +203,19 @@ impl WaypointManager {
         let Some(player) = registry.players.get(&player_id) else {
             return;
         };
+        if !is_locator_bar_enabled_for(player) {
+            return;
+        }
+        let to = Endpoint::receiver(player);
         for waypoint in registry.waypoints.values() {
-            self.refresh_connection(player, waypoint);
+            if waypoint.id() != player.id() {
+                self.refresh_connection(&Pair {
+                    source: waypoint,
+                    from: Endpoint::source(waypoint),
+                    receiver: player,
+                    to,
+                });
+            }
         }
     }
 
@@ -212,11 +294,17 @@ impl WaypointManager {
 
     /// Vanilla `createConnection`.
     fn create_connection(&self, player: &Arc<Player>, waypoint: &SharedEntity) {
-        if player.id() == waypoint.id() || !is_locator_bar_enabled_for(player) {
+        if !is_receiver(player, waypoint) {
             return;
         }
+        let pair = Pair {
+            source: waypoint,
+            from: Endpoint::source(waypoint),
+            receiver: player,
+            to: Endpoint::receiver(player),
+        };
         let entry = self.connections.entry_sync((player.id(), waypoint.id()));
-        match (make_connection(waypoint, player), entry) {
+        match (make_connection(&pair), entry) {
             (Some(connection), Entry::Occupied(mut occupied)) => {
                 send(player, waypoint, &connection, WaypointOperation::Track);
                 occupied.insert(connection);
@@ -236,23 +324,21 @@ impl WaypointManager {
     /// Vanilla `updateWaypoint`/`updatePlayer` for one pair: updates the
     /// connection when there is one (vanilla `updateConnection`), creates it
     /// otherwise.
-    fn refresh_connection(&self, player: &Arc<Player>, waypoint: &SharedEntity) {
-        if player.id() == waypoint.id() || !is_locator_bar_enabled_for(player) {
-            return;
-        }
+    fn refresh_connection(&self, pair: &Pair<'_>) {
+        let (player, waypoint) = (pair.receiver, pair.source);
         match self.connections.entry_sync((player.id(), waypoint.id())) {
             Entry::Vacant(vacant) => {
-                if let Some(connection) = make_connection(waypoint, player) {
+                if let Some(connection) = make_connection(pair) {
                     send(player, waypoint, &connection, WaypointOperation::Track);
                     vacant.insert_entry(connection);
                 }
             }
             Entry::Occupied(mut occupied) => {
-                if !is_broken(occupied.get(), waypoint, player) {
-                    if let Some(updated) = update(occupied.get(), waypoint, player) {
+                if !is_broken(occupied.get(), pair) {
+                    if let Some(updated) = update(occupied.get(), pair) {
                         occupied.insert(updated);
                     }
-                } else if let Some(replacement) = make_connection(waypoint, player) {
+                } else if let Some(replacement) = make_connection(pair) {
                     send(player, waypoint, &replacement, WaypointOperation::Track);
                     occupied.insert(replacement);
                 } else {
@@ -278,6 +364,11 @@ fn is_locator_bar_enabled_for(player: &Player) -> bool {
     player.get_world().get_game_rule(&LOCATOR_BAR)
 }
 
+/// Whether `player` may hold a connection to `waypoint` at all.
+fn is_receiver(player: &Player, waypoint: &SharedEntity) -> bool {
+    player.id() != waypoint.id() && is_locator_bar_enabled_for(player)
+}
+
 fn send(
     player: &Player,
     waypoint: &SharedEntity,
@@ -299,18 +390,18 @@ fn send(
 
 /// Vanilla `Connection.update`: tells the receiver about a move worth
 /// showing, and returns the new state when it did.
-fn update(connection: &Connection, source: &SharedEntity, receiver: &Player) -> Option<Connection> {
+fn update(connection: &Connection, pair: &Pair<'_>) -> Option<Connection> {
     let kind = match connection.kind {
         ConnectionKind::Azimuth(last) => {
-            let angle = azimuth(source, receiver);
+            let angle = azimuth(pair);
             ((angle - last).abs() > AZIMUTH_THRESHOLD).then_some(ConnectionKind::Azimuth(angle))
         }
         ConnectionKind::Block(last) => {
-            let current = source.block_position();
+            let current = pair.from.block_position();
             (manhattan(current, last) > 0).then_some(ConnectionKind::Block(current))
         }
         ConnectionKind::Chunk(last) => {
-            let current = chunk_position(source);
+            let current = pair.from.chunk_position();
             (chessboard(current, last) > 0).then_some(ConnectionKind::Chunk(current))
         }
     }?;
@@ -318,45 +409,44 @@ fn update(connection: &Connection, source: &SharedEntity, receiver: &Player) -> 
         icon: connection.icon.clone(),
         kind,
     };
-    send(receiver, source, &updated, WaypointOperation::Update);
+    send(pair.receiver, pair.source, &updated, WaypointOperation::Update);
     Some(updated)
 }
 
 /// Vanilla `Connection.isBroken` for each connection kind.
-fn is_broken(connection: &Connection, source: &SharedEntity, receiver: &Player) -> bool {
+fn is_broken(connection: &Connection, pair: &Pair<'_>) -> bool {
     match connection.kind {
         ConnectionKind::Azimuth(_) => {
-            does_source_ignore_receiver(source, receiver)
-                || is_chunk_visible(chunk_position(source), receiver)
-                || !is_really_far(source, receiver)
+            does_source_ignore_receiver(pair)
+                || is_chunk_visible(pair.from.chunk_position(), pair.receiver)
+                || !is_really_far(pair)
         }
         ConnectionKind::Block(last) => {
-            manhattan(last, source.block_position()) > 1
-                || does_source_ignore_receiver(source, receiver)
+            manhattan(last, pair.from.block_position()) > 1 || does_source_ignore_receiver(pair)
         }
         ConnectionKind::Chunk(last) => {
-            chessboard(last, chunk_position(source)) > 1
-                || does_source_ignore_receiver(source, receiver)
-                || is_chunk_visible(last, receiver)
+            chessboard(last, pair.from.chunk_position()) > 1
+                || does_source_ignore_receiver(pair)
+                || is_chunk_visible(last, pair.receiver)
         }
     }
 }
 
 /// Vanilla `LivingEntity.makeWaypointConnectionWith`.
-fn make_connection(source: &SharedEntity, receiver: &Player) -> Option<Connection> {
-    if source.is_first_tick()
-        || source.id() == receiver.id()
-        || does_source_ignore_receiver(source, receiver)
+fn make_connection(pair: &Pair<'_>) -> Option<Connection> {
+    if pair.source.is_first_tick()
+        || pair.source.id() == pair.receiver.id()
+        || does_source_ignore_receiver(pair)
     {
         return None;
     }
-    let icon = clone_and_assign_style(source);
-    let kind = if is_really_far(source, receiver) {
-        ConnectionKind::Azimuth(azimuth(source, receiver))
-    } else if is_chunk_visible(chunk_position(source), receiver) {
-        ConnectionKind::Block(source.block_position())
+    let icon = clone_and_assign_style(pair.source);
+    let kind = if is_really_far(pair) {
+        ConnectionKind::Azimuth(azimuth(pair))
+    } else if is_chunk_visible(pair.from.chunk_position(), pair.receiver) {
+        ConnectionKind::Block(pair.from.block_position())
     } else {
-        ConnectionKind::Chunk(chunk_position(source))
+        ConnectionKind::Chunk(pair.from.chunk_position())
     };
     Some(Connection { icon, kind })
 }
@@ -404,26 +494,14 @@ pub fn is_receiving(player: &Player) -> bool {
 }
 
 /// Vanilla `WaypointTransmitter.doesSourceIgnoreReceiver`.
-fn does_source_ignore_receiver(source: &SharedEntity, receiver: &Player) -> bool {
-    if receiver.is_spectator() {
+fn does_source_ignore_receiver(pair: &Pair<'_>) -> bool {
+    if pair.to.spectator {
         return false;
     }
-    if source.is_spectator() || source.has_indirect_passenger(receiver) {
+    if pair.from.spectator || pair.source.has_indirect_passenger(pair.receiver) {
         return true;
     }
-    let transmit = source.as_living_entity().map_or(0.0, |living| {
-        living
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::WAYPOINT_TRANSMIT_RANGE)
-            .unwrap_or(0.0)
-    });
-    let receive = receiver
-        .attributes()
-        .lock()
-        .get_value(vanilla_attributes::WAYPOINT_RECEIVE_RANGE)
-        .unwrap_or(0.0);
-    f64::from(distance(source, receiver)) >= transmit.min(receive)
+    f64::from(distance(pair)) >= pair.from.range.min(pair.to.range)
 }
 
 /// Vanilla `WaypointTransmitter.isChunkVisible`: inside the receiver's view
@@ -442,27 +520,21 @@ fn is_chunk_visible(chunk: ChunkPos, receiver: &Player) -> bool {
 }
 
 /// Vanilla `WaypointTransmitter.isReallyFar`.
-fn is_really_far(source: &SharedEntity, receiver: &Player) -> bool {
-    distance(source, receiver) > REALLY_FAR_DISTANCE
+fn is_really_far(pair: &Pair<'_>) -> bool {
+    distance(pair) > REALLY_FAR_DISTANCE
 }
 
 /// Vanilla `Entity.distanceTo`, in float precision.
-fn distance(source: &SharedEntity, receiver: &Player) -> f32 {
-    let delta = (source.position() - receiver.position()).as_vec3();
-    delta.length()
+fn distance(pair: &Pair<'_>) -> f32 {
+    (pair.from.position - pair.to.position).as_vec3().length()
 }
 
 /// The receiver's direction as seen from the source, rotated clockwise by 90
 /// degrees like vanilla.
-fn azimuth(source: &SharedEntity, receiver: &Player) -> f32 {
-    let delta = receiver.position() - source.position();
+fn azimuth(pair: &Pair<'_>) -> f32 {
+    let delta = pair.to.position - pair.from.position;
     // Vanilla `Vec3.rotateClockwise90`: (x, y, z) -> (-z, y, x).
     delta.x.atan2(-delta.z) as f32
-}
-
-/// Vanilla `Entity.chunkPosition`.
-fn chunk_position(entity: &SharedEntity) -> ChunkPos {
-    ChunkPos::from_block_pos(entity.block_position())
 }
 
 const fn manhattan(a: BlockPos, b: BlockPos) -> i32 {
