@@ -321,6 +321,8 @@ pub struct Player {
     raid_omen_position: SyncMutex<Option<BlockPos>>,
     /// Vanilla `ServerPlayer.wardenSpawnTracker`.
     warden_spawn_tracker: SyncMutex<WardenSpawnTracker>,
+    /// Positions vanilla `ServerPlayer` keeps for its movement triggers.
+    pub(crate) movement_criteria: SyncMutex<criteria::MovementCriteria>,
     /// Vanilla `ServerPlayer.camera`: the entity a spectator watches
     /// through, `None` while it is the player.
     camera: SyncMutex<Option<SharedEntity>>,
@@ -743,6 +745,7 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             raid_omen_position: SyncMutex::new(None),
             warden_spawn_tracker: SyncMutex::new(WardenSpawnTracker::default()),
+            movement_criteria: SyncMutex::new(criteria::MovementCriteria::default()),
             camera: SyncMutex::new(None),
             recipe_book: SyncMutex::new(recipe_book::ServerRecipeBook::default()),
             shoulder_entities: SyncMutex::new(shoulder::ShoulderEntities::default()),
@@ -1463,6 +1466,17 @@ impl Player {
             NbtTag::Byte(i8::from(self.has_seen_credits())),
         );
         nbt.insert("warden_spawn_tracker", self.warden_spawn_tracker().save());
+        {
+            let criteria = self.movement_criteria.lock();
+            for (key, position) in [
+                ("entered_nether_pos", criteria.entered_nether()),
+                ("last_explosion_impact_pos", criteria.explosion_impact()),
+            ] {
+                if let Some(position) = position {
+                    nbt.insert(key, NbtList::Double(position.to_array().to_vec()));
+                }
+            }
+        }
         nbt.insert(
             recipe_book::RECIPE_BOOK_TAG,
             NbtTag::Compound(self.recipe_book().save()),
@@ -1613,7 +1627,15 @@ impl Entity for Player {
     fn on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
         let from_wind_charge = explosion_source
             .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.note_explosion_hit(explosion_source);
         self.set_ignore_fall_damage_from_current_impulse(from_wind_charge, self.position());
+    }
+
+    /// Vanilla `ServerPlayer.resetFallDistance`: a finished fall fires
+    /// `FALL_FROM_HEIGHT` first.
+    fn reset_fall_distance(&self) {
+        self.note_fall_distance_reset();
+        self.base().reset_fall_distance();
     }
 
     fn base(&self) -> &EntityBase {
@@ -2172,6 +2194,7 @@ impl LivingEntity for Player {
             // Vanilla `ServerPlayer.tick`: the tick trigger, then the attribute
             // update and the advancement flush.
             self.trigger_player_criteria(&criteria::TICK);
+            self.tick_movement_criteria();
             self.update_player_attributes();
             self.advancements.lock().flush_dirty(self, true);
             self.living_base.refresh_speed_from_attributes();

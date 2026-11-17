@@ -12,6 +12,7 @@
 )]
 
 mod interaction_triggers;
+mod movement_triggers;
 pub(crate) mod predicates;
 pub(crate) mod triggers;
 
@@ -35,6 +36,7 @@ use predicates::{
 };
 
 pub(crate) use interaction_triggers::*;
+pub use movement_triggers::{MovementCriteria, SavedMovementPositions};
 pub(crate) use triggers::*;
 
 /// Vanilla `TagPredicate<DamageType>`: the tag is written `#namespace:path`
@@ -173,12 +175,13 @@ pub(crate) struct SlotsPredicate {
 }
 
 /// `distance`: a [`DistancePredicate`] on most triggers, plain bounds on
-/// `used_ender_eye`.
+/// `used_ender_eye`. The predicate is tried first: bounds would read
+/// `{"y": ...}` as no bounds at all.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum DistanceField {
-    Bounds(Doubles),
     Distance(DistancePredicate),
+    Bounds(Doubles),
 }
 
 /// A list of ids, written as one id or an array (vanilla

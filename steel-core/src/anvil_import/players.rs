@@ -32,6 +32,7 @@ use super::{AnvilImportError, chunk, nbt};
 use crate::entity::ActiveMobEffect;
 use crate::level_data::RespawnData;
 use crate::player::PlayerRespawnConfig;
+use crate::player::advancement::criteria::SavedMovementPositions;
 use crate::player::advancement::progress::{AdvancementProgress, CriterionProgress};
 use crate::player::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
@@ -256,17 +257,7 @@ fn convert_player_data(
     let pos = nbt::doubles::<3>(root, "Pos").ok_or("missing Pos")?;
     let world = nbt::string(root, "Dimension").unwrap_or_else(|| "minecraft:overworld".to_owned());
 
-    let mut inventory = items(root.list("Inventory"), report);
-    if let Some(equipment) = root.compound("equipment") {
-        for (key, slot) in EQUIPMENT_SLOTS {
-            if let Some(item) = equipment
-                .compound(key)
-                .and_then(|item| item_stack(item, report))
-            {
-                inventory.push(PersistentSlot { slot, item });
-            }
-        }
-    }
+    let inventory = inventory(root, report);
 
     let active_effects = active_effects(root, report);
 
@@ -357,6 +348,10 @@ fn convert_player_data(
             .compound(RECIPE_BOOK_TAG)
             .map_or_else(ServerRecipeBook::default, ServerRecipeBook::load),
         locator_bar_icon: locator_bar_icon(root),
+        movement_positions: SavedMovementPositions {
+            entered_nether_pos: nbt::doubles::<3>(root, "entered_nether_pos"),
+            last_explosion_impact_pos: nbt::doubles::<3>(root, "last_explosion_impact_pos"),
+        },
         capture_order: next_capture_order(),
     })
 }
@@ -510,6 +505,22 @@ fn read_json(path: &Path) -> Result<Option<Value>, String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!("{}: {error}", path.display())),
     }
+}
+
+/// Vanilla `Inventory` plus the `equipment` slots Steel keeps in the inventory.
+fn inventory(root: &NbtCompound, report: &mut PlayerReport) -> Vec<PersistentSlot> {
+    let mut inventory = items(root.list("Inventory"), report);
+    if let Some(equipment) = root.compound("equipment") {
+        for (key, slot) in EQUIPMENT_SLOTS {
+            if let Some(item) = equipment
+                .compound(key)
+                .and_then(|item| item_stack(item, report))
+            {
+                inventory.push(PersistentSlot { slot, item });
+            }
+        }
+    }
+    inventory
 }
 
 /// Vanilla `LivingEntity.readAdditionalSaveData` for `locator_bar_icon`.

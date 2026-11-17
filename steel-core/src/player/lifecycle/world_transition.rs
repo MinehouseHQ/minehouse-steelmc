@@ -69,6 +69,7 @@ impl Player {
             }
             self.reset_flying_ticks();
         } else {
+            self.note_dimension_leaving(&current_world.key, &teleport_transition.target_world.key);
             self.reset(new_world, ResetReason::WorldChange);
             if !self.spawn_with_velocity_packet(
                 position,
@@ -89,6 +90,7 @@ impl Player {
                 &current_world.key,
                 &teleport_transition.target_world.key,
             );
+            self.trigger_nether_travel(&current_world.key, &teleport_transition.target_world.key);
         }
         self.apply_post_teleport_transition(&teleport_transition.post_transition);
         true

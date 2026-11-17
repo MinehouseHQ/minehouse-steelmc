@@ -1935,8 +1935,13 @@ pub trait LivingEntity: Entity {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
+        let newly_added = !self.living_base().has_mob_effect(effect_key);
         let changed = self.living_base().add_mob_effect(effect);
         if changed && let Some(player) = self.as_player() {
+            // Vanilla `ServerPlayer.onEffectAdded` marks levitation's start.
+            if newly_added && effect_key == vanilla_mob_effects::LEVITATION {
+                player.note_levitation_started();
+            }
             player.trigger_effects_changed(source);
         }
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.

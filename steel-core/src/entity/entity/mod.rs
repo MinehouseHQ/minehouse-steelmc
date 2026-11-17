@@ -2737,7 +2737,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let contact = self.scan_and_store_fluid_contact(true);
         let in_water = contact.water_height() > 0.0;
         if in_water {
-            self.base().reset_fall_distance_in_water();
+            // Vanilla calls the overridable `resetFallDistance`.
+            self.reset_fall_distance();
             if !was_touching_water && !self.is_first_tick() {
                 self.do_water_splash_effect();
             }
@@ -2968,6 +2969,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Default vanilla stuck-in-block movement for the next movement pass.
     fn default_make_stuck_in_block(&self, _state: BlockStateId, speed_multiplier: DVec3) {
+        // Vanilla `Entity.makeStuckInBlock` calls the overridable `resetFallDistance`.
+        self.reset_fall_distance();
         self.base().make_stuck_in_block(speed_multiplier);
     }
 
