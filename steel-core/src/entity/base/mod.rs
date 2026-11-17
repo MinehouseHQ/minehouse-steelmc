@@ -29,6 +29,7 @@ use steel_registry::vanilla_entities;
 
 use crate::behavior::LiquidStand;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::insecure_uuid;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -440,7 +441,7 @@ impl EntityBase {
         reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
     )]
     pub fn new_with_state(id: i32, state: EntityBaseState, world: Weak<World>) -> Self {
-        Self::with_uuid_and_state(id, Uuid::new_v4(), state, world)
+        Self::with_uuid_and_state(id, insecure_uuid(), state, world)
     }
 
     /// Creates a new `EntityBase` with the specified UUID.
