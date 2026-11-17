@@ -28,7 +28,7 @@ use steel_registry::{
     },
     world_clock::WorldClockRef,
 };
-use steel_utils::{Identifier, translations};
+use steel_utils::{BlockPos, Identifier, translations};
 use text_components::{Modifier, TextComponent, format::Color};
 
 use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
@@ -371,6 +371,28 @@ impl CommandSource {
         source.position = position;
         source.rotation = rotation;
         source.entity = entity;
+        source
+    }
+
+    /// Vanilla `SignBlockEntity.createCommandSourceStack` for `player`: a
+    /// silent source at the center of the sign at `pos`, facing rotation
+    /// zero, with the player as its entity.
+    ///
+    /// Vanilla runs it with gamemaster permissions; like command blocks, Steel
+    /// lets it run any command within the sign's own domain.
+    pub(crate) fn for_sign(
+        server: Arc<Server>,
+        world: Arc<World>,
+        player: Arc<Player>,
+        pos: BlockPos,
+    ) -> Self {
+        let mut source = Self::new(CommandSender::Player(player), server);
+        source.authorization = CommandAuthorizationContext::within_domain(world.key.clone());
+        source.world = world;
+        let (x, y, z) = pos.get_center();
+        source.position = DVec3::new(x, y, z);
+        source.rotation = (0.0, 0.0);
+        source.silent = true;
         source
     }
 

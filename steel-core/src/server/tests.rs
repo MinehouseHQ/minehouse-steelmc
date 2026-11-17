@@ -4896,6 +4896,7 @@ mod place_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;
+mod sign_click_commands;
 mod spectate_command;
 mod stopwatch_command;
 mod structure_block;

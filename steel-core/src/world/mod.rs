@@ -272,13 +272,23 @@ pub struct WorldConfig {
 
 /// A command block whose command the server runs once every world has
 /// ticked, since a command can reach any world of the domain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CommandBlockRun {
     /// Vanilla `CommandBlock.tick` for the command block at this position.
     Block(BlockPos),
     /// Vanilla `MinecartCommandBlock.activateMinecart` for the command block
     /// minecart with this network id.
     Minecart(i32),
+    /// Vanilla `SignBlockEntity.executeClickCommandsIfPresent` running a
+    /// waxed sign's click command for the player who clicked it.
+    Sign {
+        /// The sign's position.
+        pos: BlockPos,
+        /// The UUID of the player who clicked the sign.
+        player: uuid::Uuid,
+        /// The command to run.
+        command: String,
+    },
 }
 
 /// A struct that represents a world.

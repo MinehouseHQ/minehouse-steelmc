@@ -522,7 +522,7 @@ impl Server {
 
     /// Runs the command block ticks the worlds queued this tick, in the
     /// order each world queued them.
-    fn tick_command_blocks(
+    pub(super) fn tick_command_blocks(
         self: &Arc<Self>,
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
     ) {
@@ -537,6 +537,21 @@ impl Server {
                     CommandBlockRun::Minecart(id) => {
                         if let Some(entity) = world.get_entity_by_id(id) {
                             CommandBlockMinecartEntity::run_command(&entity, world, &mut runner);
+                        }
+                    }
+                    CommandBlockRun::Sign {
+                        pos,
+                        player,
+                        command,
+                    } => {
+                        if let Some(player) = world.players.get_by_uuid(&player) {
+                            let source = CommandSource::for_sign(
+                                Arc::clone(self),
+                                Arc::clone(world),
+                                player,
+                                pos,
+                            );
+                            runner.run(source, &command);
                         }
                     }
                 }

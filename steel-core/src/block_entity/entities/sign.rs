@@ -10,6 +10,7 @@ use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
 };
 use simdnbt::owned::{NbtCompound, NbtList};
+use steel_protocol::packets::game::CShowDialog;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::data_components::DataComponentMap;
 use steel_registry::data_components::vanilla_components::{
@@ -20,16 +21,21 @@ use steel_registry::sound_events::{
     BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL, BLOCK_SIGN_WAXED_INTERACT_FAIL,
 };
 use steel_registry::{DyeColor, vanilla_block_entity_types};
+use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::{
-    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
+    translations, types::SignTextSlot,
 };
-use text_components::interactivity::ClickEvent;
+use text_components::Modifier as _;
+use text_components::format::Color;
+use text_components::interactivity::{ClickEvent, Dialog};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
 use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::Entity;
-use crate::world::World;
+use crate::player::Player;
+use crate::world::{CommandBlockRun, World};
 
 /// Maximum distance (in blocks) a player can be from a sign while editing.
 /// If they move further away, the edit lock is released.
@@ -194,6 +200,9 @@ struct SignState {
     /// UUID of the player currently allowed to edit this sign.
     /// Used to prevent multiple players from editing simultaneously.
     player_who_may_edit: Option<Uuid>,
+    /// Vanilla `allowOpFeatures`: whether the sign's click actions run. Only
+    /// sign data loaded from NBT (say, by an operator's `/setblock`) sets it.
+    allow_op_features: bool,
 }
 
 // SAFETY: This key identifies Steel's shared sign implementation for both sign
@@ -230,6 +239,7 @@ impl SignBlockEntity {
                 back_text: SignText::new(),
                 is_waxed: false,
                 player_who_may_edit: None,
+                allow_op_features: false,
             }),
         }
     }
@@ -276,6 +286,62 @@ impl SignBlockEntity {
     #[must_use]
     pub fn can_execute_click_commands(&self, slot: SignTextSlot) -> bool {
         self.is_waxed() && self.get_text(slot).has_any_click_commands()
+    }
+
+    /// Vanilla `SignBlockEntity.executeClickCommandsIfPresent`: runs the
+    /// click actions on `slot`'s lines as `player` and returns whether the
+    /// side has any. Without op features the actions are only reported to
+    /// the player as disabled.
+    ///
+    /// Commands run on the server thread with the world's command block
+    /// runs, so a command lands later in the same tick rather than inside
+    /// the interaction.
+    pub fn execute_click_commands_if_present(
+        &self,
+        world: &World,
+        player: &Player,
+        pos: BlockPos,
+        slot: SignTextSlot,
+    ) -> bool {
+        let allow_op_features = self.sign.lock().allow_op_features;
+        let mut has_any_click_command = false;
+        for message in &self.get_text(slot).messages {
+            match &message.interactions.click {
+                Some(ClickEvent::RunCommand { command }) => {
+                    if allow_op_features {
+                        world.queue_command_block_run(CommandBlockRun::Sign {
+                            pos,
+                            player: player.gameprofile.id(),
+                            command: command.to_string(),
+                        });
+                    }
+                    has_any_click_command = true;
+                }
+                Some(ClickEvent::ShowDialog { dialog }) => {
+                    if allow_op_features {
+                        open_dialog(player, dialog);
+                    }
+                    has_any_click_command = true;
+                }
+                _ => {}
+            }
+        }
+        if !allow_op_features && has_any_click_command {
+            player.send_overlay_message(
+                &translations::SIGN_CLICK_ACTIONS_DISABLED
+                    .msg()
+                    .component()
+                    .color(Color::Red),
+            );
+        }
+        has_any_click_command
+    }
+
+    /// Returns whether this sign's click actions run (vanilla
+    /// `allowOpFeatures`).
+    #[must_use]
+    pub fn allows_op_features(&self) -> bool {
+        self.sign.lock().allow_op_features
     }
 
     /// Makes this sign waxed, returning whether its state changed.
@@ -338,6 +404,26 @@ impl SignBlockEntity {
     }
 }
 
+/// Vanilla `ServerPlayer.openDialog` for a click event's dialog: a registry
+/// dialog by id, an inline one as its NBT. An unknown id opens nothing.
+fn open_dialog(player: &Player, dialog: &Dialog) {
+    let packet = match dialog {
+        Dialog::Reference(id) => {
+            let Some(id) = id
+                .parse::<Identifier>()
+                .ok()
+                .and_then(|id| REGISTRY.dialogs.id_from_key(&id))
+                .and_then(|id| i32::try_from(id).ok())
+            else {
+                return;
+            };
+            CShowDialog::reference(id)
+        }
+        Dialog::Inline(dialog) => CShowDialog::new(dialog.clone().into_nbt()),
+    };
+    player.send_packet(packet);
+}
+
 impl BlockEntity for SignBlockEntity {
     fn base(&self) -> &BlockEntityBase {
         &self.base
@@ -347,6 +433,10 @@ impl BlockEntity for SignBlockEntity {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: BorrowedNbtCompoundView<'_, '_> = nbt.into();
         let mut sign = self.sign.lock();
+
+        sign.allow_op_features = nbt_view
+            .byte("allow_op_features")
+            .is_some_and(|allow| allow != 0);
 
         // Load front text
         if let Some(front_nbt) = nbt_view.compound("front_text") {
@@ -382,6 +472,10 @@ impl BlockEntity for SignBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         let sign = self.sign.lock();
+        if sign.allow_op_features {
+            nbt.insert("allow_op_features", 1i8);
+        }
+
         // Save front text
         let mut front_nbt = NbtCompound::new();
         sign.front_text.save(&mut front_nbt);
