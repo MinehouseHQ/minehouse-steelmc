@@ -1,5 +1,6 @@
 use super::*;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
+use steel_utils::random::insecure_uuid;
 
 impl StructureTemplate {
     pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
@@ -371,7 +372,7 @@ impl StructureTemplate {
                 EntityLoadRequest {
                     entity_type: entity.entity_type,
                     position: pos,
-                    uuid: Uuid::new_v4(),
+                    uuid: insecure_uuid(),
                     velocity: entity.velocity,
                     rotation,
                     fall_distance: entity.fall_distance,

@@ -37,7 +37,6 @@ use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
 };
 use text_components::TextComponent;
-use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::heightmap::HeightmapType;

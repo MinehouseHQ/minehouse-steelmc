@@ -17,6 +17,7 @@ use steel_math::DEGREE_360;
 use steel_registry::entity_type::MobCategory;
 use steel_registry::vanilla_biome_tags::BiomeTag;
 use steel_registry::vanilla_game_rules::{SPAWN_MOBS, SPAWN_MONSTERS};
+use steel_utils::random::fast_rng;
 use steel_utils::{BlockPos, ChunkPos, SectionPos};
 
 use crate::chunk::heightmap::HeightmapType;
@@ -133,7 +134,10 @@ impl World {
         mut spawning: Option<&mut (SpawnState, Vec<MobCategory>)>,
         mut on_chunk: impl FnMut(ChunkPos),
     ) {
-        let mut random = rand::rng();
+        // Spawning draws several numbers per chunk and category each tick; the
+        // thread generator reseeds from the OS every 64 KiB, which showed up as
+        // 5% of the island tick with 100 players.
+        let mut random = fast_rng();
         spawning_chunks.shuffle(&mut random);
         for &chunk_pos in spawning_chunks.iter() {
             on_chunk(chunk_pos);
