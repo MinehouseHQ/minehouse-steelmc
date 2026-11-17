@@ -24,8 +24,21 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
+    let mut plain_items = Vec::new();
+    let mut block_items = Vec::new();
 
     for item in items {
+        let item_ident = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
+        match item.class.as_str() {
+            "Item" => plain_items.push(item_ident),
+            "BlockItem" => {
+                if let Some(block) = item.extra.get("block").and_then(|block| block.as_str()) {
+                    let block_ident = Ident::new(&block.to_shouty_snake_case(), Span::call_site());
+                    block_items.push(quote! { (&*vanilla_items::#item_ident, &steel_registry::vanilla_blocks::#block_ident) });
+                }
+            }
+            _ => {}
+        }
         let Some(info) = discovered.get(&item.class) else {
             continue;
         };
@@ -89,6 +102,21 @@ pub fn build(items: &[ItemClass]) -> String {
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #(#registrations)*
+        }
+
+        /// Items whose vanilla class is plain `Item`: their behavior comes entirely from
+        /// data components, which `DefaultItemBehavior` handles.
+        #[cfg(feature = "test-framework")]
+        #[must_use]
+        pub fn plain_items() -> Vec<steel_registry::items::ItemRef> {
+            vec![#(&*vanilla_items::#plain_items),*]
+        }
+
+        /// Items whose vanilla class is plain `BlockItem`, with the block each one places.
+        #[cfg(feature = "test-framework")]
+        #[must_use]
+        pub fn block_items() -> Vec<(steel_registry::items::ItemRef, steel_registry::blocks::BlockRef)> {
+            vec![#(#block_items),*]
         }
     };
 

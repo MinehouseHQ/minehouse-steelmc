@@ -29,7 +29,12 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut plain_blocks = Vec::new();
 
     for block in blocks {
-        if block.class == "Block" {
+        // `TransparentBlock` and `HalfTransparentBlock` only override visual shape,
+        // shade, skylight and client culling, which the registry data already carries.
+        if matches!(
+            block.class.as_str(),
+            "Block" | "TransparentBlock" | "HalfTransparentBlock"
+        ) {
             plain_blocks.push(to_block_ident(&block.name));
         }
         let Some(info) = discovered.get(&block.class) else {
@@ -86,7 +91,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #(#registrations)*
         }
 
-        /// Blocks whose vanilla class is plain `Block`; `DefaultBlockBehavior` fully implements them.
+        /// Blocks whose vanilla class is plain `Block` (or a transparent variant that only
+        /// changes registry data); `DefaultBlockBehavior` fully implements them.
         #[cfg(feature = "test-framework")]
         pub const PLAIN_BLOCKS: &[steel_registry::blocks::BlockRef] = &[#(&vanilla_blocks::#plain_blocks),*];
     };

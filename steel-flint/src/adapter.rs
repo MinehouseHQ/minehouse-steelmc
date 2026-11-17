@@ -16,6 +16,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use steel_core::behavior::block_behaviors::PLAIN_BLOCKS;
+use steel_core::behavior::item_behaviors::{block_items, plain_items};
 use steel_core::behavior::{BLOCK_BEHAVIORS, ITEM_BEHAVIORS};
 use steel_core::entity::ENTITIES;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -52,8 +53,10 @@ pub fn get_implemented_blocks() -> Vec<String> {
         .collect()
 }
 
-/// Returns IDs of items with a non-default, non-block-item behavior.
+/// Returns IDs of items with a non-default, non-block-item behavior, plain vanilla `Item`s
+/// (fully described by data components), and plain `BlockItem`s whose block is implemented.
 pub fn get_implemented_items() -> Vec<String> {
+    let implemented_blocks: FxHashSet<String> = get_implemented_blocks().into_iter().collect();
     ITEM_BEHAVIORS
         .get_behaviors()
         .iter()
@@ -63,6 +66,13 @@ pub fn get_implemented_items() -> Vec<String> {
             !name.ends_with("DefaultItemBehavior") && !name.ends_with("BlockItem")
         })
         .filter_map(|(id, _)| REGISTRY.items.by_id(id))
+        .chain(plain_items())
+        .chain(
+            block_items()
+                .into_iter()
+                .filter(|(_, block)| implemented_blocks.contains(&block.key.to_string()))
+                .map(|(item, _)| item),
+        )
         .map(|item| item.key.to_string())
         .collect()
 }

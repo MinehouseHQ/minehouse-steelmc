@@ -97,7 +97,9 @@ pub(crate) fn try_take_in_item_from_slot(
     let Some(source_container) = guard.get_mut(slot.container) else {
         return false;
     };
-    let taken = source_container.get_item_mut(slot.slot).split(1);
+    // Vanilla `container.removeItem(slot, 1)`: single-item containers such as
+    // the jukebox hook their world effects into it.
+    let taken = source_container.remove_item(slot.slot, 1);
     let rest = add_item(guard, Some(slot.container), &[destination], taken, None);
     if rest.is_empty() {
         for &container in source {
@@ -106,7 +108,7 @@ pub(crate) fn try_take_in_item_from_slot(
         return true;
     }
     if let Some(source_container) = guard.get_mut(slot.container) {
-        *source_container.get_item_mut(slot.slot) = item;
+        source_container.set_item(slot.slot, item);
     }
     false
 }
