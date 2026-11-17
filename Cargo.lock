@@ -3033,6 +3033,7 @@ dependencies = [
  "glam",
  "glob",
  "heck",
+ "libc",
  "log",
  "md5",
  "parking_lot 0.13.0",
