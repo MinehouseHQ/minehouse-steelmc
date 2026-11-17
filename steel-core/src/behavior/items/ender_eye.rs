@@ -193,6 +193,7 @@ impl ItemBehavior for EnderEyeItem {
             log::debug!("failed to spawn eye of ender: {error}");
             return InteractionResult::Consume;
         }
+        context.player.trigger_used_ender_eye(stronghold_pos);
 
         let has_infinite_materials = context.player.has_infinite_materials();
         context
@@ -203,8 +204,6 @@ impl ItemBehavior for EnderEyeItem {
             .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
 
         InteractionResult::SuccessServer
-
-        // TODO implement advancment
     }
 }
 
