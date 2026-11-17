@@ -2,12 +2,15 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
+
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_game_events;
+use steel_registry::vanilla_mob_effects;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags::EntityTypeTag,
 };
@@ -20,8 +23,9 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
+use crate::entity::MobEffectInstance;
 use crate::fluid::FluidStateExt as _;
-use crate::world::World;
+use crate::world::{ClipBlockShape, ClipFluid, World};
 
 const GEYSER_SALT: i64 = -904_011_478;
 const COUNTDOWN_FREQUENCY_TICKS: i64 = 20;
@@ -30,6 +34,14 @@ const BASE_VELOCITY_THRESHOLD: f64 = 0.3;
 const VELOCITY_THRESHOLD_SCALE: f64 = 0.1;
 const MAX_WATER_BLOCKS_ABOVE: i32 = 4;
 const FORCE_HEIGHT_MULTIPLIER: i32 = 6;
+/// Vanilla `EFFECT_APPLICATION_FREQUENCY_TICKS`.
+const NAUSEA_FREQUENCY_TICKS: i64 = 10;
+/// Vanilla `EFFECT_DURATION_IN_TICKS`.
+const NAUSEA_DURATION_TICKS: i32 = 80;
+/// Vanilla `EFFECT_RANGE`.
+const NAUSEA_RANGE: f64 = 3.0;
+/// Vanilla `getNearbyLivingEntities` inflates the source block by 2.5 sideways.
+const NAUSEA_HORIZONTAL_INFLATE: f64 = 2.5;
 
 /// Block entity for `potent_sulfur` blocks
 pub struct PotentSulfurBlockEntity {
@@ -191,6 +203,74 @@ impl PotentSulfurBlockEntity {
         None
     }
 
+    /// Vanilla `SERVER_NAUSEA_EFFECT_TICKER`: living entities breathing the
+    /// gas above the water column get nausea.
+    fn tick_nausea(world: &World, pos: BlockPos) {
+        let Some(source) = Self::find_source_block(world, pos) else {
+            return;
+        };
+        let aabb = WorldAabb::new(
+            f64::from(source.x()) - NAUSEA_HORIZONTAL_INFLATE,
+            f64::from(source.y()),
+            f64::from(source.z()) - NAUSEA_HORIZONTAL_INFLATE,
+            f64::from(source.x() + 1) + NAUSEA_HORIZONTAL_INFLATE,
+            f64::from(source.y() + 1),
+            f64::from(source.z() + 1) + NAUSEA_HORIZONTAL_INFLATE,
+        );
+        for entity in world.get_entities_in_aabb(&aabb) {
+            if !entity.is_alive() || entity.is_spectator() {
+                continue;
+            }
+            let Some(living) = entity.as_living_entity() else {
+                continue;
+            };
+            let eye = DVec3::new(entity.position().x, entity.get_eye_y(), entity.position().z);
+            if Self::can_be_reached_by_noxious_gas(world, source, eye) {
+                living.add_mob_effect(
+                    MobEffectInstance::with_duration(
+                        vanilla_mob_effects::NAUSEA,
+                        NAUSEA_DURATION_TICKS,
+                        0,
+                    )
+                    .with_ambient(true)
+                    .with_visible(true),
+                );
+            }
+        }
+    }
+
+    /// Vanilla `PotentSulfurBlockEntity.canBeReachedByNoxiousGas`.
+    fn can_be_reached_by_noxious_gas(world: &World, source: BlockPos, pos: DVec3) -> bool {
+        let block_pos = BlockPos::containing(pos.x, pos.y, pos.z);
+        let context = BlockCollisionContext::position_context(f64::from(block_pos.y() - 1));
+        if !Self::is_geyser_passable(world, block_pos, context) {
+            return false;
+        }
+        let source_center = DVec3::new(
+            f64::from(source.x()) + 0.5,
+            f64::from(source.y()) + 0.5,
+            f64::from(source.z()) + 0.5,
+        );
+        if pos.distance_squared(source_center) > NAUSEA_RANGE * NAUSEA_RANGE {
+            return false;
+        }
+        let below_source = source_center - DVec3::Y;
+        let below_pos = pos - DVec3::Y;
+        let below_fluid = world
+            .get_block_state(BlockPos::containing(below_pos.x, below_pos.y, below_pos.z))
+            .get_fluid_state();
+        below_fluid.is_source()
+            && below_fluid.is_water()
+            && world
+                .clip(
+                    below_source,
+                    below_pos,
+                    ClipBlockShape::Collider,
+                    ClipFluid::None,
+                )
+                .miss
+    }
+
     fn tick_launch(world: &Arc<World>, pos: BlockPos) {
         let Some(source) = Self::find_source_block(world, pos) else {
             return;
@@ -276,8 +356,6 @@ impl BlockEntity for PotentSulfurBlockEntity {
 
         let game_time = world.game_time();
 
-        // TODO: Add nausea ticker (WET / DORMANT states, every 10 ticks) after the mob-effect refactor adds timed instances and sync.
-
         let action = if matches!(
             &current,
             PotentSulfurState::Dormant | PotentSulfurState::Erupting
@@ -295,6 +373,14 @@ impl BlockEntity for PotentSulfurBlockEntity {
             Self::tick_launch(world, pos);
         }
 
+        if matches!(
+            &current,
+            PotentSulfurState::Wet | PotentSulfurState::Dormant
+        ) && game_time % NAUSEA_FREQUENCY_TICKS == 0
+        {
+            Self::tick_nausea(world, pos);
+        }
+
         if let Some((new_state, deactivates)) = action {
             world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
             if deactivates {
@@ -307,3 +393,6 @@ impl BlockEntity for PotentSulfurBlockEntity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
