@@ -14,6 +14,7 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entity_data::InteractionEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
@@ -154,7 +155,12 @@ impl Entity for InteractionEntity {
                 player: player.uuid(),
                 timestamp: world.game_time(),
             });
-            // TODO: Trigger PLAYER_HURT_ENTITY advancement criterion trigger
+            player.trigger_player_hurt_entity(
+                self,
+                &DamageSource::environment(&vanilla_damage_types::GENERIC),
+                1.0,
+                false,
+            );
         }
         !self.entity_data.lock().response.get()
     }
