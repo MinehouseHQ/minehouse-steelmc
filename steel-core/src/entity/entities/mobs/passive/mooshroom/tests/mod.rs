@@ -14,7 +14,8 @@ use steel_utils::Identifier;
 use steel_utils::types::InteractionHand;
 use uuid::Uuid;
 
-use crate::behavior::init_behaviors;
+use crate::bootstrap::init_globals;
+use crate::entity::leash::Leashable as _;
 use crate::entity::living_base::MobEffectInstance;
 use crate::entity::{Entity, LivingEntity, Mob, next_entity_id};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -172,8 +173,7 @@ fn mooshroom_thunder_hit_swaps_variant() {
 
 #[test]
 fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
-    init_vanilla_registry();
-    init_behaviors();
+    init_globals();
 
     let world_fixture = fresh_test_world("mooshroom_shearing");
     let world = &world_fixture.world;
@@ -206,6 +206,8 @@ fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
     let mooshroom = shared
         .downcast_ref::<MushroomCowEntity>()
         .expect("shared entity should be a mooshroom");
+    let holder = Arc::clone(&player) as SharedEntity;
+    assert!(mooshroom.set_leashed_to(&holder));
 
     assert_eq!(
         Mob::mob_interact(mooshroom, player.as_ref(), InteractionHand::MainHand),
@@ -223,7 +225,13 @@ fn mooshroom_shearing_converts_to_cow_and_drops_mushrooms() {
         .downcast_ref::<CowEntity>()
         .expect("cow entity should be CowEntity");
     assert_eq!(cow.get_age(), 500);
-    assert!(cow.is_age_locked());
+    // Vanilla `ConversionType.convertCommon` copies the age but not the lock.
+    assert!(!cow.is_age_locked());
+    assert_eq!(
+        cow.leash_holder().map(|holder| holder.id()),
+        Some(player.id()),
+        "vanilla converts through ConversionType.SINGLE, which keeps the leash"
+    );
     let cow_speed = cow
         .mob_effect(speed_effect)
         .expect("cow should keep active speed effect");

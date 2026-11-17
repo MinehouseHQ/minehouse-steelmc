@@ -17,6 +17,7 @@ use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
+use crate::behavior::items::projectile_weapon::as_abstract_arrow_entity;
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
@@ -240,9 +241,13 @@ impl BlockBehavior for TntBlock {
 
         let owner = projectile.get_owner();
         let living_owner = owner.as_deref().filter(|owner| owner.is_living_entity());
-        // TODO: Check an arrow's pickup stack once arrows exist. Other projectiles use an empty
+        // Vanilla checks an arrow's `getPickupItemStackOrigin`; other projectiles use an empty
         // stack, which never permits Adventure-mode breaking.
-        if Self::prime_with_source(world, hit.block_pos, living_owner, || false) {
+        let can_break_in_adventure = || {
+            as_abstract_arrow_entity(projectile)
+                .is_some_and(|arrow| can_break(&arrow.pickup_item_stack(), world, hit.block_pos))
+        };
+        if Self::prime_with_source(world, hit.block_pos, living_owner, can_break_in_adventure) {
             world.remove_block(hit.block_pos, false);
         }
     }
