@@ -4898,6 +4898,7 @@ mod scoreboard_command;
 mod spectate_command;
 mod stopwatch_command;
 mod structure_block;
+mod summon_command;
 mod test_block;
 mod waypoint_command;
 mod world_log;
