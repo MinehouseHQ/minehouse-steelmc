@@ -12,6 +12,7 @@ use steel_registry::data_components::vanilla_components::{
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_items;
+use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
@@ -21,6 +22,7 @@ use crate::command::execution::{CommandSource, CommandTextResolver};
 use crate::command::sender::CommandSender;
 use crate::entity::Entity as _;
 use crate::inventory::container::Container as _;
+use crate::world::World;
 
 impl Player {
     /// Vanilla `ServerGamePacketListenerImpl.handleEditBook`: saves the pages
@@ -135,6 +137,32 @@ impl Player {
         });
         changed
     }
+}
+
+/// Vanilla `LecternBlockEntity.resolveBook`: `WrittenBookContent.resolveForItem`
+/// on `book` with the lectern's command source, `player` being its entity.
+pub(crate) fn resolve_lectern_book(
+    book: &mut ItemStack,
+    world: &Arc<World>,
+    pos: BlockPos,
+    player: &Player,
+) {
+    let Some(content) = book.get(WRITTEN_BOOK_CONTENT).cloned() else {
+        return;
+    };
+    if content.resolved() {
+        return;
+    }
+    let resolved = player.server.upgrade().and_then(|server| {
+        let player_arc = world.players.get_by_uuid(&player.gameprofile.id())?;
+        let source = CommandSource::for_lectern(server, Arc::clone(world), player_arc, pos);
+        let resolver = CommandTextResolver::with_entity_override(&source, player);
+        resolve_pages(&content, &resolver)
+    });
+    book.set(
+        WRITTEN_BOOK_CONTENT,
+        resolved.unwrap_or_else(|| content.mark_resolved()),
+    );
 }
 
 /// Vanilla `WrittenBookContent.resolve`: `None` when a resolved page grows
