@@ -91,7 +91,7 @@ struct SpawnerState {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct SpawnerTickResult {
+pub(crate) struct SpawnerTickResult {
     pub(super) state_changed: bool,
     pub(super) next_spawn_data_changed: bool,
 }
@@ -164,7 +164,12 @@ impl BaseSpawner {
 
     /// Loads the vanilla spawner fields from NBT.
     pub fn load(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+        self.load_view(nbt.into());
+    }
+
+    /// Loads the vanilla spawner fields from a borrowed compound view, such as
+    /// a spawner minecart's entity data.
+    pub fn load_view(&self, nbt: NbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
         state.spawn_delay = nbt
             .get("Delay")
@@ -351,11 +356,26 @@ impl BaseSpawner {
         self.state.lock().next_spawn_data = Some(NextSpawnData::Own(data));
     }
 
+    /// Vanilla `SpawnerBlockEntity`'s `BaseSpawner.serverTick`, announcing new
+    /// spawn delays as block events.
+    pub(super) fn server_tick(&self, world: &Arc<World>, pos: BlockPos) -> SpawnerTickResult {
+        self.server_tick_broadcasting(world, pos, &|world, pos, event| {
+            world.block_event(pos, &vanilla_blocks::SPAWNER, event, 0);
+        })
+    }
+
+    /// Vanilla `BaseSpawner.serverTick`, announcing each new spawn delay through
+    /// `broadcast_event` (vanilla `BaseSpawner.broadcastEvent`).
     #[expect(
         clippy::too_many_lines,
         reason = "The order of this method mirrors vanilla BaseSpawner.serverTick."
     )]
-    pub(super) fn server_tick(&self, world: &Arc<World>, pos: BlockPos) -> SpawnerTickResult {
+    pub(crate) fn server_tick_broadcasting(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        broadcast_event: &dyn Fn(&Arc<World>, BlockPos, i32),
+    ) -> SpawnerTickResult {
         let center = DVec3::from(pos.get_center());
         let config = self.config();
         let Some(_) =
@@ -372,7 +392,7 @@ impl BaseSpawner {
         let mut random = rng();
         let mut result = SpawnerTickResult::default();
         if self.spawn_delay() == -1 {
-            result = self.delay(world, pos, &mut random);
+            result = self.delay(world, pos, &mut random, broadcast_event);
         }
 
         if self.decrement_spawn_delay() {
@@ -394,7 +414,7 @@ impl BaseSpawner {
         for _ in 0..spawn_count {
             let Some(entity_type) = entity_type_from_owned_nbt(&next_spawn_data.entity_to_spawn)
             else {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(world, pos, &mut random, result, broadcast_event);
             };
 
             let spawn_position = configured_or_random_position(
@@ -442,7 +462,7 @@ impl BaseSpawner {
                     entity.snap_to(spawn_position, entity.rotation().0, entity.rotation().1);
                 },
             ) else {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(world, pos, &mut random, result, broadcast_event);
             };
             let entity = &loaded.root;
 
@@ -462,7 +482,7 @@ impl BaseSpawner {
                 })
                 .len();
             if nearby_count as i32 >= max_nearby_entities {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(world, pos, &mut random, result, broadcast_event);
             }
 
             let yaw = random.random::<f32>() * DEGREE_360;
@@ -487,7 +507,7 @@ impl BaseSpawner {
                 .try_add_fresh_entity_with_passengers(Arc::clone(entity))
                 .is_err()
             {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(world, pos, &mut random, result, broadcast_event);
             }
 
             world.level_event(level_events::PARTICLES_MOBBLOCK_SPAWN, pos, 0, None);
@@ -503,7 +523,7 @@ impl BaseSpawner {
         }
 
         if spawned_any {
-            result = self.delay_result(world, pos, &mut random, result);
+            result = self.delay_result(world, pos, &mut random, result, broadcast_event);
         }
         result
     }
@@ -514,8 +534,9 @@ impl BaseSpawner {
         pos: BlockPos,
         random: &mut R,
         mut result: SpawnerTickResult,
+        broadcast_event: &dyn Fn(&Arc<World>, BlockPos, i32),
     ) -> SpawnerTickResult {
-        let delay_result = self.delay(world, pos, random);
+        let delay_result = self.delay(world, pos, random, broadcast_event);
         result.state_changed |= delay_result.state_changed;
         result.next_spawn_data_changed |= delay_result.next_spawn_data_changed;
         result
@@ -526,6 +547,7 @@ impl BaseSpawner {
         world: &Arc<World>,
         pos: BlockPos,
         random: &mut R,
+        broadcast_event: &dyn Fn(&Arc<World>, BlockPos, i32),
     ) -> SpawnerTickResult {
         let mut result = SpawnerTickResult {
             state_changed: true,
@@ -550,7 +572,7 @@ impl BaseSpawner {
                 state.next_spawn_data = Some(NextSpawnData::Potential(index));
             }
         }
-        world.block_event(pos, &vanilla_blocks::SPAWNER, EVENT_SPAWN, 0);
+        broadcast_event(world, pos, EVENT_SPAWN);
         result
     }
 
