@@ -18,7 +18,7 @@ use crate::behavior::blocks::WitherSkullBlock;
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::ZombieEntity;
+use crate::entity::entities::{ItemEntity, ZombieEntity};
 use crate::entity::living_base::MobEffectInstance;
 use crate::entity::{Entity, LivingEntity, Mob as _, SharedEntity, init_entities, next_entity_id};
 use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
@@ -224,4 +224,69 @@ fn invul_survives_save_and_load() {
     let (loaded, _loaded_shared) = add_wither(&fixture);
     loaded.load_additional((&borrowed).into());
     assert_eq!(loaded.invulnerable_ticks(), 123);
+}
+
+/// A zombie the wither last hurt, standing at `x, 65, 0` on `ground`.
+fn wither_victim(
+    fixture: &TestWorld,
+    wither: &SharedEntity,
+    x: i32,
+    ground: BlockPos,
+) -> Arc<ZombieEntity> {
+    fixture.world.set_block(
+        ground,
+        vanilla_blocks::GRASS_BLOCK.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    );
+    let zombie = Arc::new(ZombieEntity::new(
+        &vanilla_entities::ZOMBIE,
+        next_entity_id(),
+        DVec3::new(f64::from(x) + 0.5, 65.0, 0.5),
+        Arc::downgrade(&fixture.world),
+    ));
+    zombie.set_last_hurt_by_mob(Some(wither));
+    zombie
+}
+
+#[test]
+fn a_withers_victim_plants_a_wither_rose() {
+    let fixture = world("wither_rose_planted");
+    let (_wither, shared) = add_wither(&fixture);
+    let zombie = wither_victim(&fixture, &shared, 2, BlockPos::new(2, 64, 0));
+
+    zombie.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
+
+    assert_eq!(
+        fixture
+            .world
+            .get_block_state(BlockPos::new(2, 65, 0))
+            .get_block(),
+        &vanilla_blocks::WITHER_ROSE
+    );
+}
+
+#[test]
+fn a_rose_that_cannot_grow_drops_as_an_item() {
+    let fixture = world("wither_rose_dropped");
+    let (_wither, shared) = add_wither(&fixture);
+    let zombie = wither_victim(&fixture, &shared, 6, BlockPos::new(20, 64, 0));
+
+    zombie.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
+
+    assert!(
+        fixture
+            .world
+            .get_block_state(BlockPos::new(6, 65, 0))
+            .is_air()
+    );
+    let center = DVec3::new(6.5, 65.0, 0.5);
+    let roses = fixture.world.get_entities_in_aabb_matching(
+        &WorldAabb::from_min_max(center - 2.0, center + 2.0),
+        |entity| {
+            entity
+                .downcast_ref::<ItemEntity>()
+                .is_some_and(|item| item.get_item().is(&vanilla_items::WITHER_ROSE))
+        },
+    );
+    assert_eq!(roses.len(), 1);
 }

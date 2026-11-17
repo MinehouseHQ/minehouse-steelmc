@@ -6,7 +6,7 @@ use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, DEATH_PROTECTION, KINETIC_WEAPON, USE_EFFECTS, WEAPON,
 };
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_registry::{DyeColor, vanilla_custom_stats, vanilla_game_rules};
 
 use super::*;
 use crate::behavior::items::projectile_weapon::as_abstract_arrow;
@@ -1513,9 +1513,8 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        if let Some(world) = self.level()
-            && let Some(killer) = get_kill_credit(self, &world)
-        {
+        let killer = self.level().and_then(|world| get_kill_credit(self, &world));
+        if let Some(killer) = &killer {
             killer.award_kill_score(self.as_entity_event_source(), source);
         }
 
@@ -1531,12 +1530,32 @@ pub trait LivingEntity: Entity {
             {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
                 self.drop_all_death_loot(source);
-                // TODO: Create wither rose for killer
+                self.create_wither_rose(&world, killer.as_deref());
             }
         }
 
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_pose(EntityPose::Dying);
+    }
+
+    /// Vanilla `LivingEntity.createWitherRose`: a wither's victim leaves a
+    /// wither rose where it died, planted when mob griefing allows and the
+    /// rose fits, otherwise dropped as an item.
+    fn create_wither_rose(&self, world: &Arc<World>, killer: Option<&dyn Entity>) {
+        if killer.is_none_or(|killer| killer.entity_type() != &vanilla_entities::WITHER) {
+            return;
+        }
+        let pos = self.block_position();
+        let rose = vanilla_blocks::WITHER_ROSE.default_state();
+        let planted = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+            && world.get_block_state(pos).is_air()
+            && BLOCK_BEHAVIORS
+                .get_behavior(&vanilla_blocks::WITHER_ROSE)
+                .can_survive(rose, world.as_ref(), pos)
+            && world.set_block(pos, rose, UpdateFlags::UPDATE_ALL);
+        if !planted {
+            world.spawn_item(self.position(), ItemStack::new(&vanilla_items::WITHER_ROSE));
+        }
     }
 
     /// Runs vanilla `LivingEntity.handleKillingBlow`.
