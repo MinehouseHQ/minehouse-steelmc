@@ -247,7 +247,7 @@ mod tests {
         assert!(bolts(world).is_empty(), "clear skies call no lightning");
 
         {
-            let mut weather = world.weather.lock();
+            let mut weather = world.weather.write();
             weather.rain_level = 1.0;
             weather.thunder_level = 1.0;
         }

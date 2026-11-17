@@ -766,15 +766,17 @@ impl World {
         let mut nearest: Option<(Arc<Player>, f64)> = None;
         let positions = self.player_positions_in_tick();
         self.players.iter_players(|_, player| {
-            if predicate(player) {
-                let distance_sqr = positions.position(player).distance_squared(position);
-                if nearest_player_distance_in_range(distance_sqr, max_distance, max_distance_sqr)
-                    && nearest
-                        .as_ref()
-                        .is_none_or(|(_, current)| distance_sqr < *current)
-                {
-                    nearest = Some((Arc::clone(player), distance_sqr));
-                }
+            // The distance is checked first: a player out of range, or no
+            // nearer than the best so far, cannot be the answer, so the
+            // predicate (which locks the player's state) is skipped for it.
+            let distance_sqr = positions.position(player).distance_squared(position);
+            if nearest_player_distance_in_range(distance_sqr, max_distance, max_distance_sqr)
+                && nearest
+                    .as_ref()
+                    .is_none_or(|(_, current)| distance_sqr < *current)
+                && predicate(player)
+            {
+                nearest = Some((Arc::clone(player), distance_sqr));
             }
             true
         });

@@ -50,7 +50,7 @@ impl World {
             return;
         }
 
-        let mut weather = self.weather.lock();
+        let mut weather = self.weather.write();
         let raining_before = self.is_raining_with_guard(&weather);
 
         // Advance the weather state machine (only if gamerule allows)
@@ -197,7 +197,7 @@ impl World {
     /// WARNING: this function acquires a lock on the `weather` field.
     /// if you already have a lock on the `weather` field, this will DEADLOCK.
     pub fn is_raining(&self) -> bool {
-        let guard = self.weather.lock();
+        let guard = self.weather.read();
         self.is_raining_with_guard(&guard)
     }
 
@@ -256,7 +256,7 @@ impl World {
     /// WARNING: this function acquires a lock on the `weather` field.
     /// if you already have a lock on the `weather` field, this will DEADLOCK.
     pub fn is_thundering(&self) -> bool {
-        let guard = self.weather.lock();
+        let guard = self.weather.read();
         self.is_thundering_with_guard(&guard)
     }
 
@@ -269,7 +269,7 @@ impl World {
     /// thunder when the dimension has weather.
     pub fn sky_light_level(&self) -> f32 {
         let (rain_level, thunder_level) = if self.can_have_weather() {
-            let weather = self.weather.lock();
+            let weather = self.weather.read();
             (weather.rain_level, weather.thunder_level)
         } else {
             (0.0, 0.0)
@@ -334,7 +334,7 @@ impl World {
     /// in rain or thunder.
     pub fn bees_stay_in_hive(&self) -> bool {
         let (rain_level, thunder_level) = if self.can_have_weather() {
-            let weather = self.weather.lock();
+            let weather = self.weather.read();
             (weather.rain_level, weather.thunder_level)
         } else {
             (0.0, 0.0)
