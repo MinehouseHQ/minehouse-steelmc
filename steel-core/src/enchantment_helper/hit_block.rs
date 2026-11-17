@@ -15,8 +15,10 @@ use super::item_in_use::EnchantedItemInUse;
 use super::{apply_entity_effect, entity_requirements_state_at};
 use crate::entity::entities::LightningBoltEntity;
 use crate::entity::{
-    Entity, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, SharedEntity, spawn_entity,
+    Entity, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity,
+    SharedEntity, spawn_entity,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
 /// Vanilla `EnchantmentHelper.onHitBlock` for a weapon held by no slot: runs
@@ -60,6 +62,51 @@ pub(crate) fn on_hit_block(
         }
     }
     broke
+}
+
+/// Vanilla `EnchantmentHelper.onHitBlock` for the item `owner` holds in
+/// `slot`: runs every enchantment's `minecraft:hit_block` effects at
+/// `hit_location`, a broken item going through the owner's equipment break.
+pub(crate) fn on_hit_block_equipped(
+    world: &World,
+    owner: &dyn LivingEntity,
+    slot: EquipmentSlot,
+    hit_location: DVec3,
+) {
+    let mut enchantments = None;
+    owner.with_equipment_slot(slot, &mut |item| {
+        enchantments = item.get_enchantments().cloned();
+    });
+    let Some(enchantments) = enchantments else {
+        return;
+    };
+    let owner_shared = world.get_entity_by_id(owner.id());
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let level = *level as i32;
+        for effect in enchantment.effects.hit_block {
+            let matches = effect.requirements.is_none_or(|requirements| {
+                entity_requirements_state_at(requirements, owner, hit_location, level, None)
+                    == Some(true)
+            });
+            if matches {
+                apply_entity_effect(
+                    world,
+                    &effect.effect,
+                    level,
+                    owner,
+                    hit_location,
+                    owner_shared.as_ref(),
+                    &mut EnchantedItemInUse::Equipped { owner, slot },
+                );
+            }
+        }
+    }
 }
 
 /// Vanilla `WeatherCheck.test`.
@@ -169,10 +216,11 @@ mod tests {
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb};
 
-    use super::on_hit_block;
+    use super::{on_hit_block, on_hit_block_equipped};
     use crate::behavior::init_behaviors;
     use crate::entity::entities::LightningBoltEntity;
     use crate::entity::{SharedEntity, create_entity_instance, init_entities, next_entity_id};
+    use crate::inventory::equipment::{EntityEquipment as _, EquipmentSlot};
     use crate::player::ResetReason;
     use crate::test_support::{
         TestPlayerBuilder, enchanted_item, fresh_test_world, insert_ready_full_chunk,
@@ -261,6 +309,50 @@ mod tests {
         assert!(
             bolt.cause()
                 .is_some_and(|cause| Arc::ptr_eq(&cause, &player))
+        );
+    }
+
+    #[test]
+    fn a_player_punching_a_rod_with_a_channeling_trident_calls_no_lightning() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+        let fixture = fresh_test_world("channeling_punch");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            ROD,
+            vanilla_blocks::LIGHTNING_ROD.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let player =
+            TestPlayerBuilder::new(Arc::clone(world), "Puncher".to_owned(), next_entity_id())
+                .build();
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        player.inventory.lock().set(
+            EquipmentSlot::MainHand,
+            enchanted_item(
+                &vanilla_items::TRIDENT,
+                Identifier::vanilla_static("channeling"),
+                1,
+            ),
+        );
+        {
+            let mut weather = world.weather.write();
+            weather.rain_level = 1.0;
+            weather.thunder_level = 1.0;
+        }
+
+        on_hit_block_equipped(
+            world,
+            player.as_ref(),
+            EquipmentSlot::MainHand,
+            DVec3::new(8.5, 65.5, 8.5),
+        );
+
+        assert!(
+            bolts(world).is_empty(),
+            "channeling's hit_block needs the trident entity itself"
         );
     }
 }
