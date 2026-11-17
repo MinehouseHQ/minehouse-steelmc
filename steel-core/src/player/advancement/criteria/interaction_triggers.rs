@@ -4,8 +4,9 @@
 //! `FISHING_ROD_HOOKED`, `TARGET_BLOCK_HIT` and `BEE_NEST_DESTROYED`).
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::item_stack::ItemStack;
+use steel_registry::item_stack::{DurabilityChange, ItemStack};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _};
+use steel_utils::types::InteractionHand;
 use steel_utils::{BlockStateId, Identifier};
 
 use super::predicates::ConditionContext;
@@ -40,7 +41,28 @@ pub(crate) const TARGET_BLOCK_HIT: Identifier = Identifier::vanilla_static("targ
 /// Vanilla `CriteriaTriggers.BEE_NEST_DESTROYED`.
 pub(crate) const BEE_NEST_DESTROYED: Identifier = Identifier::vanilla_static("bee_nest_destroyed");
 
+/// Vanilla `applyDamage`'s `ITEM_DURABILITY_CHANGED` for a stack worn by
+/// `owner`: only players have advancements.
+pub(crate) fn report_durability_change<E: Entity + ?Sized>(
+    owner: &E,
+    change: Option<DurabilityChange>,
+) {
+    if let Some(player) = owner.as_player() {
+        player.trigger_item_durability_changed(change);
+    }
+}
+
 impl Player {
+    /// Vanilla `ItemStack.hurtAndBreak(amount, player, hand)` on the held
+    /// stack, firing `ITEM_DURABILITY_CHANGED` once the inventory unlocks.
+    pub(crate) fn hurt_item_in_hand(&self, hand: InteractionHand, amount: i32) {
+        let change =
+            self.inventory
+                .lock()
+                .hurt_item_in_hand(hand, amount, self.has_infinite_materials());
+        self.trigger_item_durability_changed(change);
+    }
+
     /// Vanilla `LootTableTrigger.trigger(player, lootTable)`.
     pub(crate) fn trigger_generate_loot(&self, loot_table: &Identifier) {
         trigger(self, &GENERATE_LOOT, |conditions| {
@@ -82,16 +104,19 @@ impl Player {
         });
     }
 
-    /// Vanilla `ItemDurabilityTrigger.trigger(player, itemStack, newDurability)`:
-    /// `stack` still carries the old damage.
-    pub(crate) fn trigger_item_durability_changed(&self, stack: &ItemStack, new_damage: i32) {
+    /// Vanilla `ItemDurabilityTrigger.trigger(player, itemStack, newDurability)`,
+    /// fired once the wearing code released its locks.
+    pub(crate) fn trigger_item_durability_changed(&self, change: Option<DurabilityChange>) {
+        let Some(DurabilityChange { stack, new_damage }) = change else {
+            return;
+        };
         let durability = stack.get_max_damage() - new_damage;
         let delta = stack.get_damage_value() - new_damage;
         trigger(self, &ITEM_DURABILITY_CHANGED, |conditions| {
             conditions
                 .item
                 .as_ref()
-                .is_none_or(|predicate| predicate.test(stack))
+                .is_none_or(|predicate| predicate.test(&stack))
                 && conditions.durability.matches(durability)
                 && conditions.delta.matches(delta)
         });

@@ -43,9 +43,10 @@ impl ItemBehavior for FishingRodItem {
             if item.is(&vanilla_items::FISHING_ROD) {
                 let damage = fishing.retrieve(&item);
 
-                context.inv.with_item(|item| {
-                    item.hurt_and_break(damage, infinite_materials);
-                });
+                let change = context
+                    .inv
+                    .with_item(|item| item.hurt_and_break_tracked(damage, infinite_materials).1);
+                player.trigger_item_durability_changed(change);
             }
 
             world.play_sound_at(

@@ -63,9 +63,10 @@ impl ItemBehavior for ShearsItem {
         Self::block_age(context, plant, pos, state);
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context
+        let change = context
             .inv
-            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
+            .with_item(|item| item.hurt_and_break_tracked(1, has_infinite_materials).1);
+        context.player.trigger_item_durability_changed(change);
 
         InteractionResult::Success
     }

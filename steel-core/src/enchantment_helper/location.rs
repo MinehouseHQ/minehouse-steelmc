@@ -320,7 +320,7 @@ fn apply_location_entity_effect(
                 owner: entity,
                 slot,
             }
-            .hurt_and_break(amount, entity.has_infinite_materials())
+            .hurt_and_break(amount, entity.has_infinite_materials(), None)
         }
         EnchantmentEntityEffect::ReplaceDisk { .. } => {
             replace_disk(world, effect, level, entity, entity.position());

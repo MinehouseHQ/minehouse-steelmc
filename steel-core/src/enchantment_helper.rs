@@ -25,6 +25,7 @@ use crate::entity::attribute::AttributeModifier;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
+use crate::player::advancement::criteria::report_durability_change;
 use crate::world::World;
 
 mod selection;
@@ -860,7 +861,11 @@ fn apply_supported_entity_effect(
             let has_infinite_materials = enchanted_entity
                 .and_then(|entity| entity.as_living_entity())
                 .is_some_and(LivingEntity::has_infinite_materials);
-            enchanted_item.hurt_and_break(amount, has_infinite_materials)
+            enchanted_item.hurt_and_break(
+                amount,
+                has_infinite_materials,
+                enchanted_entity.map(|entity| &**entity),
+            )
         }
         EnchantmentEntityEffect::DamageEntity {
             min_damage,
@@ -982,9 +987,11 @@ fn apply_supported_post_piercing_entity_effect(
             let amount = amount.calculate(level) as i32;
             let has_infinite_materials = user.has_infinite_materials();
             let mut item_broke = false;
+            let mut change = None;
             user.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
-                item_broke = stack.hurt_and_break(amount, has_infinite_materials);
+                (item_broke, change) = stack.hurt_and_break_tracked(amount, has_infinite_materials);
             });
+            report_durability_change(user, change);
             item_broke
         }
         EnchantmentEntityEffect::ApplyExhaustion { amount } => {

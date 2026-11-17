@@ -51,9 +51,10 @@ impl ItemBehavior for InstrumentItem {
         let durability_damage = instrument.durability_damage();
         if durability_damage > 0 {
             let infinite = player.has_infinite_materials();
-            let broke = context
+            let (broke, change) = context
                 .inv
-                .with_item(|stack| stack.hurt_and_break(durability_damage, infinite));
+                .with_item(|stack| stack.hurt_and_break_tracked(durability_damage, infinite));
+            player.trigger_item_durability_changed(change);
             if broke {
                 let slot = match context.hand {
                     InteractionHand::MainHand => EquipmentSlot::MainHand,

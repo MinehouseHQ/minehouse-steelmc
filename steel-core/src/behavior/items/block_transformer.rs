@@ -5,6 +5,7 @@ use steel_registry::block_transformer::{
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::vanilla_components::{BLOCK_TRANSFORMER, BLOCKS_ATTACKS};
+use steel_registry::item_stack::DurabilityChange;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -71,9 +72,10 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
             .trigger_item_used_on_location(&ITEM_USED_ON_BLOCK, pos, &tool);
         let old_state = context.world.get_block_state(pos);
         drop_loot(transform, context, old_state);
-        let broken_item = context.inv.with_item(|item| {
+        let (broken_item, change) = context.inv.with_item(|item| {
             consume_transform_item(item, transform, context.player.has_infinite_materials())
         });
+        context.player.trigger_item_durability_changed(change);
 
         if let Some(item) = broken_item {
             let slot = match context.hand {
@@ -143,18 +145,19 @@ fn consume_transform_item(
     item: &mut ItemStack,
     transform: &BlockTransformData,
     has_infinite_materials: bool,
-) -> Option<ItemRef> {
+) -> (Option<ItemRef>, Option<DurabilityChange>) {
     if item.is_stackable() {
         if transform.consume_on_use && !has_infinite_materials {
             item.shrink_one();
         }
 
-        return None;
+        return (None, None);
     }
 
     let item_ref = item.item();
-    item.hurt_and_break(transform.item_damage_per_use, has_infinite_materials)
-        .then_some(item_ref)
+    let (broke, change) =
+        item.hurt_and_break_tracked(transform.item_damage_per_use, has_infinite_materials);
+    (broke.then_some(item_ref), change)
 }
 
 fn drop_loot(transform: &BlockTransformData, context: &UseOnContext, old_state: BlockStateId) {

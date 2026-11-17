@@ -473,10 +473,7 @@ impl CopperGolemEntity {
         self.play_following_sound(world, &sound_events::ITEM_AXE_SCRAPE, self.sound_source());
         world.level_event(level_event, pos, 0, None);
         self.data.lock().next_weathering_tick = UNSET_WEATHERING_TICK;
-        player
-            .inventory
-            .lock()
-            .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+        player.hurt_item_in_hand(hand, 1);
         InteractionResult::SuccessServer
     }
 
@@ -743,10 +740,7 @@ impl Mob for CopperGolemEntity {
         if item_stack.is(&vanilla_items::SHEARS) && self.ready_for_shearing() {
             self.shear(&world, SoundSource::Players, &item_stack);
             self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
-            player
-                .inventory
-                .lock()
-                .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+            player.hurt_item_in_hand(hand, 1);
             return InteractionResult::Success;
         }
         self.interact_with_copper(&world, player, hand, &item_stack)

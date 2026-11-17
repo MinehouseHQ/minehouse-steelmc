@@ -1184,10 +1184,7 @@ impl BoggedEntity {
         if let Some(world) = self.level() {
             self.shear(&world, SoundSource::Players, &item_stack);
             self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
-            player
-                .inventory
-                .lock()
-                .hurt_item_in_hand(hand, 1, player.has_infinite_materials());
+            player.hurt_item_in_hand(hand, 1);
         }
         InteractionResult::Success
     }

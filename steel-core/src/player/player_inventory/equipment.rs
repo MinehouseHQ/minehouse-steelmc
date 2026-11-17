@@ -1,5 +1,6 @@
 use std::mem;
 
+use steel_registry::item_stack::DurabilityChange;
 use steel_registry::{
     REGISTRY, RegistryExt, enchantment_effect::EnchantmentEffectComponent, item_stack::ItemStack,
     items::ItemRef,
@@ -91,15 +92,19 @@ impl PlayerInventory {
     }
 
     /// Damages the held item and records inventory/equipment changes.
+    ///
+    /// Returns the durability change for `ITEM_DURABILITY_CHANGED`, which the
+    /// caller fires once this inventory is unlocked.
     pub fn hurt_item_in_hand(
         &mut self,
         hand: InteractionHand,
         amount: i32,
         has_infinite_materials: bool,
-    ) {
+    ) -> Option<DurabilityChange> {
         if amount <= 0 || self.get_item_in_hand(hand).is_empty() {
-            return;
+            return None;
         }
+        let durability_change;
 
         let changed = {
             let item = self.get_item_in_hand_mut(hand);
@@ -107,7 +112,7 @@ impl PlayerInventory {
             let previous_count = item.count();
             let previous_damage = item.get_damage_value();
 
-            let _ = item.hurt_and_break(amount, has_infinite_materials);
+            (_, durability_change) = item.hurt_and_break_tracked(amount, has_infinite_materials);
 
             item.item() != previous_item
                 || item.count() != previous_count
@@ -117,6 +122,7 @@ impl PlayerInventory {
         if changed {
             self.set_changed();
         }
+        durability_change
     }
 
     /// Mutates the held item and records inventory/equipment changes if its stack state changed.
@@ -131,16 +137,18 @@ impl PlayerInventory {
     /// Damages the held item and converts it to `replacement_item` if it breaks.
     ///
     /// Mirrors vanilla `ItemStack.hurtAndConvertOnBreak` for hand-held player items.
+    /// Returns the durability change like [`Self::hurt_item_in_hand`].
     pub fn hurt_and_convert_item_in_hand_on_break(
         &mut self,
         hand: InteractionHand,
         amount: i32,
         replacement_item: ItemRef,
         has_infinite_materials: bool,
-    ) {
+    ) -> Option<DurabilityChange> {
         if amount <= 0 || self.get_item_in_hand(hand).is_empty() {
-            return;
+            return None;
         }
+        let durability_change;
 
         let changed = {
             let item = self.get_item_in_hand_mut(hand);
@@ -148,7 +156,10 @@ impl PlayerInventory {
             let previous_count = item.count();
             let previous_damage = item.get_damage_value();
 
-            if item.hurt_and_break(amount, has_infinite_materials) && item.is_empty() {
+            let broke;
+            (broke, durability_change) =
+                item.hurt_and_break_tracked(amount, has_infinite_materials);
+            if broke && item.is_empty() {
                 item.set_item(&replacement_item.key);
                 item.set_count(1);
                 if item.is_damageable_item() {
@@ -164,6 +175,7 @@ impl PlayerInventory {
         if changed {
             self.set_changed();
         }
+        durability_change
     }
 
     /// Swaps the selected main-hand item with the offhand item.

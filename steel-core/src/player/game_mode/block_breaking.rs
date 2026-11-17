@@ -474,29 +474,7 @@ impl BlockBreakingManager {
                 .map_or(0.0, |b| b.config.destroy_time);
 
             if block_destroy_time != 0.0 {
-                let broke = {
-                    let mut inv = player.inventory.lock();
-                    let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
-
-                    if damage_per_block > 0 {
-                        // Use with_selected_item_mut to ensure set_changed() is called
-                        // Skip damage if player has infinite materials (creative mode)
-                        let has_infinite_materials = player.has_infinite_materials();
-                        inv.with_selected_item_mut(|main_hand| {
-                            let item = main_hand.item;
-                            main_hand
-                                .hurt_and_break(damage_per_block, has_infinite_materials)
-                                .then_some(item)
-                        })
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(item) = broke {
-                    player.on_equipped_item_broken(item, EquipmentSlot::MainHand);
-                    log::debug!("Tool broke while mining block at {pos:?}");
-                }
+                hurt_mining_tool(player, pos);
             }
 
             // Handle drops (skip for creative/spectator)
@@ -652,4 +630,33 @@ fn drop_block_loot(
     BLOCK_BEHAVIORS
         .get_behavior(state.get_block())
         .spawn_after_break(state, world, pos, tool, true);
+}
+
+/// Vanilla `Item.mineBlock`: the selected tool takes its per-block damage,
+/// firing `ITEM_DURABILITY_CHANGED` once the inventory unlocks.
+fn hurt_mining_tool(player: &Player, pos: BlockPos) {
+    let mut change = None;
+    let broke = {
+        let mut inv = player.inventory.lock();
+        let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
+        if damage_per_block > 0 {
+            // with_selected_item_mut calls set_changed(); infinite materials
+            // (creative) skip the damage.
+            let has_infinite_materials = player.has_infinite_materials();
+            inv.with_selected_item_mut(|main_hand| {
+                let item = main_hand.item;
+                let broke;
+                (broke, change) =
+                    main_hand.hurt_and_break_tracked(damage_per_block, has_infinite_materials);
+                broke.then_some(item)
+            })
+        } else {
+            None
+        }
+    };
+    player.trigger_item_durability_changed(change);
+    if let Some(item) = broke {
+        player.on_equipped_item_broken(item, EquipmentSlot::MainHand);
+        log::debug!("Tool broke while mining block at {pos:?}");
+    }
 }

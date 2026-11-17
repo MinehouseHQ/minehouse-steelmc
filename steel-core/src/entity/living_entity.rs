@@ -25,6 +25,7 @@ use crate::inventory::slot_range::{
     SADDLE_SLOT,
 };
 use crate::player::advancement::criteria::USED_TOTEM;
+use crate::player::advancement::criteria::report_durability_change;
 use crate::world::waypoints;
 use steel_protocol::packets::game::WaypointIcon;
 use steel_registry::damage_type::DamageType;
@@ -1045,6 +1046,7 @@ pub trait LivingEntity: Entity {
         let durability_damage = (damage / 4.0).max(1.0) as i32;
         for &slot in slots {
             let mut item_broke = false;
+            let mut change = None;
             let mut item_ref = &*vanilla_items::AIR;
             self.with_equipment_slot_mut(slot, &mut |item| {
                 item_ref = item.item;
@@ -1055,10 +1057,11 @@ pub trait LivingEntity: Entity {
                     && item.is_damageable_item()
                     && item.can_be_hurt_by(source.damage_type)
                 {
-                    item_broke =
-                        item.hurt_and_break(durability_damage, self.has_infinite_materials());
+                    (item_broke, change) = item
+                        .hurt_and_break_tracked(durability_damage, self.has_infinite_materials());
                 }
             });
+            report_durability_change(self, change);
             if item_broke {
                 self.on_equipped_item_broken(item_ref, slot);
             }
@@ -1272,12 +1275,14 @@ pub trait LivingEntity: Entity {
         }
         let slot = hand_slot(active.hand());
         let mut item_broke = false;
+        let mut change = None;
         let mut item_ref = item.item();
         let infinite = self.has_infinite_materials();
         self.with_equipment_slot_mut(slot, &mut |stack| {
             item_ref = stack.item();
-            item_broke = stack.hurt_and_break(item_damage, infinite);
+            (item_broke, change) = stack.hurt_and_break_tracked(item_damage, infinite);
         });
+        report_durability_change(self, change);
         if item_broke {
             self.on_equipped_item_broken(item_ref, slot);
         }
@@ -2908,11 +2913,13 @@ pub trait LivingEntity: Entity {
         let slot_to_damage = slots_with_gliders[slot_index];
         let has_infinite_materials = self.has_infinite_materials();
         let mut item_broke = false;
+        let mut change = None;
         let mut item_ref = &*vanilla_items::AIR;
         self.with_equipment_slot_mut(slot_to_damage, &mut |item_stack| {
             item_ref = item_stack.item;
-            item_broke = item_stack.hurt_and_break(1, has_infinite_materials);
+            (item_broke, change) = item_stack.hurt_and_break_tracked(1, has_infinite_materials);
         });
+        report_durability_change(self, change);
         if item_broke {
             self.on_equipped_item_broken(item_ref, slot_to_damage);
         }

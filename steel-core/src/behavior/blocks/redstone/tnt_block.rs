@@ -212,15 +212,17 @@ impl BlockBehavior for TntBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         let has_infinite_materials = player.has_infinite_materials();
+        let mut change = None;
         let used_item = inv.with_item(|item| {
             let used_item = item.item();
             if is_flint_and_steel {
-                item.hurt_and_break(1, has_infinite_materials);
+                (_, change) = item.hurt_and_break_tracked(1, has_infinite_materials);
             } else {
                 item.consume_one(has_infinite_materials);
             }
             used_item
         });
+        player.trigger_item_durability_changed(change);
         player.award_stat(&vanilla_stat_types::ITEM_USED, used_item);
         InteractionResult::Success
     }
