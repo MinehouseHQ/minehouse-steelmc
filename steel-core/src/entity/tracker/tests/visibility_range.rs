@@ -1,4 +1,5 @@
 use super::*;
+use std::hash::Hash;
 
 #[test]
 fn client_tracking_range_is_converted_to_blocks() {
@@ -84,10 +85,7 @@ fn vehicle_effective_tracking_range_uses_widest_passenger_range() {
     );
 }
 
-fn indexed_ids<K: Eq + std::hash::Hash>(
-    index: &scc::HashMap<K, FxHashSet<i32>>,
-    key: &K,
-) -> Vec<i32> {
+fn indexed_ids<K: Eq + Hash>(index: &scc::HashMap<K, FxHashSet<i32>>, key: &K) -> Vec<i32> {
     let mut ids = index
         .read_sync(key, |_, ids| ids.iter().copied().collect::<Vec<_>>())
         .unwrap_or_default();
@@ -118,11 +116,17 @@ fn player_refresh_indexes_follow_chunk_moves_and_removal() {
 
     // No player tracks the far chunk, so the move drops the pairing and both indexes follow.
     tracker.on_entity_section_change(entity_id, start, far, |_| Vec::new(), |_| None);
-    assert!(indexed_ids(&tracker.chunk_entities, &start).is_empty());
+    assert_eq!(
+        indexed_ids(&tracker.chunk_entities, &start),
+        Vec::<i32>::new()
+    );
     assert_eq!(indexed_ids(&tracker.chunk_entities, &far), vec![entity_id]);
-    assert!(indexed_ids(&tracker.player_entities, &player_id).is_empty());
+    assert_eq!(
+        indexed_ids(&tracker.player_entities, &player_id),
+        Vec::<i32>::new()
+    );
 
     tracker.remove(entity_id, |_| None);
-    assert!(tracker.chunk_entities.is_empty());
-    assert!(tracker.player_entities.is_empty());
+    assert_eq!(tracker.chunk_entities.len(), 0);
+    assert_eq!(tracker.player_entities.len(), 0);
 }
