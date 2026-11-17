@@ -2193,7 +2193,7 @@ impl LivingEntity for Player {
             self.tick_ack_block_changes();
         }
 
-        self.living_base.decrement_invulnerable_time();
+        self.living_base.decrement_damage_cooldown_time();
         self.tick_mob_effects();
         self.tick_active_item_use(entity);
         self.tick_stats();

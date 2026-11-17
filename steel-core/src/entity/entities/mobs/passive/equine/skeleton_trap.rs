@@ -134,11 +134,7 @@ fn create_horse(
         let _ = mob.finalize_spawn(world, EntitySpawnReason::Triggered, None);
         mob.set_persistence_required();
     }
-    if let Some(living) = horse.as_living_entity() {
-        living
-            .living_base()
-            .set_invulnerable_time(LIGHTNING_INVULNERABLE_TICKS);
-    }
+    horse.set_invulnerable_time(LIGHTNING_INVULNERABLE_TICKS);
     if let Some(skeleton_horse) = horse.downcast_ref::<SkeletonHorseEntity>() {
         skeleton_horse.set_tamed(true);
         skeleton_horse.set_age(0);
@@ -155,8 +151,7 @@ fn create_skeleton(
     let skeleton = create_entity_instance(world, &vanilla_entities::SKELETON, position).ok()?;
     let mob = skeleton.as_mob()?;
     let _ = mob.finalize_spawn(world, EntitySpawnReason::Triggered, None);
-    mob.living_base()
-        .set_invulnerable_time(LIGHTNING_INVULNERABLE_TICKS);
+    mob.set_invulnerable_time(LIGHTNING_INVULNERABLE_TICKS);
     mob.set_persistence_required();
     {
         let mut equipment = mob.living_base().equipment().lock();

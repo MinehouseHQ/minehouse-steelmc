@@ -75,7 +75,7 @@ pub fn save_default_data_to_bucket_tag<M: Mob + ?Sized>(mob: &M, bucket: &mut It
         if mob.has_glowing_tag() {
             tag.insert("Glowing", 1_i8);
         }
-        if mob.is_invulnerable() {
+        if mob.is_permanently_invulnerable() {
             tag.insert("Invulnerable", 1_i8);
         }
         if mob.is_persistence_required() {

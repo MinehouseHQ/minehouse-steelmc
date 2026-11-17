@@ -19,6 +19,8 @@ pub struct EntityBaseSaveData {
     pub no_gravity: bool,
     /// Whether this entity is invulnerable to non-bypassing damage.
     pub invulnerable: bool,
+    /// Vanilla `Entity.invulnerableTime`: remaining ticks of temporary invulnerability.
+    pub invulnerable_time: i32,
     /// This entity's custom name, if set.
     pub custom_name: Option<TextComponent>,
     /// Whether the custom name renders above the entity at all times.
@@ -42,6 +44,7 @@ impl EntityBaseSaveData {
             portal_cooldown: 0,
             no_gravity: false,
             invulnerable: false,
+            invulnerable_time: 0,
             custom_name: None,
             custom_name_visible: false,
             silent: false,

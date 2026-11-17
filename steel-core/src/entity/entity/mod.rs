@@ -289,8 +289,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         );
         nbt.insert("Air", NbtTag::Short(self.air_supply() as i16));
         nbt.insert("OnGround", nbt_bool(self.on_ground()));
-        nbt.insert("Invulnerable", nbt_bool(self.is_invulnerable()));
+        nbt.insert("Invulnerable", nbt_bool(self.is_permanently_invulnerable()));
         nbt.insert("PortalCooldown", self.portal_cooldown());
+        let invulnerable_time = self.invulnerable_time();
+        if invulnerable_time > 0 {
+            nbt.insert("invulnerable_time", invulnerable_time);
+        }
         nbt.insert(
             "UUID",
             NbtTag::IntArray(self.uuid().to_int_array().to_vec()),
@@ -3902,9 +3906,25 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Returns whether this entity is invulnerable to non-bypassing damage.
+    /// Vanilla `Entity.isInvulnerable`: permanently invulnerable, or still within
+    /// its temporary invulnerability ticks.
     fn is_invulnerable(&self) -> bool {
+        self.is_permanently_invulnerable() || self.invulnerable_time() > 0
+    }
+
+    /// Vanilla `Entity.isPermanentlyInvulnerable`, saved as `Invulnerable`.
+    fn is_permanently_invulnerable(&self) -> bool {
         self.base().invulnerable()
+    }
+
+    /// Vanilla `Entity.getInvulnerableTime`: remaining ticks of temporary invulnerability.
+    fn invulnerable_time(&self) -> i32 {
+        self.base().invulnerable_time()
+    }
+
+    /// Vanilla `Entity.setInvulnerableTime`.
+    fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.base().set_invulnerable_time(invulnerable_time);
     }
 
     /// Vanilla `Entity.isInvulnerableToPiercingWeapon`: piercing and kinetic
@@ -4527,6 +4547,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(invulnerable) = nbt.byte("Invulnerable") {
             save_data.invulnerable = invulnerable != 0;
         }
+        save_data.invulnerable_time = read_int("invulnerable_time").unwrap_or(0);
         if let Some(custom_name) = nbt
             .get("CustomName")
             .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()))

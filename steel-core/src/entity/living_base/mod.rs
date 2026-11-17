@@ -696,7 +696,7 @@ impl ActiveItemUseState {
 struct LivingEntityState {
     effects_dirty: bool,
     death_processed: bool,
-    invulnerable_time: i32,
+    damage_cooldown_time: i32,
     hurt_time: i32,
     hurt_duration: i32,
     last_hurt: f32,
@@ -743,7 +743,7 @@ impl LivingEntityState {
         Self {
             effects_dirty: false,
             death_processed: false,
-            invulnerable_time: 0,
+            damage_cooldown_time: 0,
             hurt_time: 0,
             hurt_duration: 0,
             last_hurt: 0.0,
@@ -787,7 +787,7 @@ impl LivingEntityState {
     const fn reset_death_state(&mut self) {
         self.death_processed = false;
         self.death_time = 0;
-        self.invulnerable_time = 0;
+        self.damage_cooldown_time = 0;
         self.last_hurt = 0.0;
         self.absorption_amount = 0.0;
         self.skip_drop_experience = false;
@@ -1749,20 +1749,20 @@ impl LivingEntityBase {
     }
 
     /// Returns the remaining hurt-cooldown ticks.
-    pub fn invulnerable_time(&self) -> i32 {
-        self.state.lock().invulnerable_time
+    pub fn damage_cooldown_time(&self) -> i32 {
+        self.state.lock().damage_cooldown_time
     }
 
     /// Sets the remaining hurt-cooldown ticks.
-    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
-        self.state.lock().invulnerable_time = invulnerable_time;
+    pub fn set_damage_cooldown_time(&self, damage_cooldown_time: i32) {
+        self.state.lock().damage_cooldown_time = damage_cooldown_time;
     }
 
     /// Decrements remaining invulnerability ticks by one if any are active.
-    pub fn decrement_invulnerable_time(&self) {
+    pub fn decrement_damage_cooldown_time(&self) {
         let mut state = self.state.lock();
-        if state.invulnerable_time > 0 {
-            state.invulnerable_time -= 1;
+        if state.damage_cooldown_time > 0 {
+            state.damage_cooldown_time -= 1;
         }
     }
 
@@ -1865,7 +1865,7 @@ impl LivingEntityBase {
             return None;
         }
 
-        if state.invulnerable_time > 10 && !bypasses_cooldown {
+        if state.damage_cooldown_time > 10 && !bypasses_cooldown {
             if amount <= state.last_hurt {
                 return None;
             }
@@ -1874,7 +1874,7 @@ impl LivingEntityBase {
             Some((false, effective))
         } else {
             state.last_hurt = amount;
-            state.invulnerable_time = 20;
+            state.damage_cooldown_time = 20;
             Some((true, amount))
         }
     }

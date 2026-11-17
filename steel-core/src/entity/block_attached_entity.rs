@@ -94,9 +94,14 @@ pub trait BlockAttachedEntity: Entity {
 
     fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError>;
 
+    /// Vanilla `BlockAttachedEntity.tickAtCheckInterval`, run every survival
+    /// check before the entity tests whether it still survives.
+    fn tick_at_check_interval(&self) {}
+
     fn tick_block_attached_entity(self: Arc<Self>) {
         self.check_below_world();
         if self.block_attached_entity_base().should_check_survival() {
+            self.tick_at_check_interval();
             // Check for survival.
             if !self.is_removed() && !self.survives() {
                 self.set_removed(RemovalReason::Discarded);
