@@ -1,7 +1,8 @@
-//! Structure location command.
+//! Vanilla `/locate`: structures and biomes.
 
 use std::{sync::Arc, time::Instant};
 
+use steel_registry::biome::BiomeRef;
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::{
     Modifier, TextComponent,
@@ -12,27 +13,39 @@ use text_components::{
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandResultSuspension, CommandResultSuspensionPoll, CommandSource, SteelArgumentType,
-        SteelCommandContext, SteelCommandRuntime, StructureOrTagKey, argument, literal,
+        BiomeOrTag, CommandResultSuspension, CommandResultSuspensionPoll, CommandSource,
+        SteelArgumentType, SteelCommandContext, SteelCommandRuntime, StructureOrTagKey, argument,
+        literal,
     },
     registration::CommandRegistration,
 };
+use crate::world::biome_search::{BiomeSearch, BiomeSearchPoll};
 use crate::world::structure_search::{FoundStructure, StructureSearch, StructureSearchPoll};
 
 const MAX_STRUCTURE_SEARCH_RADIUS: i32 = 100;
+/// Vanilla `locateBiome`: search radius and sample spacing, in blocks.
+const BIOME_SEARCH_RADIUS: i32 = 6400;
+const BIOME_SAMPLE_HORIZONTAL: i32 = 32;
+const BIOME_SAMPLE_VERTICAL: i32 = 64;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("locate"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("locate").then(
-        literal("structure").then(
-            argument("structure", SteelArgumentType::structure_or_tag_key())
-                .executes_suspended(start_structure_search),
-        ),
-    )
-    // TODO: Add `locate biome` once Steel has an asynchronous closest-biome search.
+    literal("locate")
+        .then(
+            literal("structure").then(
+                argument("structure", SteelArgumentType::structure_or_tag_key())
+                    .executes_suspended(start_structure_search),
+            ),
+        )
+        .then(
+            literal("biome").then(
+                argument("biome", SteelArgumentType::biome_or_tag())
+                    .executes_suspended(start_biome_search),
+            ),
+        )
     // TODO: Add `locate poi` once Steel has a point-of-interest manager.
 }
 
@@ -120,6 +133,102 @@ impl LocateStructureSearch {
     }
 }
 
+fn start_biome_search(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<LocateBiomeSearch, CommandSyntaxError> {
+    let query = context.biome_or_tag("biome")?.clone();
+    let origin = BlockPos::from(context.source().position());
+    let Some(search) = BiomeSearch::new(
+        Arc::clone(context.source().world()),
+        origin,
+        BIOME_SEARCH_RADIUS,
+        BIOME_SAMPLE_HORIZONTAL,
+        BIOME_SAMPLE_VERTICAL,
+        |biome| query.matches(biome),
+    ) else {
+        return Err(biome_not_found(&query));
+    };
+    Ok(LocateBiomeSearch {
+        source: context.source().clone(),
+        query,
+        search,
+        origin,
+        started_at: Instant::now(),
+    })
+}
+
+struct LocateBiomeSearch {
+    source: CommandSource,
+    query: BiomeOrTag,
+    search: BiomeSearch,
+    origin: BlockPos,
+    started_at: Instant,
+}
+
+impl CommandResultSuspension for LocateBiomeSearch {
+    fn poll(&mut self) -> CommandResultSuspensionPoll {
+        match self.search.poll() {
+            BiomeSearchPoll::Pending => CommandResultSuspensionPoll::Pending,
+            BiomeSearchPoll::Found(pos, biome) => {
+                let distance = distance_3d(self.origin, pos);
+                let name = biome_found_name(&self.query, biome);
+                self.source.send_success(
+                    &translations::COMMANDS_LOCATE_BIOME_SUCCESS
+                        .message([
+                            TextComponent::from(name.clone()),
+                            coordinates_component(pos, &pos.y().to_string()),
+                            TextComponent::from(distance.to_string()),
+                        ])
+                        .component(),
+                    false,
+                );
+                tracing::info!(
+                    "Locating element {} took {} ms",
+                    name,
+                    self.started_at.elapsed().as_millis()
+                );
+                CommandResultSuspensionPoll::Ready(Ok(distance))
+            }
+            BiomeSearchPoll::NotFound => {
+                CommandResultSuspensionPoll::Ready(Err(biome_not_found(&self.query)))
+            }
+        }
+    }
+}
+
+/// Vanilla `ResourceOrTagArgument.Result.asPrintable`.
+fn biome_printable(query: &BiomeOrTag) -> String {
+    match query {
+        BiomeOrTag::Biome(biome) => biome.key.to_string(),
+        BiomeOrTag::Tag(tag) => format!("#{tag}"),
+    }
+}
+
+/// Vanilla `showLocateResult`: a tag names the biome it matched.
+fn biome_found_name(query: &BiomeOrTag, found: BiomeRef) -> String {
+    match query {
+        BiomeOrTag::Biome(_) => biome_printable(query),
+        BiomeOrTag::Tag(_) => format!("{} ({})", biome_printable(query), found.key),
+    }
+}
+
+fn biome_not_found(query: &BiomeOrTag) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(
+        translations::COMMANDS_LOCATE_BIOME_NOT_FOUND
+            .message([TextComponent::from(biome_printable(query))])
+            .component(),
+    )
+}
+
+/// Vanilla `Mth.floor(Mth.sqrt((float) sourcePos.distSqr(foundPos)))`.
+fn distance_3d(a: BlockPos, b: BlockPos) -> i32 {
+    let dx = f64::from(a.x()) - f64::from(b.x());
+    let dy = f64::from(a.y()) - f64::from(b.y());
+    let dz = f64::from(a.z()) - f64::from(b.z());
+    let squared = (dx * dx + dy * dy + dz * dz) as f32;
+    (f64::from(squared).sqrt() as f32).floor() as i32
+}
+
 fn invalid_structure(query: &StructureOrTagKey) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(
         translations::COMMANDS_LOCATE_STRUCTURE_INVALID
@@ -147,20 +256,19 @@ fn locate_success_component(structure_name: String, pos: BlockPos, distance: i32
     translations::COMMANDS_LOCATE_STRUCTURE_SUCCESS
         .message([
             TextComponent::from(structure_name),
-            locate_coordinates_component(pos),
+            coordinates_component(pos, "~"),
             TextComponent::from(distance.to_string()),
         ])
         .component()
 }
 
-fn locate_coordinates_component(pos: BlockPos) -> TextComponent {
-    let displayed_y = "~";
+fn coordinates_component(pos: BlockPos, displayed_y: &str) -> TextComponent {
     TextComponent::plain("[")
         .add_child(
             translations::CHAT_COORDINATES
                 .message([
                     TextComponent::from(pos.0.x.to_string()),
-                    TextComponent::from(displayed_y),
+                    TextComponent::from(displayed_y.to_owned()),
                     TextComponent::from(pos.0.z.to_string()),
                 ])
                 .component(),
@@ -203,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn locate_graph_exposes_only_the_supported_typed_structure_branch() {
+    fn locate_graph_exposes_the_structure_and_biome_branches() {
         init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
@@ -223,12 +331,17 @@ mod tests {
         };
         assert!(target_node.is_executable());
         assert!(dispatcher.children(target).is_some_and(<[_]>::is_empty));
-        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(1));
+        let biome = child(&dispatcher, child(&dispatcher, locate, "biome"), "biome");
+        assert_eq!(
+            dispatcher.node(biome).and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::biome_or_tag())
+        );
+        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(2));
     }
 
     #[test]
     fn locate_coordinates_component_matches_vanilla_interactivity() {
-        let component = locate_coordinates_component(BlockPos::new(12, 0, -34));
+        let component = coordinates_component(BlockPos::new(12, 0, -34), "~");
 
         assert_eq!(component.format.color, Some(Color::Green));
         assert!(matches!(

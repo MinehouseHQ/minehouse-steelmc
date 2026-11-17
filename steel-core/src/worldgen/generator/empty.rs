@@ -42,6 +42,10 @@ impl ChunkGenerator for EmptyChunkGenerator {
         &vanilla_biomes::PLAINS
     }
 
+    fn possible_biomes(&self) -> Vec<BiomeRef> {
+        vec![&vanilla_biomes::PLAINS]
+    }
+
     fn create_structures(&self, _chunk: &Chunk) {}
 
     fn generate_structure_start(

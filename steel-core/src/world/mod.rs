@@ -112,6 +112,7 @@ use crate::{
 };
 
 pub(crate) mod autosave;
+pub mod biome_search;
 mod block_entity_ticker;
 mod block_event;
 pub mod block_guard;
