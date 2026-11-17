@@ -403,6 +403,49 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
     assert!(source_listener.events.lock().is_empty());
 }
 
+#[test]
+fn equip_item_emits_vanilla_equip_and_unequip_game_events() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("equip_game_event");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let position = DVec3::new(8.5, 64.0, 8.5);
+    let listener = Arc::new(RecordingGameEventListener::new(position));
+    let _registration = RegisteredGameEventListener::new(
+        world,
+        SectionPos::from_block_pos(BlockPos::from(position)),
+        Arc::clone(&listener) as SharedGameEventListener,
+    );
+    let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
+    living.base().set_position_local(position);
+    let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+    let stick = ItemStack::new(&vanilla_items::STICK);
+
+    // Vanilla skips the hook during the entity's first tick.
+    living.on_equip_item(EquipmentSlot::Head, &ItemStack::empty(), &helmet);
+    assert!(listener.events.lock().is_empty());
+    living.base().set_first_tick(false);
+
+    living.on_equip_item(EquipmentSlot::Head, &ItemStack::empty(), &helmet);
+    living.on_equip_item(EquipmentSlot::Head, &helmet, &helmet);
+    living.on_equip_item(EquipmentSlot::MainHand, &ItemStack::empty(), &stick);
+    living.on_equip_item(EquipmentSlot::Head, &helmet, &ItemStack::empty());
+    assert_eq!(
+        listener
+            .events
+            .lock()
+            .iter()
+            .map(|(event, _)| *event)
+            .collect::<Vec<_>>(),
+        [
+            &vanilla_game_events::EQUIP,
+            &vanilla_game_events::UNEQUIP,
+            &vanilla_game_events::UNEQUIP,
+        ]
+    );
+}
+
 fn matching_game_event_count(
     events: &[(GameEventRef, DVec3)],
     expected_event: GameEventRef,

@@ -129,7 +129,7 @@ use crate::entity::{
     apply_entity_look_at, apply_force_set_rotation, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
-use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::kinds::inventory_menu;
@@ -757,7 +757,7 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
+            advancements: SyncMutex::new(PlayerAdvancement::default()),
         }
     }
 
@@ -2069,6 +2069,11 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 }
 
 impl LivingEntity for Player {
+    /// Vanilla `Player.doesEmitEquipEvent`: only armor slots emit it.
+    fn does_emit_equip_event(&self, slot: EquipmentSlot) -> bool {
+        slot.slot_type() == EquipmentSlotType::HumanoidArmor
+    }
+
     /// Vanilla `ServerPlayer.onEnterCombat`.
     fn on_enter_combat(&self) {
         self.send_packet(CPlayerCombatEnter);
@@ -2470,7 +2475,6 @@ impl LivingEntity for Player {
         }
 
         self.on_equip_item(slot, &ItemStack::empty(), &equipped);
-        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
 
