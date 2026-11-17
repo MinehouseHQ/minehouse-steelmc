@@ -35,9 +35,19 @@ impl BoatItem {
     pub const fn new(entity_type: EntityTypeRef) -> Self {
         Self { entity_type }
     }
+
+    /// The entity type this item places.
+    #[must_use]
+    pub const fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
 }
 
 impl ItemBehavior for BoatItem {
+    fn as_boat_item(&self) -> Option<&BoatItem> {
+        Some(self)
+    }
+
     /// Vanilla `BoatItem.use`.
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         let world = context.world;

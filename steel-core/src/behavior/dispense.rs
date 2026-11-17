@@ -8,6 +8,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -33,6 +34,10 @@ use crate::entity::entities::SulfurCubeEntity;
 use crate::inventory::prelude::EquipmentSlot;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
+
+mod block_interactions;
+mod entity_placement;
+mod vehicles;
 
 /// Item speed factor of a dispenser (Vanilla passes 6 to `spawnItem`).
 const DISPENSER_SPEED: f64 = 6.0;
@@ -99,12 +104,35 @@ pub(crate) enum DispenseBehavior {
     SulfurCubeBlock,
     /// Feeds TNT to a sulfur cube in front, or primes it there.
     Tnt,
+    /// Equips the item on the entity in front, or drops it (Vanilla
+    /// `EquipmentDispenseItemBehavior`).
+    Equipment,
+    /// Spawns the egg's entity in front (Vanilla `SpawnEggItemBehavior`).
+    SpawnEgg,
+    /// Places an armor stand in front.
+    ArmorStand,
+    /// Puts a chest on a tamed donkey, mule or llama in front, or drops it.
+    Chest,
+    /// Launches a boat of this type onto the water in front, or drops it.
+    Boat(EntityTypeRef),
+    /// Puts a minecart of this type on the rail in front, or drops it.
+    Minecart(EntityTypeRef),
+    /// Places the powder snow in front, or drops the bucket.
+    SolidBucket,
+    /// Fills a bottle from a full hive or water in front.
+    GlassBottle,
+    /// Charges the respawn anchor in front.
+    Glowstone,
+    /// Brushes a scute off the armadillo in front.
+    Brush,
+    /// Waxes the copper block in front.
+    Honeycomb,
+    /// Turns the dirt in front into mud with a water bottle.
+    Potion,
 }
 
 impl DispenseBehavior {
     /// The behavior Vanilla registers for `item` in `DispenserBlock.DISPENSER_REGISTRY`.
-    // TODO: Armor, boats, minecarts, spawn eggs, powder snow buckets and the other
-    // `DispenseItemBehavior.bootStrap` entries still use the default drop.
     pub(crate) fn for_item(item: &ItemStack) -> Self {
         if item.is(&vanilla_items::WATER_BUCKET) {
             Self::FilledBucket(&vanilla_fluids::WATER)
@@ -132,14 +160,37 @@ impl DispenseBehavior {
             Self::ShulkerBox
         } else if item.is(&vanilla_items::TNT) {
             Self::Tnt
+        } else if item.is(&vanilla_items::ARMOR_STAND) {
+            Self::ArmorStand
+        } else if item.is(&vanilla_items::CHEST) {
+            Self::Chest
+        } else if item.is(&vanilla_items::POWDER_SNOW_BUCKET) {
+            Self::SolidBucket
+        } else if item.is(&vanilla_items::GLASS_BOTTLE) {
+            Self::GlassBottle
+        } else if item.is(&vanilla_items::GLOWSTONE) {
+            Self::Glowstone
+        } else if item.is(&vanilla_items::BRUSH) {
+            Self::Brush
+        } else if item.is(&vanilla_items::HONEYCOMB) {
+            Self::Honeycomb
+        } else if item.is(&vanilla_items::POTION) {
+            Self::Potion
+        } else if let Some(boat) = ITEM_BEHAVIORS.get_behavior(item.item).as_boat_item() {
+            Self::Boat(boat.entity_type())
+        } else if let Some(cart) = ITEM_BEHAVIORS.get_behavior(item.item).as_minecart_item() {
+            Self::Minecart(cart.entity_type())
         } else if is_dispensed_projectile(item) {
             Self::Projectile
-        } else if item.get_equippable().is_none()
-            && REGISTRY
-                .items
-                .is_in_tag(item.item, &ItemTag::SULFUR_CUBE_SWALLOWABLE)
+        } else if item.get_equippable().is_some() {
+            Self::Equipment
+        } else if REGISTRY
+            .items
+            .is_in_tag(item.item, &ItemTag::SULFUR_CUBE_SWALLOWABLE)
         {
             Self::SulfurCubeBlock
+        } else if entity_placement::is_spawn_egg(item) {
+            Self::SpawnEgg
         } else {
             Self::Default
         }
@@ -168,28 +219,19 @@ impl DispenseBehavior {
                 play_animation(source);
                 result
             }
-            Self::FilledBucket(fluid) => {
-                let result = filled_bucket(source, stack, fluid);
-                play_default_sound_and_animation(source);
-                result
-            }
-            Self::MobBucket => {
-                let result = mob_bucket(source, stack);
-                play_default_sound_and_animation(source);
-                result
-            }
-            Self::EmptyBucket => {
-                let result = empty_bucket(source, stack);
-                play_default_sound_and_animation(source);
-                result
-            }
-            Self::SulfurCubeBlock => {
-                let mut stack = stack;
-                let result = if dispense_into_sulfur_cube(source, &mut stack) {
-                    stack
-                } else {
-                    default_execute(source, stack)
-                };
+            Self::FilledBucket(_)
+            | Self::MobBucket
+            | Self::EmptyBucket
+            | Self::Equipment
+            | Self::Chest
+            | Self::SpawnEgg
+            | Self::ArmorStand
+            | Self::Boat(_)
+            | Self::Minecart(_)
+            | Self::SolidBucket
+            | Self::Potion
+            | Self::SulfurCubeBlock => {
+                let result = self.execute_dropping_on_failure(source, stack);
                 play_default_sound_and_animation(source);
                 result
             }
@@ -199,7 +241,11 @@ impl DispenseBehavior {
             | Self::Shears
             | Self::Tnt
             | Self::CarvedPumpkin
-            | Self::WitherSkeletonSkull => {
+            | Self::WitherSkeletonSkull
+            | Self::GlassBottle
+            | Self::Glowstone
+            | Self::Brush
+            | Self::Honeycomb => {
                 let (result, success) = match self {
                     Self::FlintAndSteel => flint_and_steel(source, stack),
                     Self::BoneMeal => bone_meal(source, stack),
@@ -207,6 +253,10 @@ impl DispenseBehavior {
                     Self::Tnt => tnt(source, stack),
                     Self::CarvedPumpkin => carved_pumpkin(source, stack),
                     Self::WitherSkeletonSkull => wither_skeleton_skull(source, stack),
+                    Self::GlassBottle => block_interactions::glass_bottle(source, stack),
+                    Self::Glowstone => block_interactions::glowstone(source, stack),
+                    Self::Brush => block_interactions::brush(source, stack),
+                    Self::Honeycomb => block_interactions::honeycomb(source, stack),
                     _ => shulker_box(source, stack),
                 };
                 source.world.level_event(
@@ -222,6 +272,32 @@ impl DispenseBehavior {
                 play_animation(source);
                 result
             }
+        }
+    }
+
+    /// The `execute` step of the behaviors that always play the plain dispense
+    /// sound (`DefaultDispenseItemBehavior` subclasses).
+    fn execute_dropping_on_failure(self, source: &BlockSource<'_>, stack: ItemStack) -> ItemStack {
+        let mut stack = stack;
+        let fitted = match self {
+            Self::FilledBucket(fluid) => return filled_bucket(source, stack, fluid),
+            Self::MobBucket => return mob_bucket(source, stack),
+            Self::EmptyBucket => return empty_bucket(source, stack),
+            Self::SpawnEgg => return entity_placement::spawn_egg(source, stack),
+            Self::ArmorStand => return entity_placement::armor_stand(source, stack),
+            Self::Boat(entity_type) => return vehicles::boat(source, stack, entity_type),
+            Self::Minecart(entity_type) => return vehicles::minecart(source, stack, entity_type),
+            Self::SolidBucket => return block_interactions::solid_bucket(source, stack),
+            Self::Potion => return block_interactions::water_potion(source, stack),
+            Self::Equipment => dispense_equipment(source, &mut stack),
+            Self::Chest => entity_placement::chest_on_chested_horse(source, &mut stack),
+            Self::SulfurCubeBlock => dispense_into_sulfur_cube(source, &mut stack),
+            _ => false,
+        };
+        if fitted {
+            stack
+        } else {
+            default_execute(source, stack)
         }
     }
 }

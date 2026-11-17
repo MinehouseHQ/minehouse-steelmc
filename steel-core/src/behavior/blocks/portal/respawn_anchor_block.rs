@@ -101,7 +101,7 @@ pub struct RespawnAnchorBlock {
 }
 const CHARGES: &IntProperty = &BlockStateProperties::RESPAWN_ANCHOR_CHARGES;
 impl RespawnAnchorBlock {
-    const MAX_CHARGES: u8 = 4;
+    pub(crate) const MAX_CHARGES: u8 = 4;
 
     /// New respawn anchor behavior
     #[must_use]
@@ -265,7 +265,13 @@ impl RespawnAnchorBlock {
         world.explode(options);
     }
 
-    fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+    /// Vanilla `RespawnAnchorBlock.charge`: adds one charge.
+    pub(crate) fn charge(
+        source: Option<&dyn Entity>,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) {
         let charges = state.get_value(CHARGES);
         let charged_state = state.set_value(CHARGES, charges + 1);
         world.set_block(pos, charged_state, UpdateFlags::UPDATE_ALL);

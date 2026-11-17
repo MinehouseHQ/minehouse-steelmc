@@ -30,9 +30,19 @@ impl MinecartItem {
     pub const fn new(entity_type: EntityTypeRef) -> Self {
         Self { entity_type }
     }
+
+    /// The entity type this item places.
+    #[must_use]
+    pub const fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
 }
 
 impl ItemBehavior for MinecartItem {
+    fn as_minecart_item(&self) -> Option<&MinecartItem> {
+        Some(self)
+    }
+
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let world = context.world;
         let pos = context.hit_result.block_pos;
