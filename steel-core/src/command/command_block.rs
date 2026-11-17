@@ -362,7 +362,7 @@ pub(crate) struct CommandBlockRunner<'a> {
 
 impl CommandBlockRunner<'_> {
     /// Vanilla `Commands.performPrefixedCommand`.
-    fn run(&mut self, source: CommandSource, command: &str) {
+    pub(crate) fn run(&mut self, source: CommandSource, command: &str) {
         let owner = CommandExecutionOwner::capture(source.sender().clone(), self.server);
         self.server
             .perform_prefixed_command(self.pending, owner, source, command);

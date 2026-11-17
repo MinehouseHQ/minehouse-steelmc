@@ -245,16 +245,12 @@ fn try_apply_sign_item(
     InteractionResult::Success
 }
 
-/// Attempts to open the sign editor for a player.
+/// Vanilla `SignBlock.useWithoutItem`: runs the click actions on the side
+/// the player faces, then opens the sign editor when the sign is unwaxed,
+/// had no click actions, nobody else edits it, the player may build and the
+/// side's text is editable.
 ///
-/// Checks all conditions required by vanilla:
-/// 1. Block entity exists and is a sign
-/// 2. Sign is not waxed
-/// 3. No other player is currently editing
-/// 4. Player has build permission (`may_build`)
-/// 5. Facing side contains only editable text
-///
-/// Returns `Success` if the editor was opened, `Pass` otherwise.
+/// Returns `Success` if the sign handled the click, `Pass` otherwise.
 fn try_open_sign_editor(
     state: BlockStateId,
     world: &Arc<World>,
@@ -270,6 +266,8 @@ fn try_open_sign_editor(
         return InteractionResult::Pass;
     };
 
+    let slot = facing_text_slot(state, pos, player);
+    let executed_click_command = sign.execute_click_commands_if_present(world, player, pos, slot);
     if sign.is_waxed() {
         world.play_sound(
             sign.sign_interaction_failed_sound_event(),
@@ -282,6 +280,10 @@ fn try_open_sign_editor(
         return InteractionResult::Success; // Vanilla returns SUCCESS even when waxed
     }
 
+    if executed_click_command {
+        return InteractionResult::Success;
+    }
+
     if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
@@ -290,8 +292,6 @@ fn try_open_sign_editor(
         return InteractionResult::Pass;
     }
 
-    // Determine which side the player is facing
-    let slot = facing_text_slot(state, pos, player);
     if !sign.get_text(slot).has_editable_text() {
         return InteractionResult::Pass;
     }
