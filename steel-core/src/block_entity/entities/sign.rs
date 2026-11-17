@@ -11,6 +11,7 @@ use simdnbt::borrow::{
 };
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::data_components::vanilla_components::{
     SIGN_TEXT_BACK, SIGN_TEXT_FRONT, SignText as SignTextComponent, WAXED,
 };
@@ -91,6 +92,16 @@ impl SignText {
 
     /// Builds sign text from an item's `sign_text_front`/`sign_text_back`
     /// component. Filtered messages are dropped: Steel has no text filtering.
+    /// The `sign_text` component vanilla's `collectImplicitComponents` stores for this side.
+    fn to_component(&self) -> SignTextComponent {
+        SignTextComponent::new(
+            self.messages.clone(),
+            None,
+            self.color,
+            self.has_glowing_text,
+        )
+    }
+
     fn from_component(component: Option<&SignTextComponent>) -> Self {
         component.map_or_else(Self::new, |component| Self {
             messages: component.messages.clone(),
@@ -341,6 +352,15 @@ impl BlockEntity for SignBlockEntity {
         sign.front_text = SignText::from_component(components.get(SIGN_TEXT_FRONT).as_ref());
         sign.back_text = SignText::from_component(components.get(SIGN_TEXT_BACK).as_ref());
         sign.is_waxed = components.get(WAXED).is_some();
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        let sign = self.sign.lock();
+        components.set(SIGN_TEXT_FRONT, Some(sign.front_text.to_component()));
+        components.set(SIGN_TEXT_BACK, Some(sign.back_text.to_component()));
+        if sign.is_waxed {
+            components.set(WAXED, Some(()));
+        }
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

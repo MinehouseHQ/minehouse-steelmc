@@ -29,6 +29,7 @@ pub mod container_loot;
 pub mod container_name;
 pub mod container_openers;
 pub mod entities;
+mod item_data;
 pub mod player_detector;
 mod registry;
 mod storage;
@@ -59,6 +60,7 @@ use steel_utils::{
 };
 
 pub use components::ImplicitComponentGetter;
+pub(crate) use item_data::add_block_data_to_item;
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub(crate) use storage::{
     BlockEntityInsert, BlockEntityLookup, BlockEntityStorage, ClearedBlockEntities,

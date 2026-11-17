@@ -9,12 +9,15 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::data_components::DataComponentMap;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::container_name::{apply_container_component, contents_from_items};
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::World;
@@ -177,6 +180,19 @@ impl CampfireBlockEntity {
 impl BlockEntity for CampfireBlockEntity {
     fn base(&self) -> &BlockEntityBase {
         &self.base
+    }
+
+    /// Vanilla `CampfireBlockEntity.applyImplicitComponents`.
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        apply_container_component(components, &mut self.cooking.lock().items);
+    }
+
+    /// Vanilla `CampfireBlockEntity.collectImplicitComponents`.
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        components.set(
+            CONTAINER,
+            Some(contents_from_items(&self.cooking.lock().items)),
+        );
     }
 
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {

@@ -10,7 +10,9 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::ItemStackTemplate;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::data_components::components::ItemContainerContents;
+use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_item_tags::ItemTag;
@@ -18,6 +20,7 @@ use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
+use crate::block_entity::container_name::contents_from_items;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SharedContainer};
@@ -221,6 +224,14 @@ impl ChiseledBookShelfBlockEntity {
 impl BlockEntity for ChiseledBookShelfBlockEntity {
     fn base(&self) -> &BlockEntityBase {
         &self.base
+    }
+
+    /// Vanilla `ChiseledBookShelfBlockEntity.collectImplicitComponents`.
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        components.set(
+            CONTAINER,
+            Some(contents_from_items(&self.container.lock().items)),
+        );
     }
 
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
