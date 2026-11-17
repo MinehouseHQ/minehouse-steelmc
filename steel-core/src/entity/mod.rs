@@ -942,6 +942,8 @@ pub(crate) use raider::{Raider, RaiderState, ominous_banner_instance};
 pub(crate) use ranged_attack_mob::RangedAttackMob;
 pub use reference::EntityReference;
 pub(crate) use registry::SpawnRule;
+#[cfg(test)]
+pub(crate) use registry::test_factory_override;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shearable::Shearable;
 pub(crate) use spawn::{

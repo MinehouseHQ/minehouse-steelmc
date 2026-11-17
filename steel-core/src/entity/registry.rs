@@ -113,6 +113,15 @@ impl EntityRegistry {
         entity.sync_base_entity_data();
     }
 
+    /// The factories registered for the entity type with registry id `id`.
+    fn factory_entry(&self, id: usize) -> Option<&EntityEntry> {
+        #[cfg(test)]
+        if test_factory_override::is_hidden(id) {
+            return None;
+        }
+        self.entries.get(id)
+    }
+
     /// Creates a new empty registry with entries for all entity types.
     #[must_use]
     pub fn new() -> Self {
@@ -196,8 +205,7 @@ impl EntityRegistry {
         world: Weak<World>,
     ) -> Option<SharedEntity> {
         let id = entity_type.id();
-        self.entries
-            .get(id)?
+        self.factory_entry(id)?
             .factory
             .map(|f| f(entity_type, entity_id, pos, world))
     }
@@ -214,7 +222,7 @@ impl EntityRegistry {
     ) -> Option<SharedEntity> {
         let entity_type = request.entity_type;
         let id = entity_type.id();
-        let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) else {
+        let Some(load_factory) = self.factory_entry(id).and_then(|entry| entry.load_factory) else {
             log::warn!(
                 "Skipping unsupported entity {} while loading",
                 entity_type.key
@@ -235,7 +243,7 @@ impl EntityRegistry {
         nbt: &BorrowedNbtCompoundView<'_, '_>,
     ) -> Option<SharedEntity> {
         let id = request.entity_type.id();
-        let entry = self.entries.get(id)?;
+        let entry = self.factory_entry(id)?;
         let load_factory = entry.load_factory?;
         let (entity_type, load) = request.into_base_load();
         let entity = load_factory(entity_type, load);
@@ -247,7 +255,7 @@ impl EntityRegistry {
     #[must_use]
     pub fn has_factory(&self, entity_type: EntityTypeRef) -> bool {
         let id = entity_type.id();
-        self.entries.get(id).is_some_and(|e| e.factory.is_some())
+        self.factory_entry(id).is_some_and(|e| e.factory.is_some())
     }
 
     /// Get all entity types with a registered factory.
@@ -292,6 +300,27 @@ impl EntityRegistryLock {
     #[must_use]
     pub fn get(&self) -> Option<&EntityRegistry> {
         self.0.get()
+    }
+}
+
+/// Lets a test treat one entity type as having no factory on its own thread,
+/// now that every vanilla entity type has one.
+#[cfg(test)]
+pub(crate) mod test_factory_override {
+    use std::cell::Cell;
+
+    thread_local! {
+        static HIDDEN: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    /// Hides the factories of the entity type with registry id `id` from
+    /// this thread.
+    pub(crate) fn hide(id: usize) {
+        HIDDEN.with(|hidden| hidden.set(Some(id)));
+    }
+
+    pub(super) fn is_hidden(id: usize) -> bool {
+        HIDDEN.with(|hidden| hidden.get() == Some(id))
     }
 }
 
