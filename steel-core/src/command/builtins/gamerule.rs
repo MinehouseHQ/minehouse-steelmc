@@ -10,9 +10,43 @@ use super::super::{
     execution::{CommandSource, SteelCommandContext, SteelCommandRuntime, argument, literal},
     registration::CommandRegistration,
 };
+use crate::permission::{PermissionContext, PermissionExpr, PermissionKey};
+use crate::player::Player;
+use crate::world::World;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("gamerule"), |_| command())
+}
+
+/// Whether `player` may read every game rule value from the client, which
+/// vanilla grants to gamemasters, the same audience as `/gamerule`.
+pub(crate) fn player_can_request_game_rule_values(player: &Player, world: &World) -> bool {
+    let permission = match PermissionKey::parse("minecraft.command.gamerule") {
+        Ok(key) => PermissionExpr::key(key),
+        Err(error) => {
+            log::error!("invalid built-in gamerule permission key: {error}");
+            return false;
+        }
+    };
+    player.has_permission_in(
+        &permission,
+        &PermissionContext::for_world(world.key.clone()),
+    )
+}
+
+/// Vanilla `ServerGamePacketListenerImpl.sendGameRuleValues`: every game rule
+/// of `world` with its value serialized like `GameRule.serialize`.
+pub(crate) fn game_rule_values(world: &World) -> Vec<(Identifier, String)> {
+    REGISTRY
+        .game_rules
+        .iter()
+        .map(|(_, rule)| {
+            (
+                rule.key().clone(),
+                world.get_erased_game_rule(rule).to_string(),
+            )
+        })
+        .collect()
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -180,5 +214,36 @@ mod tests {
             dispatcher.node(value).and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
         );
+    }
+}
+
+#[cfg(test)]
+mod value_tests {
+    use steel_registry::{REGISTRY, vanilla_game_rules};
+    use steel_utils::Identifier;
+
+    use super::game_rule_values;
+    use crate::bootstrap::init_globals;
+    use crate::test_support::fresh_test_world;
+
+    #[test]
+    fn game_rule_values_serialize_every_rule_like_vanilla() {
+        init_globals();
+        let fixture = fresh_test_world("game_rule_values");
+        let world = &fixture.world;
+        assert!(world.set_game_rule(&vanilla_game_rules::KEEP_INVENTORY, true));
+        assert!(world.set_game_rule(&vanilla_game_rules::RESPAWN_RADIUS, 3));
+
+        let values = game_rule_values(world);
+
+        assert_eq!(values.len(), REGISTRY.game_rules.iter().count());
+        let value = |key: &'static str| {
+            values
+                .iter()
+                .find(|(rule, _)| *rule == Identifier::vanilla_static(key))
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(value("keep_inventory"), Some("true"));
+        assert_eq!(value("respawn_radius"), Some("3"));
     }
 }

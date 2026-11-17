@@ -12,10 +12,11 @@ use crate::{
         chunk_request::{ChunkRequest, ChunkTicketKind},
         status::ChunkStatus,
     },
+    command::{game_rule_values, player_can_request_game_rule_values},
     player::Player,
 };
 use steel_math::{DEGREE_90, wrap_degrees};
-use steel_protocol::packets::game::{CSound, SoundSource};
+use steel_protocol::packets::game::{CGameRuleValues, CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
@@ -697,7 +698,7 @@ impl Player {
         self.base.set_boarding_cooldown(0);
     }
 
-    /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
+    /// Vanilla `ServerGamePacketListenerImpl.handleClientCommand`.
     pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
         self.reset_last_action_time();
         match action {
@@ -709,10 +710,23 @@ impl Player {
                 }
             }
             ClientCommandAction::RequestStats => self.send_stats(),
-            ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement requesting for game rule values
-            }
+            ClientCommandAction::RequestGameRuleValues => self.send_game_rule_values(),
         }
+    }
+
+    /// Vanilla `sendGameRuleValues`: only a gamemaster gets the values.
+    fn send_game_rule_values(&self) {
+        let world = self.get_world();
+        if !player_can_request_game_rule_values(self, &world) {
+            log::warn!(
+                "Player {} tried to request game rule values without required permissions",
+                self.gameprofile.name()
+            );
+            return;
+        }
+        self.send_packet(CGameRuleValues {
+            values: game_rule_values(&world),
+        });
     }
 
     /// Vanilla accepts a client respawn request only when player health is dead-or-dying.
