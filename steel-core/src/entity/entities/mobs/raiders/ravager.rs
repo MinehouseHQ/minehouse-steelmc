@@ -247,9 +247,8 @@ impl RavagerEntity {
                         .get_block()
                         .has_tag(&BlockTag::LEAVES)
                     {
-                        // TODO: vanilla passes the ravager as the breaker for the
-                        // block-destroy game event.
-                        destroyed_block = world.destroy_block(pos, true) || destroyed_block;
+                        destroyed_block =
+                            world.destroy_block_by_entity(pos, true, self) || destroyed_block;
                     }
                 }
             }

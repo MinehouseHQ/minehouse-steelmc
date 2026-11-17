@@ -10,11 +10,12 @@ use steel_registry::potion::Potion;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_potion_tags::PotionTag;
 use steel_registry::{level_events, vanilla_damage_types};
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _, types::UpdateFlags};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::mobs::passive::AxolotlEntity;
 use crate::entity::projectile::ThrowableItemProjectile;
 use crate::entity::{LivingEntity, ProjectileHit, RemovalReason, SharedEntity};
 use crate::world::ClipHitResult;
@@ -94,25 +95,32 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
         self.set_removed(RemovalReason::Discarded);
     }
 
-    /// Hurts water-sensitive entities in range and extinguishes burning ones,
-    /// as allowed by the potion's tags.
+    /// Hurts water-sensitive entities in range, extinguishes burning ones and
+    /// rehydrates axolotls, as allowed by the potion's tags.
     fn affect_entities_around(self: &Arc<Self>, world: &Arc<World>, contents: &PotionContents)
     where
         Self: Sized + 'static,
     {
         let hurts_water_sensitive = contents.is_in_tag(&PotionTag::HURTS_WATER_SENSITIVE_ENTITIES);
         let extinguishes = contents.is_in_tag(&PotionTag::EXTINGUISHES_ENTITIES);
-        // TODO: rehydrate nearby Axolotl entities for `REHYDRATES_AXOLOTLS` once
-        // Axolotl is implemented.
-        if !hurts_water_sensitive && !extinguishes {
-            return;
-        }
-
         let aabb = self.bounding_box().inflate_xyz(
             SPLASH_HORIZONTAL_REACH,
             SPLASH_VERTICAL_REACH,
             SPLASH_HORIZONTAL_REACH,
         );
+
+        if contents.is_in_tag(&PotionTag::REHYDRATES_AXOLOTLS) {
+            for entity in world.get_entities_in_aabb(&aabb) {
+                if let Some(axolotl) = entity.downcast_ref::<AxolotlEntity>() {
+                    axolotl.rehydrate();
+                }
+            }
+        }
+
+        if !hurts_water_sensitive && !extinguishes {
+            return;
+        }
+
         let potion_pos = self.position();
 
         for entity in world.get_entities_in_aabb(&aabb) {

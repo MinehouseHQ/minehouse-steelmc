@@ -266,6 +266,7 @@ mod tests {
     use steel_utils::{BlockPos, Direction};
 
     use crate::behavior::init_behaviors;
+    use crate::entity::projectile::ThrowableItemProjectile as _;
     use crate::entity::{Entity, Projectile, ProjectileHit};
     use crate::test_support::test_world;
     use crate::world::ClipHitResult;
@@ -298,5 +299,60 @@ mod tests {
 
         Arc::clone(&potion).on_hit(&hit);
         assert!(potion.is_removed());
+    }
+
+    #[test]
+    fn a_water_splash_rehydrates_nearby_axolotls() {
+        use steel_registry::data_components::vanilla_components::PotionContents;
+        use steel_registry::{vanilla_items, vanilla_potions};
+        use steel_utils::ChunkPos;
+
+        use crate::entity::entities::mobs::passive::AxolotlEntity;
+        use crate::entity::{SharedEntity, init_entities, next_entity_id};
+        use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+        init_vanilla_registry();
+        init_behaviors();
+        init_entities();
+        let fixture = fresh_test_world("water_splash_rehydrates_axolotls");
+        let world = Arc::clone(&fixture.world);
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let position = DVec3::new(4.5, 64.0, 4.5);
+        let axolotl = Arc::new(AxolotlEntity::new(
+            &vanilla_entities::AXOLOTL,
+            next_entity_id(),
+            position,
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&axolotl) as SharedEntity)
+            .expect("axolotl should attach to the loaded chunk");
+        axolotl.set_air_supply(100);
+
+        let potion = Arc::new(SplashPotionEntity::new(
+            &vanilla_entities::SPLASH_POTION,
+            next_entity_id(),
+            position,
+            Arc::downgrade(&world),
+        ));
+        potion.set_item(PotionContents::create_item_stack(
+            &vanilla_items::SPLASH_POTION,
+            &vanilla_potions::WATER,
+        ));
+        let hit = ProjectileHit::Block {
+            location: position,
+            hit: ClipHitResult {
+                location: position,
+                direction: Direction::Up,
+                block_pos: BlockPos::new(4, 63, 4),
+                miss: false,
+                inside: false,
+                world_border_hit: false,
+            },
+        };
+        Arc::clone(&potion).on_hit(&hit);
+
+        assert_eq!(axolotl.air_supply(), 1900);
     }
 }
