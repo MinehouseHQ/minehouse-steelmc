@@ -441,7 +441,9 @@ fn emit_consume_particles_and_sounds(
     stack: &ItemStack,
     user: &dyn LivingEntity,
 ) {
-    // TODO: spawn item-crumb particles when `has_consume_particles()` is set.
+    // Item-crumb particles (`has_consume_particles`) come from vanilla
+    // `LivingEntity.spawnItemParticles`, whose `level().addParticle` is a no-op
+    // on the server: every client spawns them from the synced using-item state.
     let (volume, pitch) = if consumable.animation() == ItemUseAnimation::Drink {
         (0.5, 0.9 + rand::random::<f32>() * 0.1)
     } else {
@@ -530,7 +532,9 @@ pub(crate) fn finish_consuming_stack(
         player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
         player.trigger_consume_item(stack);
     }
-    // TODO: Spawn item-crumb particles when `has_consume_particles()` is set.
+    // Item-crumb particles (`has_consume_particles`) come from vanilla
+    // `LivingEntity.spawnItemParticles`, whose `level().addParticle` is a no-op
+    // on the server: every client spawns them from the synced using-item state.
 
     let mut used_stack = stack.copy_with_count(stack.count());
     if !user.has_infinite_materials() {
