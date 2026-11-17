@@ -21,7 +21,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, RegistryExt as _, sound_events, vanilla_damage_types};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockStateId, ChunkPos, Identifier, WorldAabb};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, WorldAabb};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::block_state_nbt;
@@ -60,6 +60,21 @@ const BURNING_ARROW_IGNITE_TICKS: i32 = 100;
 const KNOCKBACK_SCALE: f64 = 0.6;
 /// Vanilla `doKnockback` vertical push.
 const KNOCKBACK_UP: f64 = 0.1;
+/// Vanilla `BlockPos.clampLocationWithin`, with its float-rounded lower bound.
+fn clamp_location_within(pos: BlockPos, location: DVec3) -> DVec3 {
+    const MARGIN: f32 = 1.0E-5;
+    let clamp = |value: f64, block: i32| {
+        let min = f64::from(block as f32 + MARGIN);
+        let max = f64::from(block) + 1.0 - f64::from(MARGIN);
+        value.clamp(min, max)
+    };
+    DVec3::new(
+        clamp(location.x, pos.x()),
+        clamp(location.y, pos.y()),
+        clamp(location.z, pos.z()),
+    )
+}
+
 /// Vanilla `onHitBlock` pull-back so the arrow sits just outside the face.
 const HIT_BLOCK_PULL_BACK: f64 = 0.05;
 /// Vanilla `shouldFall` probe radius.
@@ -219,6 +234,12 @@ pub trait AbstractArrow: Projectile {
     /// Vanilla `getWeaponItem`.
     fn get_weapon_item(&self) -> Option<ItemStack> {
         self.arrow_base().state.lock().fired_from_weapon.clone()
+    }
+
+    /// Vanilla `hitBlockEnchantmentEffects`' break callback: an arrow forgets
+    /// the weapon it was fired from.
+    fn on_hit_block_weapon_broken(&self, _world: &World) {
+        self.arrow_base().state.lock().fired_from_weapon = None;
     }
 
     /// Vanilla `onItemBreak`: forget the weapon once an enchantment broke it.
@@ -752,9 +773,22 @@ pub trait AbstractArrow: Projectile {
         };
         self.arrow_base().state.lock().last_state = Some(world.get_block_state(hit.block_pos));
         self.projectile_on_hit_block(hit);
-        // VANILLA: `hitBlockEnchantmentEffects` runs the weapon's
-        // `minecraft:hit_block` effects; only the trident's Channeling uses
-        // that component, and it is ported with the trident.
+        if let Some(mut weapon) = self.get_weapon_item() {
+            // Vanilla `hitBlockEnchantmentEffects`.
+            let location = clamp_location_within(hit.block_pos, hit.location);
+            let owner = self
+                .get_owner()
+                .filter(|owner| owner.as_living_entity().is_some());
+            if enchantment_helper::on_hit_block(
+                &world,
+                &mut weapon,
+                owner.as_ref(),
+                self.as_entity_event_source(),
+                location,
+            ) {
+                self.on_hit_block_weapon_broken(&world);
+            }
+        }
 
         let movement = self.velocity();
         let offset = DVec3::new(

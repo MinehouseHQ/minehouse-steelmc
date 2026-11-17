@@ -241,6 +241,8 @@ pub struct EntityPredicate {
     pub movement_affected_by: MovementAffectedByPredicate,
     /// Vanilla `minecraft:periodic_tick`: matches when `tickCount % period == 0`.
     pub periodic_tick: Option<i32>,
+    /// Vanilla `minecraft:location` reduced to its `can_see_sky` field.
+    pub location_can_see_sky: Option<bool>,
     pub type_specific: EntityTypeSpecificPredicate,
     pub unsupported: bool,
 }
@@ -429,6 +431,18 @@ pub enum EnchantmentEffectRequirements {
     EnchantmentActiveCheck {
         active: bool,
     },
+    /// Vanilla `minecraft:weather_check`.
+    WeatherCheck {
+        raining: Option<bool>,
+        thundering: Option<bool>,
+    },
+    /// Vanilla `minecraft:location_check` with its `block.blocks` and
+    /// `can_see_sky` fields, tested at the origin plus `offset`.
+    LocationCheck {
+        offset: IVec3,
+        blocks: Option<EnchantmentBlockSet>,
+        can_see_sky: Option<bool>,
+    },
     Unsupported {
         condition: Identifier,
     },
@@ -470,6 +484,8 @@ impl EnchantmentEffectRequirements {
             Self::EntityProperties { .. }
             | Self::DamageSourceProperties(_)
             | Self::RandomChance { .. }
+            | Self::WeatherCheck { .. }
+            | Self::LocationCheck { .. }
             | Self::Unsupported { .. } => None,
         }
     }
@@ -566,9 +582,21 @@ pub enum EnchantmentEntityEffect {
         block_state: BlockStateData,
         trigger_game_event: Option<GameEventRef>,
     },
+    /// Vanilla `minecraft:summon_entity`.
+    SummonEntity {
+        entity_types: EnchantmentEntityTypeSet,
+        join_team: bool,
+    },
     Unsupported {
         effect_type: Identifier,
     },
+}
+
+/// Static entity type holder set used by generated `summon_entity` effects.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EnchantmentEntityTypeSet {
+    Tag(Identifier),
+    Direct(&'static [Identifier]),
 }
 
 /// Vanilla `SpawnParticlesEffect.PositionSourceType`.
@@ -663,7 +691,7 @@ pub struct EnchantmentEffects {
     pub armor_effectiveness: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub post_attack: &'static [TargetedConditionalEnchantmentEffect<EnchantmentEntityEffect>],
     pub post_piercing_attack: &'static [ConditionalEnchantmentEffect<EnchantmentEntityEffect>],
-    pub hit_block: bool,
+    pub hit_block: &'static [ConditionalEnchantmentEffect<EnchantmentEntityEffect>],
     pub item_damage: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub equipment_drops: &'static [TargetedConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub location_changed: &'static [ConditionalEnchantmentEffect<EnchantmentLocationBasedEffect>],
@@ -699,7 +727,7 @@ impl EnchantmentEffects {
         armor_effectiveness: &[],
         post_attack: &[],
         post_piercing_attack: &[],
-        hit_block: false,
+        hit_block: &[],
         item_damage: &[],
         equipment_drops: &[],
         location_changed: &[],
@@ -737,7 +765,7 @@ impl EnchantmentEffects {
             EnchantmentEffectComponent::ArmorEffectiveness => !self.armor_effectiveness.is_empty(),
             EnchantmentEffectComponent::PostAttack => !self.post_attack.is_empty(),
             EnchantmentEffectComponent::PostPiercingAttack => !self.post_piercing_attack.is_empty(),
-            EnchantmentEffectComponent::HitBlock => self.hit_block,
+            EnchantmentEffectComponent::HitBlock => !self.hit_block.is_empty(),
             EnchantmentEffectComponent::ItemDamage => !self.item_damage.is_empty(),
             EnchantmentEffectComponent::EquipmentDrops => !self.equipment_drops.is_empty(),
             EnchantmentEffectComponent::LocationChanged => !self.location_changed.is_empty(),

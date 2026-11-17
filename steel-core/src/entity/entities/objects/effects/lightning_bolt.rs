@@ -17,7 +17,10 @@ use crate::behavior::blocks::{FireBlock, LightningRodBlock};
 use crate::behavior::waxables::get_normal_from_waxed_variant;
 use crate::behavior::weathering::{get_weather_state, previous_copper_stage};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData, RemovalReason};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, RemovalReason, SharedEntity,
+};
+use crate::player::Player;
 use crate::world::World;
 
 /// Ticks a flash stays active, counted down from this value.
@@ -26,6 +29,10 @@ const START_LIFE: i32 = 2;
 const DAMAGE_RADIUS: f64 = 3.0;
 /// The strike also reaches this far above the bolt, on top of [`DAMAGE_RADIUS`].
 const DAMAGE_HEIGHT: f64 = 6.0;
+/// Reach of the entities that saw the strike, around the bolt.
+const VIEWER_RADIUS: f64 = 15.0;
+/// Players closer than this hear `LIGHTNING_STRIKE`.
+const STRIKE_WITNESS_DISTANCE: f64 = 256.0;
 /// How many random positions each copper-cleaning step tries.
 const COPPER_STEP_CANDIDATES: usize = 10;
 
@@ -35,6 +42,10 @@ struct LightningBoltState {
     flashes: i32,
     visual_only: bool,
     blocks_set_on_fire: i32,
+    /// Vanilla `cause`: the player whose Channeling trident summoned the bolt.
+    cause: Option<Arc<Player>>,
+    /// Vanilla `hitEntities`: every entity the bolt struck.
+    hit_entities: Vec<SharedEntity>,
 }
 
 /// A lightning bolt, as summoned by thunderstorms, channeling tridents or commands.
@@ -80,6 +91,8 @@ impl LightningBoltEntity {
             flashes: rand::random_range(0..3) + 1,
             visual_only: false,
             blocks_set_on_fire: 0,
+            cause: None,
+            hit_entities: Vec::new(),
         }
     }
 
@@ -98,6 +111,29 @@ impl LightningBoltEntity {
     #[must_use]
     pub fn blocks_set_on_fire(&self) -> i32 {
         self.state.lock().blocks_set_on_fire
+    }
+
+    /// Vanilla `getCause`.
+    #[must_use]
+    pub fn cause(&self) -> Option<Arc<Player>> {
+        self.state.lock().cause.clone()
+    }
+
+    /// Vanilla `setCause`.
+    pub fn set_cause(&self, cause: Option<Arc<Player>>) {
+        self.state.lock().cause = cause;
+    }
+
+    /// Vanilla `getHitEntities`: the struck entities that are still alive.
+    #[must_use]
+    pub fn hit_entities(&self) -> Vec<SharedEntity> {
+        self.state
+            .lock()
+            .hit_entities
+            .iter()
+            .filter(|entity| entity.is_alive())
+            .cloned()
+            .collect()
     }
 
     /// The block the bolt landed on, just below its feet.
@@ -125,6 +161,7 @@ impl LightningBoltEntity {
         if life < 0 {
             let flashes = self.state.lock().flashes;
             if flashes == 0 {
+                self.trigger_lightning_strike(world);
                 self.set_removed(RemovalReason::Discarded);
             } else if life < -rand::random_range(0..10) {
                 {
@@ -159,8 +196,53 @@ impl LightningBoltEntity {
         let entities = world.get_entities_in_aabb_matching(&bounds, |entity| {
             entity.id() != own_id && entity.is_alive()
         });
-        for entity in entities {
+        for entity in &entities {
             entity.thunder_hit(world, self);
+        }
+        let cause = {
+            let mut state = self.state.lock();
+            for entity in &entities {
+                if !state.hit_entities.iter().any(|hit| hit.id() == entity.id()) {
+                    state.hit_entities.push(Arc::clone(entity));
+                }
+            }
+            state.cause.clone()
+        };
+        if let Some(cause) = cause {
+            cause.trigger_channeled_lightning(&entities);
+        }
+    }
+
+    /// Vanilla `tick` before the bolt is discarded: every player within 256
+    /// blocks hears `LIGHTNING_STRIKE` about the entities around that it did
+    /// not strike.
+    fn trigger_lightning_strike(&self, world: &Arc<World>) {
+        let position = self.position();
+        let bounds = WorldAabb::from_min_max(
+            position - DVec3::splat(VIEWER_RADIUS),
+            position + DVec3::new(VIEWER_RADIUS, DAMAGE_HEIGHT + VIEWER_RADIUS, VIEWER_RADIUS),
+        );
+        let own_id = self.id();
+        let viewers = {
+            let hit = self.state.lock();
+            world.get_entities_in_aabb_matching(&bounds, |entity| {
+                entity.id() != own_id
+                    && entity.is_alive()
+                    && !hit
+                        .hit_entities
+                        .iter()
+                        .any(|struck| struck.id() == entity.id())
+            })
+        };
+        let mut witnesses = Vec::new();
+        world.players.iter_players(|_, player| {
+            if player.position().distance(position) < STRIKE_WITNESS_DISTANCE {
+                witnesses.push(Arc::clone(player));
+            }
+            true
+        });
+        for player in witnesses {
+            player.trigger_lightning_strike(self, &viewers);
         }
     }
 

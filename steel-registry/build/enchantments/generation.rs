@@ -167,7 +167,12 @@ pub(super) fn generate_enchantment_effects(
         statics,
         counter,
     );
-    let hit_block = !effects.hit_block.is_empty();
+    let hit_block = generate_conditional_entity_effects(
+        &format!("{prefix}_HIT_BLOCK"),
+        &effects.hit_block,
+        statics,
+        counter,
+    );
     let tick = generate_conditional_entity_effects(
         &format!("{prefix}_TICK"),
         &effects.tick,

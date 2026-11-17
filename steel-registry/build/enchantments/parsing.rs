@@ -302,6 +302,17 @@ pub(super) fn parse_entity_effect_json(
             })
         }
         "minecraft:replace_disk" => parse_replace_disk_json(object, &effect_type),
+        "minecraft:summon_entity" => {
+            for key in object.keys() {
+                if !matches!(key.as_str(), "type" | "entity" | "join_team") {
+                    return Err(format!("unsupported summon_entity field `{key}`"));
+                }
+            }
+            Ok(EntityEffectJson::SummonEntity {
+                entity: parse_item_holder_set_json(object_field(object, "entity")?)?,
+                join_team: optional_bool_field(object, "join_team")?.unwrap_or(false),
+            })
+        }
         _ => Ok(EntityEffectJson::Unsupported {
             effect_type: parse_identifier(&effect_type)?,
         }),
@@ -558,6 +569,7 @@ pub(super) fn parse_entity_predicate_json(
                 | "minecraft:movement"
                 | "minecraft:movement_affected_by"
                 | "minecraft:periodic_tick"
+                | "minecraft:location"
                 | "type_specific"
                 | "minecraft:type_specific/player"
         )
@@ -599,6 +611,11 @@ pub(super) fn parse_entity_predicate_json(
         ),
         None => None,
     };
+    let (location_can_see_sky, location_unsupported) = match object.get("minecraft:location") {
+        Some(value) => parse_sky_only_location_json(value)?,
+        None => (None, false),
+    };
+    let unsupported = unsupported || location_unsupported;
     let type_specific =
         match aliased_object_field(object, &["type_specific", "minecraft:type_specific/player"])? {
             Some(value) if object.contains_key("minecraft:type_specific/player") => {
@@ -615,9 +632,20 @@ pub(super) fn parse_entity_predicate_json(
         movement,
         movement_affected_by,
         periodic_tick,
+        location_can_see_sky,
         type_specific,
         unsupported,
     })
+}
+
+/// A `minecraft:location` entity sub-predicate that only checks
+/// `can_see_sky`; anything else marks the predicate unsupported.
+fn parse_sky_only_location_json(value: &serde_json::Value) -> Result<(Option<bool>, bool), String> {
+    let location = value
+        .as_object()
+        .ok_or_else(|| "`minecraft:location` must be an object".to_owned())?;
+    let unsupported = location.keys().any(|key| key != "can_see_sky");
+    Ok((optional_bool_field(location, "can_see_sky")?, unsupported))
 }
 
 /// Parses a vanilla `MovementPredicate`, whose fields are all optional
@@ -985,10 +1013,92 @@ pub(super) fn parse_requirements_json(
                 .ok_or_else(|| "enchantment_active_check `active` must be a bool".to_owned())?;
             Ok(RequirementsJson::EnchantmentActiveCheck { active })
         }
+        "minecraft:weather_check" => {
+            for key in object.keys() {
+                if !matches!(key.as_str(), "type" | "raining" | "thundering") {
+                    return Err(format!("unsupported weather_check field `{key}`"));
+                }
+            }
+            Ok(RequirementsJson::WeatherCheck {
+                raining: optional_bool_field(object, "raining")?,
+                thundering: optional_bool_field(object, "thundering")?,
+            })
+        }
+        "minecraft:location_check" => parse_location_check_json(object, &condition),
         _ => Ok(RequirementsJson::Unsupported {
             condition: parse_identifier(&condition)?,
         }),
     }
+}
+
+/// Vanilla `minecraft:location_check` limited to the `block.blocks` and
+/// `can_see_sky` fields the vanilla datapack uses.
+fn parse_location_check_json(
+    object: &serde_json::Map<String, serde_json::Value>,
+    condition: &str,
+) -> Result<RequirementsJson, String> {
+    let unsupported = || -> Result<RequirementsJson, String> {
+        Ok(RequirementsJson::Unsupported {
+            condition: parse_identifier(condition)?,
+        })
+    };
+    if object.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "type" | "predicate" | "offsetX" | "offsetY" | "offsetZ"
+        )
+    }) {
+        return unsupported();
+    }
+    let offset_field = |key: &str| -> Result<i32, String> {
+        object.get(key).map_or(Ok(0), |value| {
+            value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| format!("location_check `{key}` must be an int"))
+        })
+    };
+    let offset = [
+        offset_field("offsetX")?,
+        offset_field("offsetY")?,
+        offset_field("offsetZ")?,
+    ];
+    let Some(predicate) = object.get("predicate") else {
+        return Ok(RequirementsJson::LocationCheck {
+            offset,
+            blocks: None,
+            can_see_sky: None,
+        });
+    };
+    let predicate = predicate
+        .as_object()
+        .ok_or_else(|| "location_check `predicate` must be an object".to_owned())?;
+    if predicate
+        .keys()
+        .any(|key| !matches!(key.as_str(), "block" | "can_see_sky"))
+    {
+        return unsupported();
+    }
+    let blocks = match predicate.get("block") {
+        Some(block) => {
+            let block = block
+                .as_object()
+                .ok_or_else(|| "location_check `block` must be an object".to_owned())?;
+            if block.keys().any(|key| key != "blocks") {
+                return unsupported();
+            }
+            block
+                .get("blocks")
+                .map(parse_item_holder_set_json)
+                .transpose()?
+        }
+        None => None,
+    };
+    Ok(RequirementsJson::LocationCheck {
+        offset,
+        blocks,
+        can_see_sky: optional_bool_field(predicate, "can_see_sky")?,
+    })
 }
 
 pub(super) fn parse_item_holder_set_json(

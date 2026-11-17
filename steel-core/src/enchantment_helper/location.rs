@@ -331,6 +331,7 @@ fn apply_location_entity_effect(
             effect,
             level,
             entity,
+            entity.position(),
             None,
             &mut EnchantedItemInUse::Equipped {
                 owner: entity,

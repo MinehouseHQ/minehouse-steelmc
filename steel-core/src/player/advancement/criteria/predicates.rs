@@ -22,10 +22,11 @@ use steel_registry::item_predicate::{
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
 use steel_utils::nbt::json_to_nbt;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 
 use crate::behavior::blocks::CampfireBlock;
 use crate::command::execution::registered_item_predicate_matches;
+use crate::entity::entities::LightningBoltEntity;
 use crate::entity::{Entity, LivingEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
@@ -521,6 +522,30 @@ pub(crate) struct RaiderPredicate {
     is_captain: bool,
 }
 
+/// Vanilla `LightningBoltPredicate` (`type_specific/lightning`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LightningPredicate {
+    #[serde(default)]
+    blocks_set_on_fire: Ints,
+    entity_struck: Option<EntityPredicate>,
+}
+
+impl LightningPredicate {
+    /// Vanilla `LightningBoltPredicate.matches(entity, level, position)`.
+    fn matches(&self, entity: &dyn Entity, world: &Arc<World>, origin: Option<DVec3>) -> bool {
+        let Some(bolt) = entity.downcast_ref::<LightningBoltEntity>() else {
+            return false;
+        };
+        self.blocks_set_on_fire.matches(bolt.blocks_set_on_fire())
+            && self.entity_struck.as_ref().is_none_or(|predicate| {
+                bolt.hit_entities()
+                    .iter()
+                    .any(|struck| predicate.matches(world, origin, &**struck))
+            })
+    }
+}
+
 /// One entry of a vanilla `EntityPredicate`'s sub-predicate map.
 #[derive(Debug, Clone)]
 pub(crate) enum EntitySubPredicate {
@@ -537,6 +562,7 @@ pub(crate) enum EntitySubPredicate {
     Passenger(Box<EntityPredicate>),
     Player(PlayerPredicate),
     Raider(RaiderPredicate),
+    Lightning(Box<LightningPredicate>),
     /// A sub-predicate Steel does not evaluate yet; it never matches.
     Unsupported(String),
 }
@@ -558,6 +584,7 @@ impl EntitySubPredicate {
             "passenger" => Self::Passenger(Box::new(serde_json::from_value(value)?)),
             "type_specific/player" => Self::Player(serde_json::from_value(value)?),
             "type_specific/raider" => Self::Raider(serde_json::from_value(value)?),
+            "type_specific/lightning" => Self::Lightning(serde_json::from_value(value)?),
             "movement"
             | "nbt"
             | "targeted_entity"
@@ -566,7 +593,6 @@ impl EntitySubPredicate {
             | "components"
             | "predicates"
             | "entity_tags"
-            | "type_specific/lightning"
             | "type_specific/fishing_hook"
             | "type_specific/cube_mob"
             | "type_specific/sheep" => Self::Unsupported(name.to_owned()),
@@ -624,6 +650,7 @@ impl EntitySubPredicate {
                 entity_raider.has_raid() == raider.has_raid
                     && entity_raider.is_captain() == raider.is_captain
             }),
+            Self::Lightning(lightning) => lightning.matches(entity, world, origin),
             Self::Unsupported(_) => false,
         }
     }
