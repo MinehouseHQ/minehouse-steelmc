@@ -925,7 +925,7 @@ impl PlayerInputObserver for Input {
     }
 
     fn attack(&self, player: &Player, entity_id: i32) -> bool {
-        if banker::attacked(entity_id) || guides::clicked(player, entity_id) {
+        if banker::attacked(player, entity_id) || guides::clicked(player, entity_id) {
             return true;
         }
         let Some((rail, target)) = target_of(player, entity_id) else {

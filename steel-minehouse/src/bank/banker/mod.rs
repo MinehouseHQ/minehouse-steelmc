@@ -6,11 +6,17 @@
 //! stands is kept in `bank-bankers.json` of the data directory and every player near gets a
 //! mannequin of their own, so while he talks he looks at each player separately.
 //!
+//! His body is the rig of the Fabric banker, see [`puppet`]: he idles, looks up at whoever
+//! comes and gestures while he talks.
+//!
 //! `/bank banker [nick]` puts him where the admin stands, `/bank banker url <link>` with the
-//! skin at the link, `/bank banker remove` takes away the nearest one.
+//! skin at the link, `/bank banker remove` takes away the nearest one, and so does a hit of an
+//! admin in creative mode (as killing him did on Fabric).
 
 pub mod commands;
 pub mod hud;
+mod puppet;
+mod rig;
 mod skin;
 pub mod talk;
 
@@ -37,12 +43,19 @@ use steel_registry::{
     RegistryEntry as _, entity_data::DataValue, sound_event::SoundEvent, sound_events,
     vanilla_entities, vanilla_entity_data::MannequinEntityData,
 };
-use steel_utils::{Identifier, locks::SyncMutex, types::InteractionHand};
+use steel_utils::{
+    Identifier,
+    locks::SyncMutex,
+    types::{GameType, InteractionHand},
+};
 use text_components::TextComponent;
 use uuid::Uuid;
 
 pub use self::skin::Skin;
-use self::talk::{Step, Talk};
+use self::{
+    puppet::{Doing, Puppet},
+    talk::{Step, Talk},
+};
 use super::{Bank, bank};
 use crate::config;
 
@@ -58,6 +71,10 @@ const VIEW: f64 = 64.0;
 const VIEW_TICKS: u64 = 10;
 /// The fog stays for as long as the talk may last.
 const FOG_TICKS: i32 = 20 * 60 * 60;
+/// Vanilla `Entity.FLAG_INVISIBLE` of the shared flags.
+const FLAG_INVISIBLE: i8 = 1 << 5;
+/// His name over him.
+const NAME: &str = "Банкир";
 
 /// Where a banker stands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -128,6 +145,25 @@ struct Placed {
     banker: Banker,
     /// The id of his mannequin on the clients.
     entity: i32,
+    /// His body, unless the rig can't be read: then the mannequin shows.
+    puppet: Option<Puppet>,
+}
+
+impl Placed {
+    fn new(banker: Banker) -> Self {
+        Self {
+            banker,
+            entity: next_entity_id(),
+            puppet: Puppet::new(0),
+        }
+    }
+
+    /// The ids of every entity he is on the clients.
+    fn ids(&self) -> Vec<i32> {
+        let mut ids = vec![self.entity];
+        ids.extend(self.puppet.iter().flat_map(Puppet::ids));
+        ids
+    }
 }
 
 struct Active {
@@ -143,7 +179,8 @@ struct Active {
 /// The bankers, who sees them and who talks to them.
 pub struct Bankers {
     placed: SyncMutex<Vec<Placed>>,
-    seen: SyncMutex<BTreeMap<Uuid, BTreeSet<i32>>>,
+    /// Per player, the mannequins they were shown and every entity sent with each.
+    seen: SyncMutex<BTreeMap<Uuid, BTreeMap<i32, Vec<i32>>>>,
     talks: SyncMutex<BTreeMap<Uuid, Active>>,
     file: PathBuf,
 }
@@ -174,7 +211,8 @@ fn read(text: &str) -> Vec<Banker> {
     })
 }
 
-fn data(banker: &Banker) -> Option<Vec<DataValue>> {
+/// The mannequin's data; it is invisible when the rig is his body.
+fn data(banker: &Banker, rigged: bool) -> Option<Vec<DataValue>> {
     let mut data = MannequinEntityData::new();
     data.profile.set(banker.skin.profile());
     data.immovable.set(true);
@@ -182,8 +220,11 @@ fn data(banker: &Banker) -> Option<Vec<DataValue>> {
         .set(Some(Box::new(TextComponent::plain("Банк MineHouse"))));
     let base = &mut data.avatar.living_entity.base;
     base.custom_name
-        .set(Some(Box::new(TextComponent::plain("Банкир"))));
+        .set(Some(Box::new(TextComponent::plain(NAME))));
     base.custom_name_visible.set(true);
+    if rigged {
+        base.shared_flags.set(FLAG_INVISIBLE);
+    }
     data.pack_dirty()
 }
 
@@ -211,10 +252,7 @@ impl Bankers {
         let placed = fs::read_to_string(&file)
             .map_or_default(|text| read(&text))
             .into_iter()
-            .map(|banker| Placed {
-                banker,
-                entity: next_entity_id(),
-            })
+            .map(Placed::new)
             .collect();
         Self {
             placed: SyncMutex::new(placed),
@@ -242,10 +280,7 @@ impl Bankers {
 
     /// Puts a banker; those near see him within half a second.
     pub fn place(&self, banker: Banker) {
-        self.placed.lock().push(Placed {
-            banker,
-            entity: next_entity_id(),
-        });
+        self.placed.lock().push(Placed::new(banker));
         self.save();
     }
 
@@ -266,6 +301,20 @@ impl Bankers {
             self.save();
         }
         removed.is_some()
+    }
+
+    /// Takes away the banker whose mannequin is `entity`; false if it is no banker.
+    fn remove_entity(&self, entity: i32) -> bool {
+        let removed = {
+            let mut placed = self.placed.lock();
+            let before = placed.len();
+            placed.retain(|placed| placed.entity != entity);
+            placed.len() != before
+        };
+        if removed {
+            self.save();
+        }
+        removed
     }
 
     fn is_banker(&self, entity: i32) -> bool {
@@ -324,12 +373,19 @@ impl Bankers {
                 .map(|placed| placed.entity)
                 .collect();
             let shown = seen.entry(player.gameprofile.id()).or_default();
-            let gone: Vec<i32> = shown.difference(&near).copied().collect();
+            let mut gone = Vec::new();
+            shown.retain(|entity, ids| {
+                let keep = near.contains(entity);
+                if !keep {
+                    gone.append(ids);
+                }
+                keep
+            });
             if !gone.is_empty() {
                 player.send_packet(CRemoveEntities { entity_ids: gone });
             }
             for placed in placed.iter().filter(|placed| near.contains(&placed.entity)) {
-                if shown.contains(&placed.entity) {
+                if shown.contains_key(&placed.entity) {
                     continue;
                 }
                 let turn = angle(placed.banker.yaw);
@@ -344,11 +400,49 @@ impl Bankers {
                     head_y_rot: turn,
                     data: 0,
                 });
-                if let Some(values) = data(&placed.banker) {
+                if let Some(values) = data(&placed.banker, placed.puppet.is_some()) {
                     player.send_packet(CSetEntityData::new(placed.entity, values));
                 }
+                if let Some(puppet) = &placed.puppet {
+                    puppet.spawn(player, placed.banker.position(), placed.banker.yaw, NAME);
+                }
+                shown.insert(placed.entity, placed.ids());
             }
-            *shown = near;
+        }
+    }
+
+    /// Moves the bankers' bodies: what each does depends on the talks to him.
+    fn tick_rigs(&self, players: &[Arc<Player>], tick: u64) {
+        let mut doing: BTreeMap<i32, Doing> = BTreeMap::new();
+        for active in self.talks.lock().values() {
+            let now = Doing::in_talk(active.talk.age, active.talk.typed());
+            let was = doing.entry(active.entity).or_insert(Doing::Idle);
+            *was = was.busier(now);
+        }
+        let mut placed = self.placed.lock();
+        let seen = self.seen.lock();
+        for placed in placed.iter_mut() {
+            let entity = placed.entity;
+            let yaw = placed.banker.yaw;
+            let Some(puppet) = &mut placed.puppet else {
+                continue;
+            };
+            let now = doing.get(&entity).copied().unwrap_or(Doing::Idle);
+            let shapes = puppet.tick(now, tick, yaw);
+            if shapes.is_empty() {
+                continue;
+            }
+            for player in players {
+                if !seen
+                    .get(&player.gameprofile.id())
+                    .is_some_and(|shown| shown.contains_key(&entity))
+                {
+                    continue;
+                }
+                for (id, values) in &shapes {
+                    player.send_packet(CSetEntityData::new(*id, values.clone()));
+                }
+            }
         }
     }
 
@@ -458,9 +552,25 @@ pub(crate) fn interact(player: &Player, entity: i32, hand: InteractionHand) -> b
     true
 }
 
-/// A hit on an entity: true if it was a banker, who takes no harm.
-pub(crate) fn attacked(entity: i32) -> bool {
-    bank().is_some_and(|bank| bank.bankers.is_banker(entity))
+/// A hit on an entity: true if it was a banker. He takes no harm, but an admin in creative
+/// mode takes him away, the way killing him did on Fabric.
+pub(crate) fn attacked(player: &Player, entity: i32) -> bool {
+    let Some(bank) = bank() else {
+        return false;
+    };
+    if !bank.bankers.is_banker(entity) {
+        return false;
+    }
+    if player.game_mode() == GameType::Creative
+        && commands::may_place(player)
+        && bank.bankers.remove_entity(entity)
+    {
+        super::gui::info(
+            player,
+            "Банкир убран. Поставить заново: /bank banker там, где он должен стоять.",
+        );
+    }
+    true
 }
 
 impl Bank {
@@ -470,6 +580,7 @@ impl Bank {
         if tick.is_multiple_of(VIEW_TICKS) {
             self.bankers.tick_view(&players);
         }
+        self.bankers.tick_rigs(&players, tick);
         self.bankers.tick_talks(&players);
     }
 }
@@ -524,6 +635,8 @@ mod tests {
             skin: Skin::default_skin(),
         };
         // The profile, the name and that it shows, the description and that he can't be pushed.
-        assert_eq!(data(&banker).map(|values| values.len()), Some(5));
+        assert_eq!(data(&banker, false).map(|values| values.len()), Some(5));
+        // And invisible over a rig.
+        assert_eq!(data(&banker, true).map(|values| values.len()), Some(6));
     }
 }
