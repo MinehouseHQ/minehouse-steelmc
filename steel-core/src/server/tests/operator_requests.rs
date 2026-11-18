@@ -1,16 +1,22 @@
 //! Operator-only client requests: the game rules screen, the difficulty
-//! lock and the F3 + I data queries.
+//! lock, the F3 + I data queries and the tick time chart.
+
+use std::time::Duration;
 
 use steel_protocol::packets::game::{
-    GameRuleEntry, SBlockEntityTagQuery, SEntityTagQuery, SLockDifficulty, SSetGameRule,
+    DEDICATED_SERVER_TICK_TIME, GameRuleEntry, SBlockEntityTagQuery, SEntityTagQuery,
+    SLockDifficulty, SSetGameRule,
 };
-use steel_registry::packets::play::{C_SYSTEM_CHAT, C_TAG_QUERY};
+use steel_registry::packets::play::{C_DEBUG_SAMPLE, C_SYSTEM_CHAT, C_TAG_QUERY};
 use steel_registry::vanilla_game_rules::{KEEP_INVENTORY, RESPAWN_RADIUS};
 use steel_registry::{init_vanilla_registry, vanilla_entities};
+use steel_utils::codec::VarInt;
+use steel_utils::serial::ReadFrom as _;
 use steel_utils::{BlockPos, ChunkPos, Identifier, WorldAabb};
 
 use super::chat_packets;
 use super::insert_ready_full_chunk;
+use super::packet_body;
 use super::recipe_command::join_with_packets;
 use super::scoreboard_command::{run, with_server_world};
 use crate::behavior::init_behaviors;
@@ -21,6 +27,7 @@ use crate::permission::{
 };
 use crate::player::Player;
 use crate::server::Server;
+use crate::server::debug_subscribers::TickTimeLogger;
 
 /// Makes `player` an operator who may run `/gamerule` and `/difficulty`.
 fn make_operator(server: &Server, player: &Player) {
@@ -138,5 +145,44 @@ fn data_queries_answer_operators() {
             2,
             "both queries are answered, the plain block with an empty tag"
         );
+    });
+}
+
+#[test]
+fn tick_time_chart_streams_to_subscribed_operators() {
+    setup();
+    with_server_world("debug_sample_packets", |server, world| {
+        let (alex, packets) = join_with_packets(server, world, "Alex", 10_000);
+        alex.request_debug_subscriptions(vec![DEDICATED_SERVER_TICK_TIME]);
+        server.tick_debug_subscribers();
+        assert!(
+            !server.has_debug_subscriber(DEDICATED_SERVER_TICK_TIME),
+            "Alex is no operator"
+        );
+
+        make_operator(server, &alex);
+        server.tick_debug_subscribers();
+        assert!(server.has_debug_subscriber(DEDICATED_SERVER_TICK_TIME));
+
+        let mut tick_time = TickTimeLogger::new();
+        tick_time.tick_ended(server);
+        tick_time.slept(Duration::from_millis(5));
+        packets.lock().clear();
+        tick_time.packets_drained(server);
+
+        let samples = chat_packets(&packets, C_DEBUG_SAMPLE);
+        assert_eq!(samples.len(), 1);
+        let (_, mut body) = packet_body(&samples[0]);
+        let length = VarInt::read(&mut body).expect("sample length");
+        assert_eq!(length.0, 4, "vanilla TpsDebugDimensions has four values");
+        let values: Vec<i64> = (0..4)
+            .map(|_| i64::read(&mut body).expect("sample value"))
+            .collect();
+        assert_eq!(values[3], 5_000_000, "idle time in nanoseconds");
+        assert_eq!(VarInt::read(&mut body).expect("sample type").0, 0);
+
+        alex.request_debug_subscriptions(Vec::new());
+        server.tick_debug_subscribers();
+        assert!(!server.has_debug_subscriber(DEDICATED_SERVER_TICK_TIME));
     });
 }

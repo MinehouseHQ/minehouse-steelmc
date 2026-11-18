@@ -1,4 +1,5 @@
 use super::autosave::AutosaveSchedule;
+use super::debug_subscribers::TickTimeLogger;
 use super::tick_overload::TickOverloadGuard;
 use super::tick_watchdog::{TickStep, TickStepTimes, TickWatchdog};
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
@@ -231,6 +232,7 @@ impl Server {
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
         let mut player_disconnect_saves = JoinSet::new();
+        let mut tick_time = TickTimeLogger::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -261,6 +263,7 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                    tick_time.slept(now.elapsed());
                 } else {
                     overload_guard.skip_backlog_if_overloaded(
                         now,
@@ -278,6 +281,7 @@ impl Server {
             let tick_start = Instant::now();
             watchdog.enter(TickStep::DrainPackets);
             self.packet_processor.close_for_tick().await;
+            tick_time.packets_drained(&self);
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = self.advance_server_tick();
@@ -301,6 +305,8 @@ impl Server {
             self.tick_command_blocks(&mut pending_command_executions);
             watchdog.enter(TickStep::Connections);
             self.tick_connections();
+            // Vanilla ticks the debug subscribers right after the player list.
+            self.tick_debug_subscribers();
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
                 let _span = tracing::trace_span!("broadcast_latency").entered();
@@ -341,6 +347,8 @@ impl Server {
                 tick_manager.end_tick_work();
             }
 
+            tick_time.tick_work_finished();
+            tick_time.tick_ended(&self);
             self.packet_processor.open_after_tick();
             if should_sprint_this_tick || Instant::now() >= next_tick_time {
                 watchdog.enter(TickStep::OverloadPacketProgress);
