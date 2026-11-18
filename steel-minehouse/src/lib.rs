@@ -31,6 +31,7 @@ pub mod events;
 pub mod guides;
 pub mod migrate;
 pub mod moderation;
+pub mod nitro;
 pub mod roles;
 pub mod site;
 pub mod stats;
@@ -110,6 +111,10 @@ impl Minehouse {
             .auth
             .as_ref()
             .and_then(|auth| Roles::start(server, auth.site.clone()));
+        // And who has Nitro (coloured nicknames in the tab list and chat).
+        if let Some(auth) = &setup.auth {
+            nitro::start(auth.site.clone(), auth.config.server_id.clone());
+        }
         // So do the statistics of the players go to it.
         let stats = setup
             .auth

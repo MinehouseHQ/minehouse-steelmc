@@ -19,7 +19,7 @@ use steel_utils::locks::SyncMutex;
 use text_components::{Modifier, TextComponent, format::Color};
 use uuid::Uuid;
 
-use crate::{config, moderation::format::render_parts};
+use crate::{config, moderation::format::render_parts, nitro};
 
 /// `config/minehouse/tab.toml`. Texts take `&` colors and `&#rrggbb`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,12 +109,21 @@ impl TabConfig {
         })
     }
 
-    /// The nickname in the list and its order.
-    fn entry(&self, name: &str, style: Option<usize>) -> (TextComponent, i32) {
+    /// The nickname in the list and its order. `color` is the `MineHouse` Nitro colour.
+    fn entry(
+        &self,
+        name: &str,
+        style: Option<usize>,
+        color: Option<[u8; 3]>,
+    ) -> (TextComponent, i32) {
         let style = style.and_then(|index| self.styles.get(index));
         let format = style.map_or(self.name.as_str(), |style| style.name.as_str());
         let order = style.map_or(0, |style| style.order);
-        let name = Some(TextComponent::plain(name.to_owned()));
+        let name = TextComponent::plain(name.to_owned());
+        let name = Some(match color {
+            Some([red, green, blue]) => name.color(Color::Rgb(red, green, blue)),
+            None => name,
+        });
         (render_parts(format, &[("name", name)], &[]), order)
     }
 
@@ -165,11 +174,14 @@ fn gradient(text: &str, from: [u8; 3], to: [u8; 3]) -> TextComponent {
     TextComponent::plain("").add_children(children)
 }
 
+/// A player, their style and their Nitro colour.
+type Look = (Uuid, Option<usize>, Option<[u8; 3]>);
+
 /// The tab list of one server.
 pub struct Tab {
     config: TabConfig,
-    /// Who was in the list with which style when names last went out.
-    sent: SyncMutex<Vec<(Uuid, Option<usize>)>>,
+    /// Who was in the list with which style and Nitro colour when names last went out.
+    sent: SyncMutex<Vec<Look>>,
 }
 
 impl Tab {
@@ -216,14 +228,18 @@ impl Tab {
     }
 
     fn send_names(&self, server: &Server, players: &[Arc<Player>]) {
-        let mut styles: Vec<(Uuid, Option<usize>)> = players
+        let mut styles: Vec<Look> = players
             .iter()
             .map(|player| {
                 let id = player.gameprofile.id();
                 let groups = server
                     .player_permission_state(id)
                     .map_or_default(|state| state.groups().to_vec());
-                (id, self.config.style_of(player.gameprofile.name(), &groups))
+                (
+                    id,
+                    self.config.style_of(player.gameprofile.name(), &groups),
+                    nitro::color(id),
+                )
             })
             .collect();
         styles.sort_unstable();
@@ -239,11 +255,11 @@ impl Tab {
             .iter()
             .map(|player| {
                 let id = player.gameprofile.id();
-                let style = styles
+                let (style, color) = styles
                     .iter()
-                    .find(|(styled, _)| *styled == id)
-                    .and_then(|(_, style)| *style);
-                let (name, order) = self.config.entry(player.gameprofile.name(), style);
+                    .find(|(styled, _, _)| *styled == id)
+                    .map_or((None, None), |(_, style, color)| (*style, *color));
+                let (name, order) = self.config.entry(player.gameprofile.name(), style, color);
                 PlayerInfoEntry::new(id)
                     .with_display_name(Some(name))
                     .with_list_order(order)
@@ -287,12 +303,21 @@ mod tests {
         assert_eq!(config.style_of("Bot", &groups(&["bot"])), Some(0));
         assert_eq!(config.style_of("Bot", &groups(&["bot", "admin"])), Some(1));
 
-        let (name, order) = config.entry("Steve", Some(1));
+        let (name, order) = config.entry("Steve", Some(1), None);
         assert_eq!(name.to_plain(&NoResolutor), "● Steve");
         assert_eq!(order, 100);
-        let (name, order) = config.entry("Alex", None);
+        let (name, order) = config.entry("Alex", None, None);
         assert_eq!(name.to_plain(&NoResolutor), "Alex");
         assert_eq!(order, 0);
+        // Nitro: the same text, the nickname in its colour.
+        let (name, _) = config.entry("Alex", None, Some([0xa8, 0x55, 0xf7]));
+        assert_eq!(name.to_plain(&NoResolutor), "Alex");
+        let nick = &name.children[0].children[0];
+        assert_eq!(nick.to_plain(&NoResolutor), "Alex");
+        assert_eq!(
+            format!("{:?}", nick.format.color),
+            "Some(Rgb(168, 85, 247))"
+        );
     }
 
     #[test]
