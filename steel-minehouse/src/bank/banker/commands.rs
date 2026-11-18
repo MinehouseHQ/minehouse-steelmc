@@ -29,9 +29,11 @@ pub(crate) fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegi
 }
 
 fn allowed(source: CommandSource<'_>) -> bool {
-    let Some(player) = source.player() else {
-        return false;
-    };
+    source.player().is_some_and(|player| may_place(player))
+}
+
+/// Whether `player` may put and take away bankers.
+pub(super) fn may_place(player: &Player) -> bool {
     PermissionKey::parse(PERMISSION)
         .ok()
         .map(PermissionExpr::key)
