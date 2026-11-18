@@ -29,7 +29,7 @@ pub(super) fn setup(world: &Arc<World>, server: &Arc<Server>) {
 }
 
 /// The parse error `command` fails with.
-fn parse_error(server: &Arc<Server>, command: &str) -> String {
+pub(super) fn parse_error(server: &Arc<Server>, command: &str) -> String {
     let source = CommandSource::new(CommandSender::Console, Arc::clone(server));
     let dispatcher = server.command_dispatcher.read();
     let parse = dispatcher.parse(command, source);

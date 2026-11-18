@@ -55,7 +55,11 @@ impl FunctionLibrary {
             }
         }
 
-        let tags = build_tags(&load_tag_files(&packs), &functions);
+        let tags = build_tags(
+            &load_tag_files(&packs, "tags/function"),
+            |id| functions.get(id).cloned(),
+            Arc::ptr_eq,
+        );
         Self { functions, tags }
     }
 
@@ -168,7 +172,7 @@ fn java_lines(text: &str) -> Vec<&str> {
 
 /// Vanilla `TagEntry`.
 #[derive(Debug, PartialEq, Eq)]
-struct TagEntry {
+pub(crate) struct TagEntry {
     id: Identifier,
     tag: bool,
     required: bool,
@@ -176,10 +180,14 @@ struct TagEntry {
 
 /// Vanilla `TagLoader.load`: each tag's entries across every pack, in pack
 /// order, a `"replace": true` file dropping the entries before it.
-fn load_tag_files(packs: &[&DataPack]) -> BTreeMap<Identifier, Vec<TagEntry>> {
+/// `directory` is the registry's tag directory, such as `tags/function`.
+pub(crate) fn load_tag_files(
+    packs: &[&DataPack],
+    directory: &str,
+) -> BTreeMap<Identifier, Vec<TagEntry>> {
     let mut tags: BTreeMap<Identifier, Vec<TagEntry>> = BTreeMap::new();
     for pack in packs {
-        for resource in pack.list_resources("tags/function", ".json") {
+        for resource in pack.list_resources(directory, ".json") {
             match parse_tag_file(&resource.contents) {
                 Ok((replace, entries)) => {
                     let tag = tags.entry(resource.id).or_default();
@@ -243,19 +251,23 @@ fn parse_tag_entry(value: &Value) -> Result<TagEntry, String> {
     Ok(TagEntry { id, tag, required })
 }
 
-/// Vanilla `TagLoader.build`: each tag's functions, referenced tags built
-/// first. A tag missing a required function or tag is logged and left out.
+/// Vanilla `TagLoader.build`: each tag's values, referenced tags built
+/// first. `lookup` finds a registry entry by id and `same` tells whether two
+/// values are one entry, which a tag lists once. A tag missing a required
+/// entry or tag is logged and left out.
 ///
 /// Vanilla's `DependencySorter` drops a dependency that would close a cycle;
 /// here a reference back to a tag still being built counts as missing, which
 /// gives the same result for every acyclic set of tags.
-fn build_tags(
+pub(crate) fn build_tags<V: Clone>(
     files: &BTreeMap<Identifier, Vec<TagEntry>>,
-    functions: &BTreeMap<Identifier, Arc<CommandFunction>>,
-) -> BTreeMap<Identifier, Vec<Arc<CommandFunction>>> {
+    lookup: impl Fn(&Identifier) -> Option<V>,
+    same: fn(&V, &V) -> bool,
+) -> BTreeMap<Identifier, Vec<V>> {
     let mut builder = TagBuilder {
         files,
-        functions,
+        lookup: &lookup,
+        same,
         built: BTreeMap::new(),
         building: FxHashSet::default(),
     };
@@ -269,16 +281,17 @@ fn build_tags(
         .collect()
 }
 
-struct TagBuilder<'a> {
+struct TagBuilder<'a, V> {
     files: &'a BTreeMap<Identifier, Vec<TagEntry>>,
-    functions: &'a BTreeMap<Identifier, Arc<CommandFunction>>,
-    built: BTreeMap<Identifier, Option<Vec<Arc<CommandFunction>>>>,
+    lookup: &'a dyn Fn(&Identifier) -> Option<V>,
+    same: fn(&V, &V) -> bool,
+    built: BTreeMap<Identifier, Option<Vec<V>>>,
     building: FxHashSet<Identifier>,
 }
 
-impl TagBuilder<'_> {
-    /// The tag's functions, `None` when it is missing or failed to build.
-    fn build(&mut self, id: &Identifier) -> Option<Vec<Arc<CommandFunction>>> {
+impl<V: Clone> TagBuilder<'_, V> {
+    /// The tag's values, `None` when it is missing or failed to build.
+    fn build(&mut self, id: &Identifier) -> Option<Vec<V>> {
         if let Some(built) = self.built.get(id) {
             return built.clone();
         }
@@ -286,21 +299,19 @@ impl TagBuilder<'_> {
         if !self.building.insert(id.clone()) {
             return None;
         }
-        let mut values: Vec<Arc<CommandFunction>> = Vec::new();
+        let mut values: Vec<V> = Vec::new();
         let mut missing = Vec::new();
         for entry in entries {
             let found = if entry.tag {
                 self.build(&entry.id)
             } else {
-                self.functions
-                    .get(&entry.id)
-                    .map(|function| vec![Arc::clone(function)])
+                (self.lookup)(&entry.id).map(|value| vec![value])
             };
             match found {
                 Some(found) => {
-                    for function in found {
-                        if !values.iter().any(|value| Arc::ptr_eq(value, &function)) {
-                            values.push(function);
+                    for value in found {
+                        if !values.iter().any(|existing| (self.same)(existing, &value)) {
+                            values.push(value);
                         }
                     }
                 }

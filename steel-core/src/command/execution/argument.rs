@@ -47,6 +47,10 @@ use crate::entity::{ENTITIES, EntityAnchor};
 use crate::inventory::slot_range::{
     SlotRange, all_slot_range_names, single_slot_names, slot_range,
 };
+use crate::loot::{
+    ContextFloatProvider, ContextIntProvider, Holder, LootCondition, LootElement, from_json,
+    nbt_to_json,
+};
 use crate::scoreboard::{DisplaySlot, ObjectiveCriteria, TeamColor};
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -494,6 +498,22 @@ impl SteelArgumentType {
         Self::new(DialogParser)
     }
 
+    /// Vanilla `ResourceOrIdArgument.lootPredicate`: a data pack predicate
+    /// by id, or a loot condition written inline.
+    pub(crate) fn loot_predicate() -> Self {
+        Self::new(LootPredicateParser)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.intProvider`.
+    pub(crate) fn int_provider() -> Self {
+        Self::new(IntProviderParser)
+    }
+
+    /// Vanilla `ResourceOrIdArgument.floatProvider`.
+    pub(crate) fn float_provider() -> Self {
+        Self::new(FloatProviderParser)
+    }
+
     /// Vanilla `ResourceOrIdArgument.feature`, by id only, like [`Self::loot_table`].
     pub(crate) fn feature() -> Self {
         Self::new(FeatureParser)
@@ -790,6 +810,18 @@ argument_value_wrapper!(
     "steel:command/value/loot_table"
 );
 argument_value_wrapper!(DialogValue(CommandDialog), "steel:command/value/dialog");
+argument_value_wrapper!(
+    LootPredicateValue(Holder<LootCondition>),
+    "steel:command/value/loot_predicate"
+);
+argument_value_wrapper!(
+    IntProviderValue(Holder<ContextIntProvider>),
+    "steel:command/value/int_provider"
+);
+argument_value_wrapper!(
+    FloatProviderValue(Holder<ContextFloatProvider>),
+    "steel:command/value/float_provider"
+);
 argument_value_wrapper!(
     FeatureValue(ConfiguredFeatureEntryRef),
     "steel:command/value/feature"
@@ -1782,6 +1814,45 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::Dialog, None)
 );
 unit_argument_parser!(
+    LootPredicateParser,
+    "steel:command/parser/loot_predicate",
+    LootPredicateValue,
+    parse | reader,
+    source | { parse_loot_value(reader, source).map(LootPredicateValue) },
+    suggest | context,
+    builder | { suggest_loot_ids::<LootCondition>(context, builder) },
+    protocol(
+        ProtocolArgumentType::LootPredicate,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    IntProviderParser,
+    "steel:command/parser/int_provider",
+    IntProviderValue,
+    parse | reader,
+    source | { parse_loot_value(reader, source).map(IntProviderValue) },
+    suggest | context,
+    builder | { suggest_loot_ids::<ContextIntProvider>(context, builder) },
+    protocol(
+        ProtocolArgumentType::ContextIntProvider,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    FloatProviderParser,
+    "steel:command/parser/float_provider",
+    FloatProviderValue,
+    parse | reader,
+    source | { parse_loot_value(reader, source).map(FloatProviderValue) },
+    suggest | context,
+    builder | { suggest_loot_ids::<ContextFloatProvider>(context, builder) },
+    protocol(
+        ProtocolArgumentType::ContextFloatProvider,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
     FeatureParser,
     "steel:command/parser/feature",
     FeatureValue,
@@ -2424,6 +2495,62 @@ fn parse_dialog(reader: &mut StringReader<'_>) -> Result<CommandDialog, CommandS
     let tag = normalize_nbt_tag(tag).ok_or_else(|| failed(reader, "Invalid string".to_owned()))?;
     check_dialog(&tag).map_err(|error| failed(reader, error))?;
     Ok(CommandDialog::Direct(tag))
+}
+
+/// Vanilla `ResourceOrIdArgument.parse` for the source domain's `predicate`,
+/// `context_int_provider` or `context_float_provider` registry: an entry by
+/// id, or a value written inline as SNBT and decoded by the same codec as a
+/// data pack file.
+fn parse_loot_value<T>(
+    reader: &mut StringReader<'_>,
+    source: &dyn CommandArgumentSource,
+) -> Result<Holder<T>, CommandSyntaxError>
+where
+    T: LootElement + for<'de> serde::Deserialize<'de>,
+{
+    let registries = source.loot_registries();
+    if reader.peek().is_some_and(is_allowed_in_identifier)
+        && let Ok(key) = parse_identifier(reader)
+    {
+        if !registries.contains(T::KIND, &key) {
+            return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                translations::ARGUMENT_RESOURCE_OR_ID_NO_SUCH_ELEMENT
+                    .message([key.to_string(), T::KIND.registry_name().to_owned()])
+                    .component(),
+            ))));
+        }
+        return Ok(Holder::Reference(key));
+    }
+    let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
+        reader.advance_bytes(error.cursor());
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.component())))
+    })?;
+    let parsed = reader.advance_bytes(consumed);
+    let failed = |reader: &StringReader<'_>, message: String| {
+        reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+            translations::ARGUMENT_RESOURCE_OR_ID_FAILED_TO_PARSE
+                .message([message])
+                .component(),
+        )))
+    };
+    if !parsed {
+        return Err(failed(reader, "Invalid value cursor".to_owned()));
+    }
+    let tag = normalize_nbt_tag(tag).ok_or_else(|| failed(reader, "Invalid string".to_owned()))?;
+    let value = from_json::<T>(nbt_to_json(&tag)).map_err(|error| failed(reader, error))?;
+    if let Some(error) = registries.missing_reference(&value) {
+        return Err(failed(reader, error));
+    }
+    Ok(Holder::Direct(Arc::new(value)))
+}
+
+/// The ids of the source domain's registry holding `T`.
+fn suggest_loot_ids<T: LootElement>(
+    context: &dyn SteelArgumentSuggestionContext,
+    builder: &mut SuggestionsBuilder<'_>,
+) {
+    let ids = context.source().loot_registries().ids(T::KIND);
+    suggest_resources(ids.iter(), builder);
 }
 
 /// Every vanilla template pool id, for `/place jigsaw` suggestions.

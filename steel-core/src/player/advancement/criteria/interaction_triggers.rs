@@ -67,17 +67,14 @@ impl Player {
     /// `location` conditions see the block without a tool.
     pub(crate) fn trigger_default_block_use(&self, pos: BlockPos) {
         let world = self.get_world();
-        let context = ConditionContext {
-            world: &world,
-            origin: Some(DVec3::new(
-                f64::from(pos.x()) + 0.5,
-                f64::from(pos.y()) + 0.5,
-                f64::from(pos.z()) + 0.5,
-            )),
-            this: Some(self),
-            tool: None,
-            block_state: Some(world.get_block_state(pos)),
-        };
+        let mut context = ConditionContext::new(&world);
+        context.origin = Some(DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        ));
+        context.this = Some(self);
+        context.block_state = Some(world.get_block_state(pos));
         trigger(self, &DEFAULT_BLOCK_USE, |conditions| {
             test_context(conditions.location.as_ref(), &context)
         });

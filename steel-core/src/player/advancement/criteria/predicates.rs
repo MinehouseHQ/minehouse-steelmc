@@ -29,6 +29,7 @@ use crate::command::execution::registered_item_predicate_matches;
 use crate::entity::entities::LightningBoltEntity;
 use crate::entity::{Entity, LivingEntity};
 use crate::inventory::equipment::EquipmentSlot;
+pub(crate) use crate::loot::{ContextPredicate, LootContext as ConditionContext};
 use crate::world::World;
 
 /// Decodes a registry predicate through its NBT codec, vanilla
@@ -123,6 +124,13 @@ impl BlockCondition {
     /// Vanilla `BlockPredicate.matchesState`.
     pub(crate) fn matches_state(&self, state: BlockStateId) -> bool {
         self.0.matches_state(state)
+    }
+
+    /// Vanilla `BlockPredicate.matchesBlockEntity` without the block entity:
+    /// a predicate on block entity data or components never matches.
+    // TODO: Pass the block entity once loot contexts carry `BLOCK_ENTITY`.
+    pub(crate) const fn matches_block_entity(&self) -> bool {
+        self.0.nbt().is_none() && self.0.components().is_empty()
     }
 
     /// Vanilla `BlockPredicate.matches(level, pos)`. Block entity data and
@@ -692,153 +700,6 @@ impl<'de> Deserialize<'de> for EntityPredicate {
             _ => 1,
         });
         Ok(Self(predicates))
-    }
-}
-
-/// Vanilla `LootContext.EntityTarget`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum EntityTarget {
-    This,
-    Attacker,
-    DirectAttacker,
-    AttackingPlayer,
-    TargetEntity,
-    InteractingEntity,
-}
-
-/// The loot context a criterion's conditions are tested in (vanilla
-/// `LootContextParamSets.ADVANCEMENT_*`).
-pub(crate) struct ConditionContext<'a> {
-    pub(crate) world: &'a Arc<World>,
-    pub(crate) origin: Option<DVec3>,
-    pub(crate) this: Option<&'a dyn Entity>,
-    pub(crate) tool: Option<&'a ItemStack>,
-    pub(crate) block_state: Option<BlockStateId>,
-}
-
-impl<'a> ConditionContext<'a> {
-    /// Vanilla `EntityPredicate.createContext(player, entity)`: `this` is the
-    /// entity, the origin is the player's position.
-    pub(crate) fn entity(world: &'a Arc<World>, origin: DVec3, entity: &'a dyn Entity) -> Self {
-        Self {
-            world,
-            origin: Some(origin),
-            this: Some(entity),
-            tool: None,
-            block_state: None,
-        }
-    }
-
-    fn entity_for(&self, target: EntityTarget) -> Option<&'a dyn Entity> {
-        match target {
-            EntityTarget::This => self.this,
-            _ => None,
-        }
-    }
-}
-
-/// A vanilla loot condition (`LootItemCondition`) as used by criteria.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
-pub(crate) enum LootCondition {
-    #[serde(rename = "minecraft:entity_properties", alias = "entity_properties")]
-    EntityProperties {
-        entity: EntityTarget,
-        predicate: Option<EntityPredicate>,
-    },
-    #[serde(rename = "minecraft:location_check", alias = "location_check")]
-    LocationCheck {
-        #[serde(default, rename = "offsetX")]
-        offset_x: i32,
-        #[serde(default, rename = "offsetY")]
-        offset_y: i32,
-        #[serde(default, rename = "offsetZ")]
-        offset_z: i32,
-        predicate: Option<Box<LocationPredicate>>,
-    },
-    #[serde(rename = "minecraft:match_block", alias = "match_block")]
-    MatchBlock(Box<BlockCondition>),
-    #[serde(rename = "minecraft:match_tool", alias = "match_tool")]
-    MatchTool {
-        predicate: Option<Box<ItemCondition>>,
-    },
-    #[serde(rename = "minecraft:all_of", alias = "all_of")]
-    AllOf { terms: Vec<LootCondition> },
-    #[serde(rename = "minecraft:any_of", alias = "any_of")]
-    AnyOf { terms: Vec<LootCondition> },
-    #[serde(rename = "minecraft:inverted", alias = "inverted")]
-    Inverted { term: Box<LootCondition> },
-}
-
-impl LootCondition {
-    /// Vanilla `LootItemCondition.test(context)`.
-    pub(crate) fn test(&self, ctx: &ConditionContext<'_>) -> bool {
-        match self {
-            Self::EntityProperties { entity, predicate } => {
-                // Vanilla `LootItemEntityPropertyCondition`: an empty predicate
-                // passes even without the entity.
-                let Some(predicate) = predicate else {
-                    return true;
-                };
-                ctx.entity_for(*entity)
-                    .is_some_and(|entity| predicate.matches(ctx.world, ctx.origin, entity))
-            }
-            Self::LocationCheck {
-                offset_x,
-                offset_y,
-                offset_z,
-                predicate,
-            } => ctx.origin.is_some_and(|origin| {
-                predicate.as_ref().is_none_or(|predicate| {
-                    predicate.matches(
-                        ctx.world,
-                        origin.x + f64::from(*offset_x),
-                        origin.y + f64::from(*offset_y),
-                        origin.z + f64::from(*offset_z),
-                    )
-                })
-            }),
-            Self::MatchBlock(block) => ctx
-                .block_state
-                .is_some_and(|state| block.matches_state(state)),
-            Self::MatchTool { predicate } => ctx.tool.is_some_and(|tool| {
-                predicate
-                    .as_ref()
-                    .is_none_or(|predicate| predicate.test(tool))
-            }),
-            Self::AllOf { terms } => terms.iter().all(|term| term.test(ctx)),
-            Self::AnyOf { terms } => terms.iter().any(|term| term.test(ctx)),
-            Self::Inverted { term } => !term.test(ctx),
-        }
-    }
-}
-
-/// A criterion field holding a loot condition: one condition, or a list that
-/// must all pass (vanilla `LootItemCondition.CODEC` with the inline all-of
-/// form).
-#[derive(Debug, Clone)]
-pub(crate) struct ContextPredicate(Vec<LootCondition>);
-
-impl ContextPredicate {
-    /// Tests every condition in the context.
-    pub(crate) fn test(&self, ctx: &ConditionContext<'_>) -> bool {
-        self.0.iter().all(|condition| condition.test(ctx))
-    }
-}
-
-impl<'de> Deserialize<'de> for ContextPredicate {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Many(Vec<LootCondition>),
-            One(Box<LootCondition>),
-        }
-        Ok(match Raw::deserialize(deserializer)? {
-            Raw::Many(conditions) => Self(conditions),
-            Raw::One(condition) => Self(vec![*condition]),
-        })
     }
 }
 

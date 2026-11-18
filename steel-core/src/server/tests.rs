@@ -5018,6 +5018,7 @@ mod operator_requests;
 mod pick_item_from_entity;
 mod place_command;
 mod post_effect_command;
+mod predicate_command;
 mod projectile_owners;
 mod recipe_command;
 mod scoreboard_command;

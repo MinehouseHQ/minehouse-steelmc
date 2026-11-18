@@ -17,7 +17,7 @@ use super::brigadier::{CommandSyntaxError, StringReader};
 use super::execution::{CommandSource, SteelContextChain};
 use template::check_command_line_length;
 
-pub(crate) use library::{FunctionLibrary, ServerFunctions};
+pub(crate) use library::{FunctionLibrary, ServerFunctions, TagEntry, build_tags, load_tag_files};
 pub(crate) use template::{StringTemplate, is_valid_variable_name};
 pub(crate) use timer::{DomainTimerQueues, TimerCallback, TimerQueue};
 

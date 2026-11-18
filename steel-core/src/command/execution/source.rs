@@ -8,6 +8,7 @@ use crate::{
         sender::CommandSender,
     },
     entity::{Entity, EntityAnchor, SharedEntity},
+    loot::LootRegistries,
     permission::{
         PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
         PermissionRuleExpression, PermissionSet, PermissionState,
@@ -106,6 +107,13 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     /// The source domain's data pack function ids.
     fn function_ids(&self) -> Vec<Identifier> {
         Vec::new()
+    }
+
+    /// The source domain's `predicate`, `context_int_provider` and
+    /// `context_float_provider` registries; vanilla's built-in entries for a
+    /// source outside a server.
+    fn loot_registries(&self) -> Arc<LootRegistries> {
+        LootRegistries::vanilla()
     }
 
     /// The source domain's data pack function tag ids.
@@ -744,6 +752,10 @@ impl CommandArgumentSource for CommandSource {
             .map_or_else(Vec::new, |library| {
                 library.function_ids().cloned().collect()
             })
+    }
+
+    fn loot_registries(&self) -> Arc<LootRegistries> {
+        self.server.loot_registries.get(self.world.domain())
     }
 
     fn function_tag_ids(&self) -> Vec<Identifier> {

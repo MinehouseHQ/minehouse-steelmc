@@ -16,7 +16,7 @@ use crate::server::Server;
 use crate::world::World;
 
 /// A `datapacks` folder with one pack holding `files`, by path under `data/`.
-fn datapacks(name: &str, files: &[(&str, &str)]) -> PathBuf {
+pub(super) fn datapacks(name: &str, files: &[(&str, &str)]) -> PathBuf {
     let root = env::temp_dir().join(format!("steel-function-command-{name}-{}", process::id()));
     let _ = fs::remove_dir_all(&root);
     let pack = root.join("pack");
@@ -36,7 +36,7 @@ fn write(path: &Path, contents: &str) {
 }
 
 /// Loads the pack folder into the world's domain, as server start does.
-fn load(server: &Arc<Server>, world: &Arc<World>, root: &Path) {
+pub(super) fn load(server: &Arc<Server>, world: &Arc<World>, root: &Path) {
     server.load_functions(world.domain(), world, &find_packs(root));
     let _ = fs::remove_dir_all(root);
 }

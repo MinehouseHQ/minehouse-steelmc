@@ -11,6 +11,7 @@ use crate::command::execution::{
 use crate::command::function::{CommandFunction, FunctionLibrary, TimerCallback};
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::datapack::{DataPack, FeatureFlagSet, PackRepository};
+use crate::loot::LootRegistries;
 use crate::world::World;
 
 impl Server {
@@ -60,7 +61,8 @@ impl Server {
     /// makes `selected` the domain's packs, saves the selection and compiles
     /// their functions.
     ///
-    /// Steel's packs carry only functions, so the functions are what reloads.
+    /// Steel's packs carry functions, predicates and number providers, so
+    /// those are what reloads.
     /// Vanilla reloads in the background and swaps them in a few ticks later;
     /// Steel swaps them before returning. Either way `#minecraft:load` runs on
     /// the next tick.
@@ -81,14 +83,18 @@ impl Server {
         self.load_functions(domain, world, packs.iter().filter_map(|pack| pack.files()));
     }
 
-    /// Compiles `packs`, bottom first, into `domain`'s function library,
-    /// replacing the last.
+    /// Loads `packs`, bottom first, into `domain`'s loot registries, then
+    /// compiles them into its function library, replacing the last of each.
+    /// The registries load first, as functions name their entries.
     pub(crate) fn load_functions<'pack>(
         self: &Arc<Self>,
         domain: &str,
         world: &Arc<World>,
         packs: impl IntoIterator<Item = &'pack DataPack>,
     ) {
+        let packs = packs.into_iter().collect::<Vec<_>>();
+        self.loot_registries
+            .replace(domain, LootRegistries::load(&packs));
         let compilation_source =
             CommandSource::server_in(Arc::clone(self), Arc::clone(world)).with_suppressed_output();
         let library = {
