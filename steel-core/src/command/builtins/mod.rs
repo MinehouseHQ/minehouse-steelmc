@@ -239,6 +239,7 @@ mod tests {
                 "bossbar",
                 "clear",
                 "clone",
+                "compute",
                 "data",
                 "deop",
                 "damage",
