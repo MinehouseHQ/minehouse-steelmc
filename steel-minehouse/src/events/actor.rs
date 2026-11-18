@@ -140,7 +140,7 @@ impl Body {
         };
         if let BodyData::Mannequin(data) = &mut self.data {
             data.profile
-                .set(ResolvableProfile::from(player.gameprofile.clone()));
+                .set(ResolvableProfile::from(player.shown_profile()));
         }
         self.unresolved = None;
     }

@@ -23,7 +23,7 @@ use steel_protocol::{
     utils::ConnectionProtocol,
 };
 use steel_registry::game_profile::ProfileProperty;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, locks::SyncMutex};
 use tokio::{
     sync::mpsc::{self, UnboundedSender},
     time::{MissedTickBehavior, interval},
@@ -44,6 +44,8 @@ pub(crate) struct GateState {
     undecided: Option<Arc<AtomicBool>>,
     /// Custom click actions go here while the gate is deciding.
     clicks: Option<UnboundedSender<Identifier>>,
+    /// The profile [`LoginDecision::AllowAs`] let the player in with.
+    admitted_profile: Arc<SyncMutex<Option<GameProfile>>>,
 }
 
 impl JavaTcpClient {
@@ -95,12 +97,16 @@ impl JavaTcpClient {
 
         let (clicks, click_receiver) = mpsc::unbounded_channel();
         let undecided = Arc::new(AtomicBool::new(true));
-        let private_properties = {
+        let (private_properties, admitted_profile) = {
             let mut state = self.gate.lock();
             state.undecided = Some(Arc::clone(&undecided));
             state.clicks = Some(clicks);
-            state.private_properties.clone()
+            (
+                state.private_properties.clone(),
+                Arc::clone(&state.admitted_profile),
+            )
         };
+        let login_profile = profile.clone();
 
         let compression = self.compression.load();
         let admission = gate.admit(PendingLogin {
@@ -151,8 +157,9 @@ impl JavaTcpClient {
                 }
             };
 
+            let decision = keep_admitted_profile(decision, &login_profile, &admitted_profile);
             let outbound = match decision {
-                LoginDecision::Allow => {
+                LoginDecision::Allow | LoginDecision::AllowAs(_) => {
                     // Before the packet: the client answers it at once.
                     undecided.store(false, Ordering::Release);
                     encode(EncodedPacket::from_bare(
@@ -194,10 +201,35 @@ impl JavaTcpClient {
         true
     }
 
+    /// The profile the gate let the player in with, if it chose one.
+    pub(crate) fn take_admitted_profile(&self) -> Option<GameProfile> {
+        self.gate.lock().admitted_profile.lock().take()
+    }
+
     /// Passes a dialog button click to the waiting gate.
     pub(crate) fn handle_config_custom_click(&self, packet: SCustomClickAction) {
         if let Some(clicks) = &self.gate.lock().clicks {
             let _ = clicks.send(packet.id);
         }
     }
+}
+
+/// Keeps the profile of [`LoginDecision::AllowAs`] for the join, if it is the login's own.
+fn keep_admitted_profile(
+    decision: LoginDecision,
+    login_profile: &GameProfile,
+    admitted_profile: &SyncMutex<Option<GameProfile>>,
+) -> LoginDecision {
+    let LoginDecision::AllowAs(profile) = decision else {
+        return decision;
+    };
+    if profile.id() == login_profile.id() && profile.name() == login_profile.name() {
+        *admitted_profile.lock() = Some(*profile);
+    } else {
+        log::error!(
+            "The login gate let {} in under another profile; it is ignored",
+            login_profile.name()
+        );
+    }
+    LoginDecision::Allow
 }

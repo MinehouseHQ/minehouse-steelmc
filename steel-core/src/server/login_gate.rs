@@ -21,6 +21,9 @@ use crate::{player::connection::OutboundPacket, server::Server};
 pub enum LoginDecision {
     /// The configuration phase finishes and the player joins.
     Allow,
+    /// The player joins with this profile: the one of the login with other properties (a
+    /// skin). A profile with another UUID or name is ignored.
+    AllowAs(Box<GameProfile>),
     /// The client is disconnected with this text.
     Deny(Box<TextComponent>),
 }

@@ -5,6 +5,8 @@ use std::sync::{
 
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
+use steel_registry::GameProfile;
+
 use super::{
     DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player, chat::ChatState,
     chunk_sender::ChunkSender, spam_throttler::TickThrottler,
@@ -24,6 +26,9 @@ pub struct PlayerSession {
     pub(crate) chat: SyncMutex<ChatState>,
     /// Vanilla keeps creative drop throttling on the connection across respawns.
     pub(super) drop_spam_throttler: SyncMutex<TickThrottler>,
+    /// The profile shown in place of the login one after [`Player::set_profile_properties`].
+    /// Kept here so it survives respawns.
+    pub(super) shown_profile: SyncMutex<Option<GameProfile>>,
 }
 
 enum CurrentPlayerSlot {
@@ -60,6 +65,7 @@ impl PlayerSession {
                 DROP_SPAM_THROTTLER_INCREMENT_STEP,
                 DROP_SPAM_THROTTLER_THRESHOLD,
             )),
+            shown_profile: SyncMutex::new(None),
         }
     }
 

@@ -18,6 +18,7 @@ use steel_core::{
     },
 };
 use text_components::TextComponent;
+use tokio::time::timeout;
 
 pub mod auth;
 pub mod bank;
@@ -34,6 +35,7 @@ pub mod moderation;
 pub mod nitro;
 pub mod roles;
 pub mod site;
+pub mod skins;
 pub mod stats;
 pub mod tab;
 pub mod villagers;
@@ -46,6 +48,7 @@ use console::Console;
 use downtime::Downtime;
 use moderation::Moderation;
 use roles::Roles;
+use skins::Skins;
 
 /// What is prepared before the server exists: settings and the commands.
 pub struct Setup {
@@ -54,6 +57,7 @@ pub struct Setup {
     downtime: Option<Arc<Downtime>>,
     chat: Option<Arc<Chat>>,
     blocklog: Option<Arc<BlockLog>>,
+    skins: Option<Arc<Skins>>,
 }
 
 /// The running `MineHouse` modules of one server.
@@ -88,6 +92,7 @@ impl Minehouse {
             auth,
             moderation,
             downtime: Downtime::register(registry),
+            skins: Skins::register(registry),
             chat: Chat::register(registry),
             blocklog: {
                 if let Err(error) = content::register(registry) {
@@ -140,6 +145,7 @@ impl Minehouse {
         let gate = MinehouseGate {
             downtime: setup.downtime.clone(),
             auth: auth.clone(),
+            skins: setup.skins.clone(),
         };
         if !server.set_login_gate(Arc::new(gate)) {
             log::error!("Another login gate is already installed: no login check, no maintenance");
@@ -183,10 +189,12 @@ impl Minehouse {
     }
 }
 
-/// The login gate of the server: maintenance mode first, then the login check.
+/// The login gate of the server: maintenance mode first, then the login check, and the
+/// skin the player joins with.
 struct MinehouseGate {
     downtime: Option<Arc<Downtime>>,
     auth: Option<Arc<Auth>>,
+    skins: Option<Arc<Skins>>,
 }
 
 impl LoginGate for MinehouseGate {
@@ -215,9 +223,24 @@ impl LoginGate for MinehouseGate {
     }
 
     fn admit(&self, login: PendingLogin) -> LoginAdmission {
-        match &self.auth {
+        // The skin is looked up while the player confirms the login.
+        let skin = self
+            .skins
+            .as_ref()
+            .map(|skins| skins.lookup_for_join(login.profile.clone()));
+        let decision: LoginAdmission = match &self.auth {
             Some(auth) => Box::pin(Arc::clone(auth).admit(login)),
             None => Box::pin(async { LoginDecision::Allow }),
-        }
+        };
+        Box::pin(async move {
+            let decision = decision.await;
+            let Some(skin) = skin.filter(|_| matches!(decision, LoginDecision::Allow)) else {
+                return decision;
+            };
+            match timeout(skins::JOIN_WAIT, skin).await {
+                Ok(Ok(Some(profile))) => LoginDecision::AllowAs(Box::new(profile)),
+                _ => decision,
+            }
+        })
     }
 }

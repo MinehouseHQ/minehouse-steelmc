@@ -146,6 +146,38 @@ interval_seconds = 300
 Nothing is sent when auth is off, because the address of the site and the secret come from
 its config. If the site is down a warning is logged and the data goes out the next time.
 
+## Skins
+
+`src/skins/`: the Fabric SkinRestorer of prod. Steel runs offline behind Gate, so a nickname
+without a licence joins without textures; this module gives it a skin.
+
+- **On a join** (while the login check waits, at most 5 s after it lets the player in): the
+  skin the player chose with `/skin`, looked up again by its nickname when it came from Mojang
+  or Ely.by. A player who never chose one and came without textures gets the skin of the
+  licensed account with the same nickname, else the one from Ely.by, else Steve or Alex.
+  Licensed players keep the textures Gate forwards.
+- **`/skin`**, for everyone; the skin of others needs `minehouse.command.skin.others` (the
+  console may):
+
+| Command | What it does |
+| --- | --- |
+| `/skin set mojang <ник> [игроки]` | the skin of a licensed account |
+| `/skin set ely.by <ник> [игроки]` | the skin of an Ely.by account |
+| `/skin set web classic\|slim "<ссылка>" [игроки]` | a PNG, signed by MineSkin (`slim` for thin arms) |
+| `/skin reset [игроки]` | the skin of one's own nickname again (Mojang, else Ely.by) |
+| `/skin clear [игроки]` | no skin |
+
+  A new skin shows at once, for everyone: the tab entry is added again, the player entity is
+  spawned again for whoever sees it and the player's own client rebuilds its player with a
+  same-world respawn (`Player::set_profile_properties` in `steel-core`).
+- **Storage**: `skins/<uuid>.json` in `MINEHOUSE_DATA_DIR`, in the format of SkinRestorer.
+  `steel import-anvil` copies prod's `world/skinrestorer/` there (`migrate.rs`).
+- `MINEHOUSE_MINESKIN_KEY` (optional) is a MineSkin API key for higher limits; links work
+  without it.
+
+In `steel-core` the join uses `LoginDecision::AllowAs` of the login gate, which lets the
+player in with the same profile and other properties.
+
 ## Chat
 
 `src/chat/`: the Fabric mod `minehouse-chat`.
