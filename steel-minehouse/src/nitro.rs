@@ -1,9 +1,9 @@
 //! `MineHouse` Nitro: a subscription bought on the site for `MineHouse` Coins, just to support
-//! the server. It colours the nickname in the tab list and in chat. On the Fabric server this
+//! the server. It colors the nickname in the tab list and in chat. On the Fabric server this
 //! is `minehouse-auth` (the poll and `%minehouse:name%`) and `minehouse-chat`.
 //!
 //! The site answers `POST /api/mc/nitro` `{server}` with every nickname that has Nitro now and
-//! its colour; with the feature flag `nitro` off for this server the list is empty. If the site
+//! its color; with the feature flag `nitro` off for this server the list is empty. If the site
 //! does not answer, the last list stays.
 
 use std::{sync::LazyLock, time::Duration};
@@ -19,11 +19,11 @@ use crate::site::{SiteClient, SiteError};
 /// How often to ask the site.
 const POLL: Duration = Duration::from_secs(30);
 
-/// Nickname colours of the players with Nitro, `[r, g, b]`.
+/// Nickname colors of the players with Nitro, `[r, g, b]`.
 static COLORS: LazyLock<SyncRwLock<FxHashMap<Uuid, [u8; 3]>>> =
     LazyLock::new(|| SyncRwLock::new(FxHashMap::default()));
 
-/// The Nitro colour of this player's nickname, if they have Nitro.
+/// The Nitro color of this player's nickname, if they have Nitro.
 #[must_use]
 pub fn color(player: Uuid) -> Option<[u8; 3]> {
     COLORS.read().get(&player).copied()
@@ -37,7 +37,7 @@ pub fn start(site: SiteClient, server_id: String) {
                 Ok(colors) => {
                     let changed = *COLORS.read() != colors;
                     if changed {
-                        log::info!("MineHouse Nitro: {} nickname(s) coloured", colors.len());
+                        log::info!("MineHouse Nitro: {} nickname(s) colored", colors.len());
                         *COLORS.write() = colors;
                     }
                 }
@@ -49,14 +49,14 @@ pub fn start(site: SiteClient, server_id: String) {
 }
 
 impl SiteClient {
-    /// Players with Nitro on this server and their colours.
+    /// Players with Nitro on this server and their colors.
     pub async fn nitro(&self, server: &str) -> Result<FxHashMap<Uuid, [u8; 3]>, SiteError> {
         let body = json!({ "server": server });
         parse(&self.post_json("/api/mc/nitro", body.to_string()).await?)
     }
 }
 
-/// Parses `POST /api/mc/nitro`; entries with a bad UUID or colour are skipped.
+/// Parses `POST /api/mc/nitro`; entries with a bad UUID or color are skipped.
 fn parse(text: &str) -> Result<FxHashMap<Uuid, [u8; 3]>, SiteError> {
     let json: Value = serde_json::from_str(text)
         .map_err(|error| SiteError::Answer(format!("invalid JSON: {error}")))?;
@@ -88,7 +88,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_colours_and_skips_bad_entries() {
+    fn parses_colors_and_skips_bad_entries() {
         let colors = parse(
             r##"{"players": [
                 {"uuid": "0f8fad5b-d9cb-469f-a165-70867728950e", "nickname": "Steve", "color": "#a855f7"},

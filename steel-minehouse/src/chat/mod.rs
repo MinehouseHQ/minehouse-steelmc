@@ -434,7 +434,7 @@ fn world_name(key: &Identifier, config: &ChatConfig) -> String {
 }
 
 /// The nickname: hovering shows a hint, a click starts `/msg`. In the player's `MineHouse`
-/// Nitro colour if they have it.
+/// Nitro color if they have it.
 fn player_name(name: &str, id: Uuid, config: &ChatConfig) -> TextComponent {
     let mut component = TextComponent::plain(name.to_owned())
         .click_event(ClickEvent::suggest_command(format!("/msg {name} ")));

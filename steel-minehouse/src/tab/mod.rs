@@ -109,7 +109,7 @@ impl TabConfig {
         })
     }
 
-    /// The nickname in the list and its order. `color` is the `MineHouse` Nitro colour.
+    /// The nickname in the list and its order. `color` is the `MineHouse` Nitro color.
     fn entry(
         &self,
         name: &str,
@@ -174,13 +174,13 @@ fn gradient(text: &str, from: [u8; 3], to: [u8; 3]) -> TextComponent {
     TextComponent::plain("").add_children(children)
 }
 
-/// A player, their style and their Nitro colour.
+/// A player, their style and their Nitro color.
 type Look = (Uuid, Option<usize>, Option<[u8; 3]>);
 
 /// The tab list of one server.
 pub struct Tab {
     config: TabConfig,
-    /// Who was in the list with which style and Nitro colour when names last went out.
+    /// Who was in the list with which style and Nitro color when names last went out.
     sent: SyncMutex<Vec<Look>>,
 }
 
@@ -309,7 +309,7 @@ mod tests {
         let (name, order) = config.entry("Alex", None, None);
         assert_eq!(name.to_plain(&NoResolutor), "Alex");
         assert_eq!(order, 0);
-        // Nitro: the same text, the nickname in its colour.
+        // Nitro: the same text, the nickname in its color.
         let (name, _) = config.entry("Alex", None, Some([0xa8, 0x55, 0xf7]));
         assert_eq!(name.to_plain(&NoResolutor), "Alex");
         let nick = &name.children[0].children[0];
