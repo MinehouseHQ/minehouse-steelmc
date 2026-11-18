@@ -1,4 +1,5 @@
 mod c_add_entity;
+mod c_add_transient_block;
 mod c_animate;
 mod c_award_stats;
 mod c_block_changed_ack;
@@ -44,6 +45,7 @@ mod c_player_info_update;
 mod c_player_look_at;
 mod c_player_position;
 mod c_player_rotation;
+mod c_projectile_power;
 mod c_recipe_book_add;
 mod c_recipe_book_remove;
 mod c_recipe_book_settings;
@@ -142,6 +144,7 @@ mod s_use_item_on;
 mod world_border;
 
 pub use c_add_entity::{CAddEntity, write_lp_vec3};
+pub use c_add_transient_block::CAddTransientBlock;
 pub use c_animate::{AnimateAction, CAnimate};
 pub use c_award_stats::CAwardStats;
 pub use c_block_changed_ack::CBlockChangedAck;
@@ -202,6 +205,7 @@ pub use c_player_info_update::{
 pub use c_player_look_at::{CPlayerLookAt, LookAtAnchor};
 pub use c_player_position::{CPlayerPosition, RelativeMovement};
 pub use c_player_rotation::CPlayerRotation;
+pub use c_projectile_power::CProjectilePower;
 pub use c_recipe_book_add::{CRecipeBookAdd, RecipeBookAddEntry};
 pub use c_recipe_book_remove::CRecipeBookRemove;
 pub use c_recipe_book_settings::{CRecipeBookSettings, RecipeBookTypeSettings};

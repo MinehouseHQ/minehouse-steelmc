@@ -2,8 +2,9 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
-    CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta, to_angle_byte,
+    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CProjectilePower,
+    CRotateHead, CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta,
+    to_angle_byte,
 };
 use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
 
@@ -147,6 +148,9 @@ pub enum EntityMovementSyncPacket {
     PositionSync(CEntityPositionSync),
     /// Velocity sync.
     Velocity(CSetEntityMotion),
+    /// Velocity sync of a vanilla `AbstractHurtingProjectile`, bundled with
+    /// its acceleration power.
+    ProjectileVelocity(CSetEntityMotion, CProjectilePower),
 }
 
 impl From<EntityPositionSyncPacket> for EntityMovementSyncPacket {

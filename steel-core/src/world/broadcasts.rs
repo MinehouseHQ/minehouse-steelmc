@@ -295,7 +295,14 @@ impl World {
         let Some(encoded) = self.encode_movement_sync_packet(packet) else {
             return;
         };
-        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if Some(player_id) == exclude {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                encoded.send_to(&player);
+            }
+        }
     }
 
     /// Broadcasts an already-encoded packet to players currently tracking an entity.
@@ -318,7 +325,7 @@ impl World {
     pub(super) fn encode_movement_sync_packet(
         &self,
         packet: EntityMovementSyncPacket,
-    ) -> Option<EncodedPacket> {
+    ) -> Option<EncodedMovementSync> {
         let encoded = match packet {
             EntityMovementSyncPacket::Position(packet) => {
                 EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -338,7 +345,33 @@ impl World {
             EntityMovementSyncPacket::Velocity(packet) => {
                 EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             }
+            EntityMovementSyncPacket::ProjectileVelocity(motion, power) => {
+                let motion =
+                    EncodedPacket::from_bare(motion, self.compression, ConnectionProtocol::Play);
+                let power =
+                    EncodedPacket::from_bare(power, self.compression, ConnectionProtocol::Play);
+                return Some(EncodedMovementSync::Bundle(vec![motion.ok()?, power.ok()?]));
+            }
         };
-        encoded.ok()
+        encoded.ok().map(EncodedMovementSync::Single)
+    }
+}
+
+/// An encoded movement sync update: one packet, or a bundle the client
+/// applies together like vanilla `ClientboundBundlePacket`.
+pub(super) enum EncodedMovementSync {
+    /// A single packet.
+    Single(EncodedPacket),
+    /// Packets sent between bundle delimiters.
+    Bundle(Vec<EncodedPacket>),
+}
+
+impl EncodedMovementSync {
+    /// Sends this update to `player`.
+    pub(super) fn send_to(&self, player: &Player) {
+        match self {
+            Self::Single(packet) => player.connection.send_encoded(packet.clone()),
+            Self::Bundle(packets) => player.connection.send_encoded_bundle(packets.clone()),
+        }
     }
 }
