@@ -2,7 +2,7 @@
 //!
 //! Vanilla has no such step: with no gate installed the configuration phase is unchanged.
 
-use std::{future::Future, net::IpAddr, pin::Pin, sync::Arc};
+use std::{fs, future::Future, net::IpAddr, pin::Pin, sync::Arc};
 
 use steel_protocol::{
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket},
@@ -141,6 +141,16 @@ impl Server {
             .lock()
             .clone()
             .unwrap_or_else(|| self.config.motd.clone())
+    }
+
+    /// The PNG server icon from the configured favicon file, when enabled and
+    /// readable.
+    #[must_use]
+    pub fn favicon_bytes(&self) -> Option<Vec<u8>> {
+        if !self.config.use_favicon {
+            return None;
+        }
+        fs::read(&self.config.favicon).ok()
     }
 
     /// The installed login gate.

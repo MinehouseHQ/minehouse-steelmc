@@ -1,4 +1,6 @@
+use steel_protocol::packets::game::CServerData;
 use steel_utils::translations;
+use text_components::TextComponent;
 
 use super::{
     Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
@@ -307,6 +309,7 @@ impl Server {
         self.connect_player_to_scoreboard(state.world.domain(), &player);
         let previous_name = self.record_known_player(&player.gameprofile);
         self.broadcast_player_join_message(&player, previous_name.as_deref());
+        self.send_server_status(&player);
         self.connect_player_to_boss_bars(state.world.domain(), &player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
@@ -320,6 +323,15 @@ impl Server {
         if player.connection.closed() {
             self.queue_player_disconnect(player);
         }
+    }
+
+    /// Vanilla `ServerPlayer.sendServerStatus`: the server list description and
+    /// icon for a player who just joined.
+    fn send_server_status(&self, player: &Player) {
+        player.send_packet(CServerData {
+            motd: TextComponent::plain(self.status_motd()),
+            icon_bytes: self.favicon_bytes(),
+        });
     }
 
     /// Vanilla `PlayerList.updateEntireScoreboard` with the player's domain
