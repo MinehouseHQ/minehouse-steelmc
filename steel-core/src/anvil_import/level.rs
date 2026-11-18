@@ -371,7 +371,7 @@ fn world_clocks(
 }
 
 /// Reads the `data` compound of a vanilla `SavedData` file, or `None` if the file is missing.
-fn read_saved_data(path: &Path) -> Result<Option<NbtCompound>, AnvilImportError> {
+pub(super) fn read_saved_data(path: &Path) -> Result<Option<NbtCompound>, AnvilImportError> {
     if !path.exists() {
         return Ok(None);
     }

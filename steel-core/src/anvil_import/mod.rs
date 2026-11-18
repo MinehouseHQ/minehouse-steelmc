@@ -23,6 +23,7 @@
 mod chunk;
 mod entities;
 mod level;
+mod maps;
 mod nbt;
 mod players;
 mod poi;
@@ -50,6 +51,7 @@ use crate::chunk_saver::{PersistentChunk, PreparedChunkSave, RegionManager};
 
 pub use chunk::{ChunkConversion, ChunkDimension, convert_chunk};
 pub use level::{LevelReport, import_level_data, read_gzip_root};
+pub use maps::{MapReport, import_maps};
 pub use players::{PlayerReport, import_players};
 pub use region::AnvilRegion;
 pub use report::ImportReport;
