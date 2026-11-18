@@ -7,9 +7,11 @@
 //! - the stations of the metro, with their names and lines: the saved data
 //!   `minehouse-tweaks/metro_stations.dat` of each dimension becomes `metro-stations.json`;
 //! - the payment terminals: on Fabric a terminal was a block entity, here they are
-//!   `bank-terminals.json`.
+//!   `bank-terminals.json`;
+//! - the skins players chose: `SkinRestorer`'s `skinrestorer/<uuid>.json` of the world are
+//!   copied to `skins/` as they are (see [`crate::skins`]).
 //!
-//! Both files are written to the data directory of the imported save, and both stores are the
+//! The files are written to the data directory of the imported save, and both stores are the
 //! ones the server reads, so what is written is what it will load.
 
 use std::path::Path;
@@ -22,6 +24,7 @@ use steel_utils::{BlockPos, Identifier};
 use crate::{
     bank::{journal, terminals::Terminals},
     content::{self, stations::Stations},
+    skins::store::SkinStore,
 };
 
 /// The block entity of a payment terminal on the Fabric server.
@@ -59,10 +62,13 @@ pub struct Dimension<'a> {
 }
 
 /// Writes our stores into `data` (the `MINEHOUSE_DATA_DIR` of the new server) from the
-/// imported dimensions. Returns lines for the report of the import.
+/// Fabric world folder `world` and its imported dimensions. Returns lines for the report of
+/// the import.
 #[must_use]
-pub fn carry_over(dimensions: &[Dimension<'_>], data: &Path) -> Vec<String> {
+pub fn carry_over(world: &Path, dimensions: &[Dimension<'_>], data: &Path) -> Vec<String> {
     let mut lines = Vec::new();
+
+    carry_skins(world, data, &mut lines);
 
     let mut stations = Stations::load(data.join("metro-stations.json"));
     let mut found = 0;
@@ -149,6 +155,28 @@ pub fn carry_over(dimensions: &[Dimension<'_>], data: &Path) -> Vec<String> {
         ));
     }
     lines
+}
+
+/// Copies the skins of `SkinRestorer` (`world/skinrestorer`) to `skins/` of `data`.
+fn carry_skins(world: &Path, data: &Path, lines: &mut Vec<String>) {
+    let skins = world.join("skinrestorer");
+    if skins.is_dir() {
+        match SkinStore::at(data.join("skins")).import(&skins) {
+            Ok((copied, skipped)) => {
+                lines.push(format!("MineHouse: {copied} skins carried over"));
+                if !skipped.is_empty() {
+                    lines.push(format!(
+                        "MineHouse: {} files in skinrestorer/ are no skins: {}",
+                        skipped.len(),
+                        skipped.join(", ")
+                    ));
+                }
+            }
+            Err(error) => lines.push(format!("MineHouse: skins were not carried over: {error}")),
+        }
+    } else {
+        lines.push("MineHouse: no skinrestorer/ in the world, no skins carried over".to_owned());
+    }
 }
 
 /// A saved item the way the bank writes items, if Steel can read it.
@@ -253,6 +281,7 @@ mod tests {
         let dropped = [terminal, chest, as_saved, button];
 
         let lines = carry_over(
+            &source,
             &[Dimension {
                 key: &world,
                 source: &source,

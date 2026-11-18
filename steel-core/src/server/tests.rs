@@ -24,11 +24,13 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::game_profile::ProfileProperty;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{
-    C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_PLAYER_ROTATION,
-    C_SERVER_DATA, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT,
-    C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
+    C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_REMOVE, C_PLAYER_INFO_UPDATE,
+    C_PLAYER_ROTATION, C_REMOVE_ENTITIES, C_RESPAWN, C_SERVER_DATA, C_SET_ACTION_BAR_TEXT,
+    C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
+    C_UPDATE_ADVANCEMENTS,
 };
 use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
@@ -3294,6 +3296,118 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             1,
             "vanilla sends the server status once on join"
         );
+
+        if let Err(error) = server.flush_known_players().await {
+            panic!("known player cache should flush before test teardown: {error}");
+        }
+        drop(joining);
+        drop(existing);
+        drop(server);
+    });
+}
+
+#[test]
+fn changed_profile_is_added_again_and_respawned_for_viewers() {
+    let world_fixture = fresh_test_world("changed_profile_republished");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let server =
+            test_server_with_max_players(Arc::clone(world), PermissionSubjectIndex::new(), 2).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (existing, existing_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "ExistingPlayer", 1);
+        assert!(server.online_players.insert(Arc::clone(&existing)));
+        assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
+        let _ = existing.mark_joined_world();
+        let spawn_position = existing.position();
+        existing
+            .chunk_sender()
+            .lock()
+            .mark_chunk_sent_for_test(ChunkPos::from_entity_pos(spawn_position));
+
+        let (joining, joining_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "JoiningPlayer", 2);
+        assert!(server.reserve_player_join(&joining));
+        let state = DomainPlayerState {
+            world: Arc::clone(world),
+            data: DomainPlayerData::FirstVisit {
+                spawn: PreparedSpawn {
+                    position: spawn_position,
+                    rotation: (0.0, 0.0),
+                },
+            },
+            spawn_chunk_request: world.request_player_spawn_chunks(spawn_position),
+        };
+        server.finish_prepared_player_join(PendingPlayerJoin {
+            player: Arc::clone(&joining),
+            state: Ok(state),
+        });
+        existing_packets.lock().clear();
+
+        let textures = ProfileProperty::new(
+            "textures".to_owned(),
+            "skin".to_owned(),
+            Some("signature".to_owned()),
+        )
+        .expect("textures should fit");
+        joining
+            .set_profile_properties(vec![textures.clone()])
+            .expect("profile should fit");
+
+        assert_eq!(joining.shown_profile().properties(), [textures]);
+        assert_eq!(joining.gameprofile.properties(), []);
+        let packet_ids = existing_packets
+            .lock()
+            .iter()
+            .map(packet_id)
+            .collect::<Vec<_>>();
+        let expected = [
+            C_PLAYER_INFO_REMOVE,
+            C_PLAYER_INFO_UPDATE,
+            C_REMOVE_ENTITIES,
+            C_ADD_ENTITY,
+        ];
+        let mut found = expected
+            .iter()
+            .map(|id| packet_ids.iter().position(|packet| packet == id));
+        let positions: Option<Vec<usize>> = found.by_ref().collect();
+        let Some(positions) = positions else {
+            panic!("viewers should get every step; packet ids: {packet_ids:?}");
+        };
+        assert!(
+            positions.is_sorted(),
+            "the entry is replaced before the entity spawns again; packet ids: {packet_ids:?}"
+        );
+
+        existing_packets.lock().clear();
+        joining
+            .set_profile_properties(joining.shown_profile().properties().to_vec())
+            .expect("profile should fit");
+        assert!(
+            existing_packets.lock().is_empty(),
+            "an unchanged profile is not sent again"
+        );
+
+        // A client loaded into play rebuilds its own player with a same-world respawn.
+        joining.set_client_loaded(true);
+        joining_packets.lock().clear();
+        joining
+            .set_profile_properties(Vec::new())
+            .expect("profile should fit");
+        let own_ids = joining_packets
+            .lock()
+            .iter()
+            .map(packet_id)
+            .collect::<Vec<_>>();
+        assert!(own_ids.contains(&C_RESPAWN), "packet ids: {own_ids:?}");
+        assert!(!joining.has_client_loaded());
 
         if let Err(error) = server.flush_known_players().await {
             panic!("known player cache should flush before test teardown: {error}");

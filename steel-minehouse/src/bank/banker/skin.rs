@@ -5,10 +5,11 @@
 //! skin from any other link goes through `MineSkin` (api.mineskin.org, no key needed), which
 //! uploads it and returns the signed property.
 
-use std::{sync::LazyLock, time::Duration};
+use std::sync::LazyLock;
+
+use crate::skins::providers;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use steel_registry::{
     game_profile::ProfileProperty,
     resolvable_profile::{PartialProfile, PlayerSkinPatch, ResolvableProfile},
@@ -16,7 +17,6 @@ use steel_registry::{
 
 /// The skin Timur picked for the banker.
 const DEFAULT: &str = include_str!("skin.json");
-const MINESKIN: &str = "https://api.mineskin.org/v2/generate";
 
 /// What the banker looks like.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,48 +70,13 @@ impl Skin {
     }
 }
 
-/// What `MineSkin` answered, as a skin or as words for the admin.
-fn answer(status: u16, body: &str) -> Result<Skin, String> {
-    let answer: Value =
-        serde_json::from_str(body).map_err(|_| format!("MineSkin ответил {status}"))?;
-    let data = answer
-        .get("skin")
-        .and_then(|skin| skin.get("texture"))
-        .and_then(|texture| texture.get("data"));
-    let text = |key: &str| data?.get(key)?.as_str().map(str::to_owned);
-    if let (Some(value), Some(signature)) = (text("value"), text("signature")) {
-        return Ok(Skin::Texture { value, signature });
-    }
-    let why = answer
-        .get("errors")
-        .and_then(|errors| errors.get(0))
-        .and_then(|error| error.get("message"))
-        .and_then(Value::as_str)
-        .map_or_else(|| format!("код {status}"), str::to_owned);
-    Err(format!("MineSkin не принял скин: {why}"))
-}
-
 /// Uploads the PNG at `url` through `MineSkin`; fails with words for the admin.
 pub(super) async fn from_url(url: String) -> Result<Skin, String> {
-    let failed = |error: reqwest::Error| format!("MineSkin не отвечает: {error}");
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(failed)?;
-    let body = json!({"url": url, "visibility": "unlisted", "name": "Banker"});
-    let response = client
-        .post(MINESKIN)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .header("User-Agent", "minecraft-server")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(failed)?;
-    let status = response.status().as_u16();
-    let body = response.text().await.map_err(failed)?;
-    answer(status, &body)
+    let textures = providers::mineskin(&url, false, "Banker").await?;
+    Ok(Skin::Texture {
+        value: textures.value,
+        signature: textures.signature.unwrap_or_default(),
+    })
 }
 
 #[cfg(test)]
@@ -146,30 +111,5 @@ mod tests {
             name: "no such nick, far too long for a player".to_owned(),
         };
         assert_eq!(bad.profile(), ResolvableProfile::default());
-    }
-
-    #[test]
-    fn the_answer_of_mineskin_is_a_skin_or_a_reason() {
-        let good = r#"{"skin":{"texture":{"data":{"value":"v","signature":"s"}}}}"#;
-        assert_eq!(
-            answer(200, good),
-            Ok(Skin::Texture {
-                value: "v".to_owned(),
-                signature: "s".to_owned()
-            })
-        );
-        let refused = r#"{"errors":[{"message":"invalid image"}]}"#;
-        assert_eq!(
-            answer(400, refused),
-            Err("MineSkin не принял скин: invalid image".to_owned())
-        );
-        assert_eq!(
-            answer(500, "{}"),
-            Err("MineSkin не принял скин: код 500".to_owned())
-        );
-        assert_eq!(
-            answer(502, "<html>"),
-            Err("MineSkin ответил 502".to_owned())
-        );
     }
 }

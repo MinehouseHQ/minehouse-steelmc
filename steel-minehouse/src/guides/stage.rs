@@ -543,10 +543,7 @@ impl Stage {
         let mut skull = ItemStack::new(&vanilla_items::PLAYER_HEAD);
         skull.set(
             PROFILE,
-            ResolvableProfile::static_full(
-                self.player.gameprofile.clone(),
-                PlayerSkinPatch::default(),
-            ),
+            ResolvableProfile::static_full(self.player.shown_profile(), PlayerSkinPatch::default()),
         );
         skull
     }

@@ -116,7 +116,7 @@ fn print_for_entity(context: &Context) -> Result<i32, CommandSyntaxError> {
 /// avatar (a player or a mannequin). Returns `false` for other entities.
 pub(crate) fn print_for_avatar(source: &CommandSource, entity: &dyn Entity) -> bool {
     let profile = if let Some(player) = entity.as_player() {
-        ResolvableProfile::from(player.gameprofile.clone())
+        ResolvableProfile::from(player.shown_profile())
     } else if let Some(mannequin) = entity.downcast_ref::<MannequinEntity>() {
         mannequin.profile()
     } else {

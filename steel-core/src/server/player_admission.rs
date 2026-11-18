@@ -1,3 +1,4 @@
+use crate::entity::SharedEntity;
 use steel_protocol::packets::game::CServerData;
 use steel_utils::translations;
 use text_components::TextComponent;
@@ -739,20 +740,7 @@ impl Server {
             if existing_player.gameprofile.id() == player.gameprofile.id() {
                 return true;
             }
-
-            let mut entry = CPlayerInfoUpdate::create_player_initializing_entry(
-                existing_player.gameprofile.clone(),
-                existing_player.game_mode().into(),
-                existing_player.connection.latency(),
-                None,
-                existing_player.shows_hat(),
-            );
-            if let Some(session) = existing_player.chat_session()
-                && let Ok(protocol_data) = session.as_data().to_protocol_data()
-            {
-                entry = entry.with_chat_session(protocol_data);
-            }
-            entries.push(entry);
+            entries.push(Self::player_info_initializing_entry(existing_player));
             true
         });
 
@@ -763,14 +751,50 @@ impl Server {
             });
         }
 
-        let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
-            player.gameprofile.clone(),
+        self.broadcast_to_online(CPlayerInfoUpdate {
+            actions: PLAYER_INFO_INIT_ACTIONS,
+            entries: vec![Self::player_info_initializing_entry(player)],
+        });
+    }
+
+    /// The full tab entry of `player`, with the profile clients are shown and its chat session.
+    pub(crate) fn player_info_initializing_entry(player: &Player) -> PlayerInfoEntry {
+        let mut entry = CPlayerInfoUpdate::create_player_initializing_entry(
+            player.shown_profile(),
             player.game_mode().into(),
             player.connection.latency(),
             None,
             player.shows_hat(),
         );
-        self.broadcast_to_online(player_info_packet);
+        if let Some(session) = player.chat_session()
+            && let Ok(protocol_data) = session.as_data().to_protocol_data()
+        {
+            entry = entry.with_chat_session(protocol_data);
+        }
+        entry
+    }
+
+    /// Shows the changed profile of `player` to everyone: the tab entry is added again, the
+    /// player entity is spawned again for whoever sees it and the client rebuilds its own
+    /// player. The tab's display name and list order go back to none.
+    pub(crate) fn republish_player_profile(&self, player: &Arc<Player>) {
+        let uuid = player.gameprofile.id();
+        if self.online_players.get_by_uuid(&uuid).is_none() {
+            return;
+        }
+        self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
+        self.broadcast_to_online(CPlayerInfoUpdate {
+            actions: PLAYER_INFO_INIT_ACTIONS,
+            entries: vec![Self::player_info_initializing_entry(player)],
+        });
+        let world = player.get_world();
+        let entity: SharedEntity = Arc::clone(player) as SharedEntity;
+        world
+            .entity_tracker()
+            .respawn_for_viewers(&entity, |id| world.players.get_by_entity_id(id));
+        if player.is_settled_in_world() && player.is_alive() {
+            player.recreate_client_player();
+        }
     }
 
     /// Ticks every online connection, like vanilla `MinecraftServer.tickConnection`.

@@ -431,6 +431,17 @@ impl Player {
     pub(super) fn tick_client_load_timeout(&self) {
         self.lifecycle.lock().tick_client_load_timeout();
     }
+
+    /// Whether the client's own player may be recreated in place: it is loaded into play and
+    /// no join, respawn or domain switch is under way.
+    pub(crate) fn is_settled_in_world(&self) -> bool {
+        let state = self.lifecycle.lock();
+        state.joined_world()
+            && state.client_loaded()
+            && state.domain_switch.is_none()
+            && state.respawn.is_none()
+            && !state.deferred_death_respawn
+    }
 }
 /// Why the player is being reset and spawned into a world.
 ///
