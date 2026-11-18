@@ -4907,6 +4907,7 @@ mod stopwatch_command;
 mod structure_block;
 mod summon_command;
 mod test_block;
+mod tracked_entity_packets;
 mod waypoint_command;
 mod world_log;
 

@@ -12,9 +12,9 @@ use rayon::iter::{
 };
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetEntityLink,
-    CSetEntityMotion, CSetEquipment, CSetPassengers, CUpdateAttributes, EquipmentSlotItem,
-    to_angle_byte,
+    AttributeSnapshot, CAddEntity, CProjectilePower, CRemoveEntities, CSetEntityData,
+    CSetEntityLink, CSetEntityMotion, CSetEquipment, CSetPassengers, CUpdateAttributes,
+    EquipmentSlotItem, to_angle_byte,
 };
 use steel_registry::entity_data::DataValue;
 use steel_registry::{RegistryEntry, vanilla_entities};
@@ -581,7 +581,18 @@ impl EntityTracker {
         if result.should_clear_velocity_sync() {
             entity.clear_velocity_sync();
         }
-        result.for_each_packet(|packet| changes.movement.push(packet));
+        let hurting_projectile = entity.as_hurting_projectile();
+        result.for_each_packet(|packet| {
+            changes.movement.push(match (packet, hurting_projectile) {
+                (EntityMovementSyncPacket::Velocity(motion), Some(projectile)) => {
+                    EntityMovementSyncPacket::ProjectileVelocity(
+                        motion,
+                        CProjectilePower::new(entity_id, projectile.acceleration_power()),
+                    )
+                }
+                (packet, _) => packet,
+            });
+        });
         if entity.hurt_marked() {
             let velocity = entity.velocity();
             changes

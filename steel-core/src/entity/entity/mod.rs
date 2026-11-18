@@ -17,6 +17,7 @@ use crate::entity::entities::objects::vehicles::{
 };
 use crate::entity::entities::{Guardian, LightningBoltEntity, Squid};
 use crate::entity::fluid_contact::FLUID_INTERACTION_MARGIN;
+use crate::entity::projectile::AbstractHurtingProjectile;
 use crate::entity::{Bucketable, leash::Leashable, pushing::EntityPush};
 use crate::inventory::lock::ContainerRef;
 use crate::inventory::slot_access::SlotAccess;
@@ -1796,6 +1797,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a projectile when it has projectile behavior.
     fn as_projectile(&self) -> Option<&dyn Projectile> {
         try_as_dyn::<Self, dyn Projectile>(self)
+    }
+
+    /// Returns this entity as a vanilla `AbstractHurtingProjectile`, such as a
+    /// fireball or wind charge.
+    fn as_hurting_projectile(&self) -> Option<&dyn AbstractHurtingProjectile> {
+        try_as_dyn::<Self, dyn AbstractHurtingProjectile>(self)
     }
 
     /// Returns this entity as a living entity when it has living behavior.
