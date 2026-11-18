@@ -1,5 +1,6 @@
 //! Operator-only client requests: the game rules screen, the difficulty
-//! lock, the F3 + I data queries and the tick time chart.
+//! lock, the F3 + I data queries, the tick time chart and the low disk
+//! space warning.
 
 use std::time::Duration;
 
@@ -7,7 +8,9 @@ use steel_protocol::packets::game::{
     DEDICATED_SERVER_TICK_TIME, GameRuleEntry, SBlockEntityTagQuery, SEntityTagQuery,
     SLockDifficulty, SSetGameRule,
 };
-use steel_registry::packets::play::{C_DEBUG_SAMPLE, C_SYSTEM_CHAT, C_TAG_QUERY};
+use steel_registry::packets::play::{
+    C_DEBUG_SAMPLE, C_LOW_DISK_SPACE_WARNING, C_SYSTEM_CHAT, C_TAG_QUERY,
+};
 use steel_registry::vanilla_game_rules::{KEEP_INVENTORY, RESPAWN_RADIUS};
 use steel_registry::{init_vanilla_registry, vanilla_entities};
 use steel_utils::codec::VarInt;
@@ -184,5 +187,23 @@ fn tick_time_chart_streams_to_subscribed_operators() {
         alex.request_debug_subscriptions(Vec::new());
         server.tick_debug_subscribers();
         assert!(!server.has_debug_subscriber(DEDICATED_SERVER_TICK_TIME));
+    });
+}
+
+#[test]
+fn low_disk_space_warning_reaches_admins_only() {
+    setup();
+    with_server_world("low_disk_space_warning", |server, world| {
+        let (alex, alex_packets) = join_with_packets(server, world, "Alex", 10_000);
+        let (_steve, steve_packets) = join_with_packets(server, world, "Steve", 10_001);
+        make_operator(server, &alex);
+
+        server.send_low_disk_space_warning();
+
+        assert_eq!(
+            chat_packets(&alex_packets, C_LOW_DISK_SPACE_WARNING).len(),
+            1
+        );
+        assert!(chat_packets(&steve_packets, C_LOW_DISK_SPACE_WARNING).is_empty());
     });
 }

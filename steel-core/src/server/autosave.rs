@@ -268,6 +268,8 @@ impl Server {
                 let _ = previous.await;
             }
             on_written(server.write_save(save).await);
+            // Vanilla `saveEverything` ends with `warnOnLowDiskSpace`.
+            server.warn_on_low_disk_space();
             drop(written);
         });
     }
