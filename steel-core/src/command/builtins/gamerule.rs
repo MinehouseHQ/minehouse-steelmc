@@ -6,7 +6,7 @@ use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
 use super::super::{
-    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
+    brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError, StringReader},
     execution::{CommandSource, SteelCommandContext, SteelCommandRuntime, argument, literal},
     registration::CommandRegistration,
 };
@@ -47,6 +47,70 @@ pub(crate) fn game_rule_values(world: &World) -> Vec<(Identifier, String)> {
             )
         })
         .collect()
+}
+
+/// Vanilla `GameRule.deserialize`: parses `value` like the rule's command
+/// argument, rejecting out-of-range numbers and trailing text.
+pub(crate) fn deserialize_game_rule_value(
+    rule: ErasedGameRuleRef,
+    value: &str,
+) -> Option<GameRuleValue> {
+    let mut reader = StringReader::new(value);
+    let parsed = match rule.value_type() {
+        GameRuleType::Bool => GameRuleValue::new(reader.read_boolean().ok()?),
+        GameRuleType::Int => {
+            let number = reader.read_int().ok()?;
+            if rule.min_value().is_some_and(|min| number < min)
+                || rule.max_value().is_some_and(|max| number > max)
+            {
+                return None;
+            }
+            GameRuleValue::new(number)
+        }
+    };
+    if reader.can_read() {
+        return None;
+    }
+    Some(parsed)
+}
+
+/// Vanilla `ServerGamePacketListenerImpl.handleSetGameRule`: applies the game
+/// rules screen's changes for a game master and tells every operator, like
+/// `broadcastGameRuleChangeToOperators`.
+pub(crate) fn set_game_rules_from_client(player: &Player, entries: &[(Identifier, String)]) {
+    let world = player.get_world();
+    if !player_can_request_game_rule_values(player, &world) {
+        log::warn!(
+            "Player {} tried to set game rule values without required permissions",
+            player.gameprofile.name()
+        );
+        return;
+    }
+    let server = player.server();
+    for (key, value) in entries {
+        let Some(rule) = REGISTRY.game_rules.by_key(key) else {
+            log::warn!("Received request to set unknown game rule: {key}");
+            continue;
+        };
+        let Some(parsed) = deserialize_game_rule_value(rule, value) else {
+            continue;
+        };
+        let serialized = parsed.to_string();
+        if !world.set_erased_game_rule(rule, parsed) {
+            continue;
+        }
+        let message = translations::COMMANDS_GAMERULE_SET
+            .message([
+                TextComponent::from(rule_display_name(rule)),
+                TextComponent::from(serialized),
+            ])
+            .component();
+        for operator in server.get_players() {
+            if server.is_operator(operator.gameprofile.id()) {
+                operator.send_message(&message);
+            }
+        }
+    }
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

@@ -4894,6 +4894,7 @@ mod lectern_book;
 mod locate_biome;
 mod locate_poi;
 mod loot_command;
+mod operator_requests;
 mod pick_item_from_entity;
 mod place_command;
 mod post_effect_command;

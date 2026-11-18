@@ -12,17 +12,18 @@ use steel_protocol::packets::common::{
 };
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
-    SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
-    SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
-    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SEditBook, SInteract, SJigsawGenerate, SMovePlayer, SMovePlayerPos,
-    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
-    SPickItemFromBlock, SPickItemFromEntity, SPlaceRecipe, SPlayerAbilities, SPlayerAction,
-    SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings,
-    SRecipeBookSeenRecipe, SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade,
-    SSetBeacon, SSetCarriedItem, SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot,
-    SSetJigsawBlock, SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction,
-    STeleportToEntity, SUseItem, SUseItemOn,
+    SAcceptTeleportation, SAttack, SBlockEntityTagQuery, SChangeDifficulty, SChangeGameMode, SChat,
+    SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived,
+    SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick,
+    SContainerClose, SContainerSlotStateChanged, SEditBook, SEntityTagQuery, SInteract,
+    SJigsawGenerate, SLockDifficulty, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
+    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat, SPickItemFromBlock,
+    SPickItemFromEntity, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
+    SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
+    SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
+    SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSetGameRule, SSetJigsawBlock,
+    SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction, STeleportToEntity, SUseItem,
+    SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -135,6 +136,10 @@ enum ScheduledPlayPacketKind {
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
+    LockDifficulty(SLockDifficulty),
+    SetGameRule(SSetGameRule),
+    EntityTagQuery(SEntityTagQuery),
+    BlockEntityTagQuery(SBlockEntityTagQuery),
     UpdateSelectedTab(SSeenAdvancement),
 }
 
@@ -253,6 +258,10 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::TeleportToEntity(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_)
+            | ScheduledPlayPacketKind::LockDifficulty(_)
+            | ScheduledPlayPacketKind::SetGameRule(_)
+            | ScheduledPlayPacketKind::EntityTagQuery(_)
+            | ScheduledPlayPacketKind::BlockEntityTagQuery(_)
             | ScheduledPlayPacketKind::UpdateSelectedTab(_) => ScheduledPacketExecution::Serialized,
             // Combat spans source and target state, custom payloads have no constrained resource
             // contract, and the unimplemented menu handlers have no auditable transaction yet.
@@ -407,6 +416,16 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ChangeDifficulty(packet) => {
                 player.handle_change_difficulty(packet.difficulty);
+            }
+            ScheduledPlayPacketKind::LockDifficulty(packet) => {
+                player.handle_lock_difficulty(&packet);
+            }
+            ScheduledPlayPacketKind::SetGameRule(packet) => player.handle_set_game_rule(packet),
+            ScheduledPlayPacketKind::EntityTagQuery(packet) => {
+                player.handle_entity_tag_query(&packet);
+            }
+            ScheduledPlayPacketKind::BlockEntityTagQuery(packet) => {
+                player.handle_block_entity_tag_query(&packet);
             }
             ScheduledPlayPacketKind::UpdateSelectedTab(packet) => {
                 player.handle_seen_advancement(packet);
@@ -954,6 +973,20 @@ impl JavaConnection {
             play::S_CHANGE_DIFFICULTY => scheduled(ScheduledPlayPacketKind::ChangeDifficulty(
                 SChangeDifficulty::read_packet(data)?,
             )),
+            play::S_LOCK_DIFFICULTY => scheduled(ScheduledPlayPacketKind::LockDifficulty(
+                SLockDifficulty::read_packet(data)?,
+            )),
+            play::S_SET_GAME_RULE => scheduled(ScheduledPlayPacketKind::SetGameRule(
+                SSetGameRule::read_packet(data)?,
+            )),
+            play::S_ENTITY_TAG_QUERY => scheduled(ScheduledPlayPacketKind::EntityTagQuery(
+                SEntityTagQuery::read_packet(data)?,
+            )),
+            play::S_BLOCK_ENTITY_TAG_QUERY => {
+                scheduled(ScheduledPlayPacketKind::BlockEntityTagQuery(
+                    SBlockEntityTagQuery::read_packet(data)?,
+                ))
+            }
             play::S_SEEN_ADVANCEMENTS => scheduled(ScheduledPlayPacketKind::UpdateSelectedTab(
                 SSeenAdvancement::read_packet(data)?,
             )),
