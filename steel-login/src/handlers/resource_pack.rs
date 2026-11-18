@@ -13,6 +13,7 @@ use tokio::time::{MissedTickBehavior, interval};
 
 use crate::{
     handlers::gate::KEEP_ALIVE_INTERVAL,
+    pre_play_state::{ConfigurationPhase, PrePlayPhase},
     tcp_client::{ConnectionAction, JavaTcpClient},
 };
 
@@ -76,6 +77,27 @@ impl JavaTcpClient {
             return ConnectionAction::none();
         }
         if !packet.action.is_terminal() {
+            return ConnectionAction::none();
+        }
+
+        // Behind Gate the client also answers packs that the proxy handles itself, so a last
+        // word about another pack, or one after the task ended, is left alone. Vanilla throws
+        // here, which with a proxy keeps every player with a pack out.
+        // TODO: vanilla has no proxy in between; drop this once Gate stops relaying those answers.
+        let offered = self
+            .server
+            .config
+            .resource_pack_packet()
+            .map(|pack| pack.id);
+        let in_task = self.pre_play_state.lock().phase()
+            == PrePlayPhase::Configuration(ConfigurationPhase::ResourcePack);
+        if offered != Some(packet.id) || !in_task {
+            log::info!(
+                "Client {} answered {:?} about resource pack {} outside the pack task; ignored",
+                self.id,
+                packet.action,
+                packet.id
+            );
             return ConnectionAction::none();
         }
 

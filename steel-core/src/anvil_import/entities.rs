@@ -73,6 +73,11 @@ pub(super) fn convert_entity(
         return None;
     };
 
+    if is_taken(entity) {
+        report.taken_entities.push(entity.clone());
+        return None;
+    }
+
     let (Some(pos), Some(uuid)) = (nbt::doubles::<3>(entity, "Pos"), uuid(entity)) else {
         ImportReport::count(
             &mut report.dropped_records,
@@ -131,6 +136,18 @@ pub(super) fn convert_entity(
         nbt_data: nbt::compound_bytes(&nbt::without_keys(entity, &ENTITY_BASE_KEYS)),
         passengers,
     })
+}
+
+/// Whether the entity carries a tag registered with [`super::take_entities_tagged`].
+fn is_taken(entity: &NbtCompound) -> bool {
+    let taken = super::TAKEN_ENTITY_TAGS.lock();
+    !taken.is_empty()
+        && entity
+            .list("Tags")
+            .and_then(|tags| tags.strings().map(<[_]>::to_vec))
+            .unwrap_or_default()
+            .iter()
+            .any(|tag| taken.iter().any(|taken| *taken == tag.to_str()))
 }
 
 fn count_unknown(entity: &NbtCompound, report: &mut ImportReport) {

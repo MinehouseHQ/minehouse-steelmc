@@ -26,6 +26,7 @@ DESCRIPTION = "MineHouse"
 # be merged the later mod wins, and the build reports it.
 MODS = [
     ("tweaks-mod", "src/main/resources/assets"),
+    ("metro-mod", "src/main/resources/assets"),
     ("bank-mod", "src/main/resources/assets"),
     ("paradise-mod", "src/main/resources/assets"),
     ("guides-mod", "src/main/resources/assets"),
