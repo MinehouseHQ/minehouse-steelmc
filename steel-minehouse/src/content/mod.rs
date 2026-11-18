@@ -13,6 +13,7 @@ mod any_shape_portals;
 pub(crate) mod blocks;
 mod cauldron;
 mod cauldron_conversion;
+mod chapter_intro;
 mod cloud;
 mod commands;
 mod couplings;
@@ -487,6 +488,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
 /// Starts what runs on the server tick. Call once the server is ready for players.
 pub fn start_jobs(server: &Server) {
     first_join::start(server);
+    chapter_intro::start(server);
     afk::start(server);
     nametags::start(server);
     end_lock::start(server);
