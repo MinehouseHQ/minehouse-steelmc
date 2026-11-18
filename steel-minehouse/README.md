@@ -149,7 +149,7 @@ its config. If the site is down a warning is logged and the data goes out the ne
 ## Skins
 
 `src/skins/`: the Fabric SkinRestorer of prod. Steel runs offline behind Gate, so a nickname
-without a licence joins without textures; this module gives it a skin.
+without a license joins without textures; this module gives it a skin.
 
 - **On a join** (while the login check waits, at most 5 s after it lets the player in): the
   skin the player chose with `/skin`, looked up again by its nickname when it came from Mojang

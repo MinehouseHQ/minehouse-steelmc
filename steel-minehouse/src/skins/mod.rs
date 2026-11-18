@@ -1,4 +1,4 @@
-//! Skins for nicknames without a licence, like the Fabric `SkinRestorer` on prod.
+//! Skins for nicknames without a license, like the Fabric `SkinRestorer` on prod.
 //!
 //! On a join the player gets the skin they chose (`/skin`), looked up again by its nickname
 //! when it came from Mojang or Ely.by. A player who never chose one and joined without
