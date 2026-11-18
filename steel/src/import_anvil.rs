@@ -135,7 +135,10 @@ async fn import(
         );
         let report = anvil_import::import_dimension(dimension, Arc::clone(pool)).await?;
         print!("{report}");
-        dropped_block_entities.push(report.dropped_block_entities.clone());
+        dropped_block_entities.push((
+            report.dropped_block_entities.clone(),
+            report.taken_entities.clone(),
+        ));
         chunks.merge(report);
     }
 
@@ -143,10 +146,11 @@ async fn import(
     let carried: Vec<migrate::Dimension<'_>> = dimensions
         .iter()
         .zip(&dropped_block_entities)
-        .map(|(dimension, dropped)| migrate::Dimension {
+        .map(|(dimension, (dropped, taken))| migrate::Dimension {
             key: &dimension.key,
             source: &dimension.source,
             dropped_block_entities: dropped,
+            taken_entities: taken,
         })
         .collect();
     for line in migrate::carry_over(

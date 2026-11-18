@@ -16,13 +16,14 @@ pub mod talk;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
-    path::PathBuf,
+    fs, io,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
+use simdnbt::owned::{NbtCompound, NbtList};
 use steel_core::{
     entity::{Entity as _, next_entity_id},
     player::Player,
@@ -36,7 +37,7 @@ use steel_registry::{
     RegistryEntry as _, entity_data::DataValue, sound_event::SoundEvent, sound_events,
     vanilla_entities, vanilla_entity_data::MannequinEntityData,
 };
-use steel_utils::{locks::SyncMutex, types::InteractionHand};
+use steel_utils::{Identifier, locks::SyncMutex, types::InteractionHand};
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -45,7 +46,10 @@ use self::talk::{Step, Talk};
 use super::{Bank, bank};
 use crate::config;
 
-const FILE: &str = "bank-bankers.json";
+/// The file of the bankers in the data directory.
+pub(crate) const FILE: &str = "bank-bankers.json";
+/// The tag of the mannequin the Fabric mod summoned as the banker.
+pub(crate) const TAG: &str = "minehouse_banker";
 /// How far the player may step away while talking.
 const REACH: f64 = 5.0;
 /// From how far the banker is shown.
@@ -70,6 +74,54 @@ impl Banker {
     const fn position(&self) -> DVec3 {
         DVec3::new(self.x, self.y, self.z)
     }
+
+    /// The banker of a mannequin the Fabric mod summoned in `world`, as the world saved it.
+    #[must_use]
+    pub(crate) fn from_mannequin(world: &Identifier, saved: &NbtCompound) -> Option<Self> {
+        let position = saved.list("Pos").and_then(NbtList::doubles)?;
+        let [x, y, z] = position[..] else {
+            return None;
+        };
+        let yaw = saved
+            .list("Rotation")
+            .and_then(NbtList::floats)
+            .and_then(|rotation| rotation.first().copied())
+            .unwrap_or(0.0);
+        Some(Self {
+            world: world.to_string(),
+            x,
+            y,
+            z,
+            yaw,
+            skin: Skin::from_saved_profile(saved.get("profile")),
+        })
+    }
+}
+
+/// Adds `bankers` to the file of the bankers at `file`, skipping any already standing there.
+/// Returns how many were added.
+pub(crate) fn add_to_file(file: &Path, bankers: Vec<Banker>) -> io::Result<usize> {
+    let mut saved = match fs::read_to_string(file) {
+        Ok(text) => read(&text),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    let mut added = 0;
+    for banker in bankers {
+        if !saved
+            .iter()
+            .any(|other| other.world == banker.world && other.position() == banker.position())
+        {
+            saved.push(banker);
+            added += 1;
+        }
+    }
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = serde_json::to_string_pretty(&saved).map_err(io::Error::other)?;
+    fs::write(file, text)?;
+    Ok(added)
 }
 
 struct Placed {

@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 use crate::skins::providers;
 
 use serde::{Deserialize, Serialize};
+use simdnbt::owned::NbtTag;
 use steel_registry::{
     game_profile::ProfileProperty,
     resolvable_profile::{PartialProfile, PlayerSkinPatch, ResolvableProfile},
@@ -67,6 +68,54 @@ impl Skin {
             Self::Name { name } => ResolvableProfile::dynamic_name(name.clone(), patch),
         };
         profile.unwrap_or_default()
+    }
+}
+
+impl Skin {
+    /// The skin of a mannequin's saved `profile`: its signed `textures` property, else its
+    /// name, else the banker's own skin.
+    #[must_use]
+    pub(crate) fn from_saved_profile(profile: Option<&NbtTag>) -> Self {
+        let name = |name: Option<String>| {
+            name.filter(|name| !name.is_empty())
+                .map_or_else(Self::default_skin, |name| Self::Name { name })
+        };
+        match profile {
+            Some(NbtTag::String(name)) => Self::Name {
+                name: name.to_str().into_owned(),
+            },
+            Some(NbtTag::Compound(profile)) => {
+                let texture = profile
+                    .list("properties")
+                    .and_then(|list| list.compounds())
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|property| {
+                        property
+                            .string("name")
+                            .is_some_and(|name| name.to_str() == "textures")
+                    })
+                    .and_then(|property| {
+                        let text = |key: &str| {
+                            property
+                                .string(key)
+                                .map(|value| value.to_str().into_owned())
+                        };
+                        Some(Self::Texture {
+                            value: text("value")?,
+                            signature: text("signature").unwrap_or_default(),
+                        })
+                    });
+                texture.unwrap_or_else(|| {
+                    name(
+                        profile
+                            .string("name")
+                            .map(|name| name.to_str().into_owned()),
+                    )
+                })
+            }
+            _ => Self::default_skin(),
+        }
     }
 }
 

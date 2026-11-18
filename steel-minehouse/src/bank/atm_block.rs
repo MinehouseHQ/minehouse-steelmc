@@ -7,8 +7,9 @@
 //!
 //! On the Fabric server the display was a virtual entity of Polymer. Here it is a real one,
 //! saved with the chunk and tagged [`TAG`]: it is made when the block is placed, removed with
-//! the block, and made again by a right click if it is missing (an ATM of a world that came
-//! from the Fabric server has none).
+//! the block, and made again if it is missing. An ATM of a world that came from the Fabric
+//! server has none, so the block ticks randomly and makes it on its first random tick (about
+//! a minute after a player comes near) or on a right click, whichever is first.
 
 use std::sync::Arc;
 
@@ -49,7 +50,8 @@ pub static ATM_BLOCK: Block = Block::new(
         .destroy_time(-1.0)
         .explosion_resistance(3_600_000.0)
         .can_occlude(false)
-        .sound_type(sound_types::STONE),
+        .sound_type(sound_types::STONE)
+        .set_is_randomly_ticking(true),
     &[&BlockStateProperties::HORIZONTAL_FACING],
 );
 
@@ -139,6 +141,10 @@ impl BlockBehavior for Atm {
             &BlockStateProperties::HORIZONTAL_FACING,
             context.horizontal_direction().opposite(),
         ))
+    }
+
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        show_model(world, pos, state);
     }
 
     fn get_drops(

@@ -44,6 +44,7 @@ use std::sync::Arc;
 use tokio::task::spawn_blocking;
 
 use futures::future::try_join_all;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, Identifier};
 
 use crate::chunk::status::ChunkStatus;
@@ -55,6 +56,18 @@ pub use maps::{MapReport, import_maps};
 pub use players::{PlayerReport, import_players};
 pub use region::AnvilRegion;
 pub use report::ImportReport;
+
+/// Entity tags whose entities are taken out of the world instead of imported.
+static TAKEN_ENTITY_TAGS: SyncMutex<Vec<&'static str>> = SyncMutex::new(Vec::new());
+
+/// Takes entities tagged `tag` out of the import: they are not written to the world but kept
+/// in [`ImportReport::taken_entities`], for an extension that shows them another way.
+pub fn take_entities_tagged(tag: &'static str) {
+    let mut taken = TAKEN_ENTITY_TAGS.lock();
+    if !taken.contains(&tag) {
+        taken.push(tag);
+    }
+}
 
 /// Errors that stop an import.
 #[derive(Debug, thiserror::Error)]

@@ -9,7 +9,9 @@
 //! - the payment terminals: on Fabric a terminal was a block entity, here they are
 //!   `bank-terminals.json`;
 //! - the skins players chose: `SkinRestorer`'s `skinrestorer/<uuid>.json` of the world are
-//!   copied to `skins/` as they are (see [`crate::skins`]).
+//!   copied to `skins/` as they are (see [`crate::skins`]);
+//! - the bankers: on Fabric a banker was a mannequin in the world, here they are
+//!   `bank-bankers.json` (see [`crate::bank::banker`]).
 //!
 //! The files are written to the data directory of the imported save, and both stores are the
 //! ones the server reads, so what is written is what it will load.
@@ -17,12 +19,12 @@
 use std::path::Path;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_core::anvil_import::read_gzip_root;
+use steel_core::anvil_import::{read_gzip_root, take_entities_tagged};
 use steel_registry::dye_color::DyeColor;
 use steel_utils::{BlockPos, Identifier};
 
 use crate::{
-    bank::{journal, terminals::Terminals},
+    bank::{banker, journal, terminals::Terminals},
     content::{self, stations::Stations},
     skins::store::SkinStore,
 };
@@ -49,6 +51,7 @@ fn is_terminal(saved: &NbtCompound) -> bool {
 /// Has the import know our blocks and items. Call before the registry is built.
 pub fn register() {
     content::register_for_import();
+    take_entities_tagged(banker::TAG);
 }
 
 /// One imported dimension.
@@ -59,6 +62,8 @@ pub struct Dimension<'a> {
     pub source: &'a Path,
     /// The block entities the import dropped in it.
     pub dropped_block_entities: &'a [NbtCompound],
+    /// The entities the import took out of it for us (the bankers).
+    pub taken_entities: &'a [NbtCompound],
 }
 
 /// Writes our stores into `data` (the `MINEHOUSE_DATA_DIR` of the new server) from the
@@ -69,6 +74,7 @@ pub fn carry_over(world: &Path, dimensions: &[Dimension<'_>], data: &Path) -> Ve
     let mut lines = Vec::new();
 
     carry_skins(world, data, &mut lines);
+    carry_bankers(dimensions, data, &mut lines);
 
     let mut stations = Stations::load(data.join("metro-stations.json"));
     let mut found = 0;
@@ -157,6 +163,24 @@ pub fn carry_over(world: &Path, dimensions: &[Dimension<'_>], data: &Path) -> Ve
     lines
 }
 
+/// The bankers: on Fabric a banker was a mannequin tagged [`banker::TAG`]; here they are
+/// `bank-bankers.json`, shown with packets.
+fn carry_bankers(dimensions: &[Dimension<'_>], data: &Path, lines: &mut Vec<String>) {
+    let bankers: Vec<banker::Banker> = dimensions
+        .iter()
+        .flat_map(|dimension| {
+            dimension
+                .taken_entities
+                .iter()
+                .filter_map(|saved| banker::Banker::from_mannequin(dimension.key, saved))
+        })
+        .collect();
+    match banker::add_to_file(&data.join(banker::FILE), bankers) {
+        Ok(added) => lines.push(format!("MineHouse: {added} bankers carried over")),
+        Err(error) => lines.push(format!("MineHouse: bankers were not carried over: {error}")),
+    }
+}
+
 /// Copies the skins of `SkinRestorer` (`world/skinrestorer`) to `skins/` of `data`.
 fn carry_skins(world: &Path, data: &Path, lines: &mut Vec<String>) {
     let skins = world.join("skinrestorer");
@@ -207,7 +231,7 @@ fn saved_stations(root: &NbtCompound) -> Vec<(BlockPos, Option<String>, Option<D
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, path::PathBuf, process};
+    use std::{env, fs, path::PathBuf, process, slice};
 
     use steel_core::bootstrap::init_globals;
     use steel_registry::{item_stack::ItemStack, vanilla_items};
@@ -286,6 +310,7 @@ mod tests {
                 key: &world,
                 source: &source,
                 dropped_block_entities: &dropped,
+                taken_entities: &[],
             }],
             &data,
         );
@@ -311,5 +336,48 @@ mod tests {
         assert_eq!(read.count(), 2);
         let _ = fs::remove_dir_all(&data);
         let _ = fs::remove_dir_all(&source);
+    }
+
+    #[test]
+    fn bankers_come_from_the_mannequins_of_fabric() {
+        init_globals();
+        let data = directory("bankers");
+        let mut saved = NbtCompound::new();
+        saved.insert("id", "minecraft:mannequin");
+        saved.insert("Pos", NbtList::Double(vec![10.5, 64.0, -3.5]));
+        saved.insert("Rotation", NbtList::Float(vec![90.0, 0.0]));
+        let mut property = NbtCompound::new();
+        property.insert("name", "textures");
+        property.insert("value", "skin");
+        property.insert("signature", "signed");
+        let mut profile = NbtCompound::new();
+        profile.insert("properties", NbtList::Compound(vec![property]));
+        saved.insert("profile", profile);
+        let world = Identifier::vanilla_static("overworld");
+        let dimension = Dimension {
+            key: &world,
+            source: &data,
+            dropped_block_entities: &[],
+            taken_entities: slice::from_ref(&saved),
+        };
+
+        let mut lines = Vec::new();
+        carry_bankers(slice::from_ref(&dimension), &data, &mut lines);
+        carry_bankers(slice::from_ref(&dimension), &data, &mut lines);
+        assert_eq!(
+            lines,
+            vec![
+                "MineHouse: 1 bankers carried over".to_owned(),
+                "MineHouse: 0 bankers carried over".to_owned(),
+            ]
+        );
+        let text = fs::read_to_string(data.join(banker::FILE)).expect("the file of the bankers");
+        let bankers: Vec<banker::Banker> = serde_json::from_str(&text).expect("bankers");
+        assert_eq!(
+            bankers,
+            vec![banker::Banker::from_mannequin(&world, &saved).expect("a banker")]
+        );
+        assert!(text.contains("\"signature\": \"signed\""), "{text}");
+        let _ = fs::remove_dir_all(&data);
     }
 }

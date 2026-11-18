@@ -39,6 +39,10 @@ pub struct ImportReport {
     pub dropped_block_entities: Vec<NbtCompound>,
     /// Entities dropped because Steel does not know their type, passengers included.
     pub unknown_entities: BTreeMap<String, usize>,
+    /// Entities taken out of the world because they carry a tag registered with
+    /// [`take_entities_tagged`](super::take_entities_tagged), as they were saved, for an
+    /// extension that keeps them another way.
+    pub taken_entities: Vec<NbtCompound>,
     /// Structure starts that were not converted, by structure id.
     pub structure_starts_dropped: BTreeMap<String, usize>,
     /// Records that were malformed and dropped (ticks, block entities, entities outside the
@@ -74,6 +78,7 @@ impl ImportReport {
         self.dropped_block_entities
             .extend(other.dropped_block_entities.into_iter().take(room));
         merge_counts(&mut self.unknown_entities, other.unknown_entities);
+        self.taken_entities.extend(other.taken_entities);
         merge_counts(
             &mut self.structure_starts_dropped,
             other.structure_starts_dropped,

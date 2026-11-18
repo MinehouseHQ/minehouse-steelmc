@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::{env, fs, process, slice};
 
 use simdnbt::borrow::read_compound;
-use simdnbt::owned::{BaseNbt, NbtCompound, NbtList};
+use simdnbt::owned::{BaseNbt, NbtCompound, NbtList, NbtTag};
 use steel_utils::text::DisplayResolutor;
 
 use glam::IVec3;
@@ -1266,4 +1266,28 @@ fn vanilla_maps_load_into_the_overworld_map_storage() {
         import_maps(&vanilla_world, slice::from_ref(&dimension)).expect("the import can run again");
     assert_eq!(again.maps, 0, "maps already in Steel are kept");
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn tagged_entities_are_taken_out_for_extensions() {
+    init_globals();
+    take_entities_tagged("steel_test_taken");
+    let mannequin = |tags: &[&str]| {
+        let mut entity = NbtCompound::new();
+        entity.insert("id", "minecraft:mannequin");
+        entity.insert("Pos", NbtList::Double(vec![1.5, 64.0, -2.5]));
+        entity.insert("UUID", NbtTag::IntArray(vec![1, 2, 3, 4]));
+        entity.insert(
+            "Tags",
+            NbtList::String(tags.iter().map(|tag| (*tag).into()).collect()),
+        );
+        entity
+    };
+    let mut report = ImportReport::default();
+    assert!(
+        entities::convert_entity(&mannequin(&["other", "steel_test_taken"]), &mut report).is_none()
+    );
+    assert!(entities::convert_entity(&mannequin(&["other"]), &mut report).is_some());
+    assert_eq!(report.taken_entities.len(), 1);
+    assert_eq!(report.entities, 1);
 }
