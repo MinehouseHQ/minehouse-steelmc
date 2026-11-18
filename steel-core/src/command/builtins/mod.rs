@@ -6,6 +6,7 @@ mod bossbar;
 mod chat_commands;
 mod clear;
 mod clone;
+mod compute;
 mod damage;
 mod data;
 mod datapack;
@@ -114,6 +115,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(bossbar::registration())?;
     builder.register(clear::registration())?;
     builder.register(clone::registration())?;
+    builder.register(compute::registration())?;
     builder.register(data::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
@@ -237,6 +239,7 @@ mod tests {
                 "bossbar",
                 "clear",
                 "clone",
+                "compute",
                 "data",
                 "deop",
                 "damage",

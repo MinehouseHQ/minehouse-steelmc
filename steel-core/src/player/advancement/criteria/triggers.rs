@@ -269,17 +269,15 @@ impl Player {
         tool: &ItemStack,
     ) {
         let world = self.get_world();
-        let context = ConditionContext {
-            world: &world,
-            origin: Some(DVec3::new(
-                f64::from(pos.x()) + 0.5,
-                f64::from(pos.y()) + 0.5,
-                f64::from(pos.z()) + 0.5,
-            )),
-            this: Some(self),
-            tool: Some(tool),
-            block_state: Some(world.get_block_state(pos)),
-        };
+        let mut context = ConditionContext::new(&world);
+        context.origin = Some(DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        ));
+        context.this = Some(self);
+        context.tool = Some(tool);
+        context.block_state = Some(world.get_block_state(pos));
         trigger(self, trigger_id, |conditions| {
             test_context(conditions.location.as_ref(), &context)
         });

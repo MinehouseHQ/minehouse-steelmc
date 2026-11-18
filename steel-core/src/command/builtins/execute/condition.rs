@@ -15,10 +15,11 @@ use text_components::TextComponent;
 use super::super::super::{
     brigadier::{CommandNodeBuilder, CommandRedirectTarget, CommandSyntaxError},
     execution::{
-        CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
-        literal,
+        CommandArgumentSource as _, CommandSource, SteelArgumentType, SteelCommandContext,
+        SteelCommandRuntime, argument, literal,
     },
 };
+use super::super::compute::command_loot_context;
 use super::super::item::{AccessorKind, source_slot_items};
 use super::super::stopwatch::{elapsed_seconds, stopwatch_id};
 use super::function_condition::function_condition;
@@ -31,7 +32,6 @@ const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 const MAX_BLOCKS_REGION: i64 = 32_768;
 
 pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
-    // TODO: Add predicate after its runtime registry is ported.
     literal(name)
         .then(biome_condition(expected))
         .then(block_condition(expected))
@@ -42,6 +42,7 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
         .then(function_condition(expected))
         .then(items_condition(expected))
         .then(loaded_condition(expected))
+        .then(predicate_condition(expected))
         .then(score_condition(expected))
         .then(slots_condition(expected))
         .then(stopwatch_condition(expected))
@@ -556,6 +557,33 @@ fn loaded_matches(
         .source()
         .world()
         .is_entity_ticking_chunk_loaded(position))
+}
+
+/// Vanilla `predicate <predicate>`: the loot condition passes in a context
+/// with the source's position and entity.
+fn predicate_condition(expected: bool) -> Builder {
+    literal("predicate").then(
+        argument("predicate", SteelArgumentType::loot_predicate())
+            .forks(EXECUTE_ROOT, move |context| {
+                let matches = predicate_matches(context)?;
+                Ok(conditional_sources(context.source(), expected, matches))
+            })
+            .executes(move |context| {
+                execute_boolean_condition(context, expected, predicate_matches(context)?)
+            }),
+    )
+}
+
+/// Vanilla `ExecuteCommand.checkCustomPredicate`.
+fn predicate_matches(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<bool, CommandSyntaxError> {
+    let predicate = context.loot_predicate("predicate")?;
+    let registries = context.source().loot_registries();
+    let ctx = command_loot_context(context.source(), &registries);
+    Ok(predicate
+        .value(&ctx)
+        .is_some_and(|predicate| predicate.test(&ctx)))
 }
 
 fn score_condition(expected: bool) -> Builder {

@@ -26,6 +26,7 @@ use super::{
         CriteriaValue, DisplaySlotValue, HexColorValue, OperationValue, StyleValue, TeamColorValue,
         TeamValue, UuidValue,
     },
+    argument::{FloatProviderValue, IntProviderValue, LootPredicateValue},
     scoreboard_arguments::ScoreOperation,
     selector::EntitySelector,
 };
@@ -40,6 +41,7 @@ use crate::command::execution::message::MessageArgument;
 use crate::command::incorrectly_typed_argument;
 use crate::inventory::recipe_displays::is_special;
 use crate::inventory::slot_range::SlotRange;
+use crate::loot::{ContextFloatProvider, ContextIntProvider, Holder, LootCondition};
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -469,6 +471,33 @@ where
     /// Vanilla `ResourceOrIdArgument.getDialog`.
     pub(crate) fn dialog(&self, name: &str) -> Result<CommandDialog, CommandSyntaxError> {
         self.typed_argument::<DialogValue>(name)
+            .map(|value| value.0.clone())
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getLootPredicate`.
+    pub(crate) fn loot_predicate(
+        &self,
+        name: &str,
+    ) -> Result<Holder<LootCondition>, CommandSyntaxError> {
+        self.typed_argument::<LootPredicateValue>(name)
+            .map(|value| value.0.clone())
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getIntProvider`.
+    pub(crate) fn int_provider(
+        &self,
+        name: &str,
+    ) -> Result<Holder<ContextIntProvider>, CommandSyntaxError> {
+        self.typed_argument::<IntProviderValue>(name)
+            .map(|value| value.0.clone())
+    }
+
+    /// Vanilla `ResourceOrIdArgument.getFloatProvider`.
+    pub(crate) fn float_provider(
+        &self,
+        name: &str,
+    ) -> Result<Holder<ContextFloatProvider>, CommandSyntaxError> {
+        self.typed_argument::<FloatProviderValue>(name)
             .map(|value| value.0.clone())
     }
 

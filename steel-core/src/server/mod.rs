@@ -53,6 +53,7 @@ use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::loot::ServerLootRegistries;
 use crate::player::chat::SignedArguments;
 
 use crate::boss_event::custom::DomainCustomBossEvents;
@@ -291,6 +292,7 @@ pub async fn test_server_with_worlds_and_config(
         scheduled_events,
         stopwatches,
         functions: ServerFunctions::default(),
+        loot_registries: ServerLootRegistries::default(),
         pack_repositories: PackRepositories::default(),
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
@@ -583,6 +585,8 @@ pub struct Server {
     pub(crate) stopwatches: DomainStopwatches,
     /// Data pack functions isolated by Steel domain.
     pub(crate) functions: ServerFunctions,
+    /// Data pack predicates and number providers isolated by Steel domain.
+    pub(crate) loot_registries: ServerLootRegistries,
     /// Each Steel domain's data packs and its selection of them.
     pub(crate) pack_repositories: PackRepositories,
     /// Saves and dispatches commands to appropriate handlers.
@@ -973,6 +977,7 @@ impl Server {
             scheduled_events,
             stopwatches,
             functions: ServerFunctions::default(),
+            loot_registries: ServerLootRegistries::default(),
             pack_repositories: PackRepositories::default(),
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
