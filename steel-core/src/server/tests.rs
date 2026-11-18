@@ -27,8 +27,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{
     C_ADD_ENTITY, C_BOSS_EVENT, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_PLAYER_ROTATION,
-    C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION,
-    C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
+    C_SERVER_DATA, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT, C_SET_TITLE_TEXT,
+    C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
 };
 use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
@@ -3234,7 +3234,8 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             .mark_chunk_sent_for_test(spawn_chunk);
         existing_packets.lock().clear();
 
-        let joining = test_player_with_packets(&server, Arc::clone(world), "JoiningPlayer", 2).0;
+        let (joining, joining_packets) =
+            test_player_with_packets(&server, Arc::clone(world), "JoiningPlayer", 2);
         assert!(server.reserve_player_join(&joining));
         let spawn = PreparedSpawn {
             position: spawn_position,
@@ -3287,6 +3288,11 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         assert!(
             !show_hat,
             "initial player info should reflect the joining player's disabled hat layer"
+        );
+        assert_eq!(
+            chat_packets(&joining_packets, C_SERVER_DATA).len(),
+            1,
+            "vanilla sends the server status once on join"
         );
 
         if let Err(error) = server.flush_known_players().await {

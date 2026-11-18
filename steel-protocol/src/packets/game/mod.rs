@@ -57,6 +57,7 @@ mod c_rotate_head;
 mod c_scoreboard;
 mod c_section_blocks_update;
 mod c_select_advancements_tab;
+mod c_server_data;
 mod c_set_action_bar_text;
 mod c_set_camera;
 mod c_set_cursor_item;
@@ -221,6 +222,7 @@ pub use c_scoreboard::{
 };
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
 pub use c_select_advancements_tab::CSelectAdvancementsTab;
+pub use c_server_data::CServerData;
 pub use c_set_action_bar_text::CSetActionBarText;
 pub use c_set_camera::CSetCamera;
 pub use c_set_cursor_item::CSetCursorItem;
