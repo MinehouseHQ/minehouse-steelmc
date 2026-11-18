@@ -27,6 +27,7 @@ use steel_registry::sound_event::SoundEventHolder;
 use steel_utils::{Identifier, locks::SyncMutex};
 use text_components::{
     Modifier, TextComponent,
+    format::Color,
     interactivity::{ClickEvent, HoverEvent},
 };
 use uuid::Uuid;
@@ -34,6 +35,7 @@ use uuid::Uuid;
 use crate::{
     config,
     moderation::format::{format_duration, format_epoch_millis, render, render_parts},
+    nitro,
 };
 
 mod commands;
@@ -219,7 +221,7 @@ impl Chat {
 
         let mut parts = player_parts(server, sender, &config);
         parts.push(("message", Some(TextComponent::plain(text.to_owned()))));
-        parts.push(("target", Some(player_name(target_name, &config))));
+        parts.push(("target", Some(player_name(target_name, target_id, &config))));
         sender.send_message(&render_parts(config.text("pm.to"), &parts, &[]));
         target.send_message(&render_parts(config.text("pm.from"), &parts, &[]));
         play_sound(target, config.text("pm.sound"));
@@ -398,7 +400,14 @@ fn player_parts(
     let group = groups.first().map_or("default", String::as_str);
     let world = player.get_world();
     vec![
-        ("name", Some(player_name(player.gameprofile.name(), config))),
+        (
+            "name",
+            Some(player_name(
+                player.gameprofile.name(),
+                player.gameprofile.id(),
+                config,
+            )),
+        ),
         ("prefix", role.and_then(|role| role_badge(role, config))),
         ("group", Some(TextComponent::plain(group.to_owned()))),
         (
@@ -424,10 +433,14 @@ fn world_name(key: &Identifier, config: &ChatConfig) -> String {
     }
 }
 
-/// The nickname: hovering shows a hint, a click starts `/msg`.
-fn player_name(name: &str, config: &ChatConfig) -> TextComponent {
-    let component = TextComponent::plain(name.to_owned())
+/// The nickname: hovering shows a hint, a click starts `/msg`. In the player's `MineHouse`
+/// Nitro color if they have it.
+fn player_name(name: &str, id: Uuid, config: &ChatConfig) -> TextComponent {
+    let mut component = TextComponent::plain(name.to_owned())
         .click_event(ClickEvent::suggest_command(format!("/msg {name} ")));
+    if let Some([red, green, blue]) = nitro::color(id) {
+        component = component.color(Color::Rgb(red, green, blue));
+    }
     let hover = config.text("name.hover");
     if hover.is_empty() {
         component
