@@ -217,13 +217,8 @@ fn container_spots(world: &World, pos: BlockPos) -> Vec<BlockPos> {
 
 /// Where a hopper or a hopper minecart used on the `face` of the block at `pos` would sit, when
 /// there is a container right above it to pull from.
-fn drains_from(
-    stack: &ItemStack,
-    world: &World,
-    pos: BlockPos,
-    face: Direction,
-) -> Option<BlockPos> {
-    let spot = if stack.is(&vanilla_items::HOPPER_MINECART) {
+fn drains_from(minecart: bool, world: &World, pos: BlockPos, face: Direction) -> Option<BlockPos> {
+    let spot = if minecart {
         // Minecarts go onto the rail that was clicked.
         if !world
             .get_block_state(pos)
@@ -233,14 +228,10 @@ fn drains_from(
             return None;
         }
         pos
-    } else if stack.is(&vanilla_items::HOPPER) {
-        if world.get_block_state(pos).is_replaceable() {
-            pos
-        } else {
-            pos.relative(face)
-        }
+    } else if world.get_block_state(pos).is_replaceable() {
+        pos
     } else {
-        return None;
+        pos.relative(face)
     };
     world
         .get_block_entity(spot.above())
@@ -603,16 +594,24 @@ impl Newbies {
         let Some((world, pos, face)) = on else {
             return false;
         };
-        let spot = {
+        // Only which item it is under the inventory lock; the world is read after it is let go.
+        let minecart = {
             let inventory = player.inventory.lock();
-            drains_from(inventory.get_item_in_hand(hand), world, pos, face)
-        };
-        let Some(spot) = spot else {
-            return false;
+            let stack = inventory.get_item_in_hand(hand);
+            if stack.is(&vanilla_items::HOPPER_MINECART) {
+                true
+            } else if stack.is(&vanilla_items::HOPPER) {
+                false
+            } else {
+                return false;
+            }
         };
         if !self.is_newbie(player) {
             return false;
         }
+        let Some(spot) = drains_from(minecart, world, pos, face) else {
+            return false;
+        };
         self.keeps_from_spots(
             store,
             player,
