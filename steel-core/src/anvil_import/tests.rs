@@ -1183,3 +1183,87 @@ fn extension_items_become_vanilla_items_with_components() {
         Some("minecraft:stone")
     );
 }
+
+/// Writes a vanilla `SavedData` file: gzip NBT with `DataVersion` and `data`.
+fn write_saved_data(path: &Path, data: NbtCompound) {
+    use std::io::Write as _;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use steel_utils::version::DATA_VERSION;
+
+    let mut root = NbtCompound::new();
+    root.insert("DataVersion", DATA_VERSION);
+    root.insert("data", data);
+    let mut bytes = Vec::new();
+    BaseNbt::new("", root).write(&mut bytes);
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&bytes).expect("gzip in memory");
+    fs::create_dir_all(path.parent().expect("saved data has a directory"))
+        .expect("create the data directory");
+    fs::write(path, encoder.finish().expect("gzip in memory")).expect("write saved data");
+}
+
+#[test]
+fn vanilla_maps_load_into_the_overworld_map_storage() {
+    use steel_registry::data_components::components::MapId;
+    use steel_utils::saved_data::SavedDataManager;
+
+    use crate::world::maps::{DomainMaps, MapItemSavedData};
+
+    init_globals();
+    let root = test_directory("maps");
+    let vanilla_world = root.join("vanilla");
+    let maps_dir = vanilla_world.join("data/minecraft/maps");
+    let mut map = MapItemSavedData::create_fresh(
+        100.0,
+        -40.0,
+        1,
+        false,
+        false,
+        Identifier::vanilla_static("overworld"),
+    );
+    map.set_color(3, 4, 18);
+    write_saved_data(&maps_dir.join("7.dat"), map.to_nbt());
+    let mut index = NbtCompound::new();
+    index.insert("map", 9);
+    write_saved_data(&maps_dir.join("last_id.dat"), index);
+    fs::write(maps_dir.join("12.dat"), b"not gzip").expect("write a broken map");
+
+    let world_dir = root.join("steel/overworld");
+    let dimension = DimensionImport {
+        key: OVERWORLD.key.clone(),
+        source: vanilla_world.join("dimensions/minecraft/overworld"),
+        target: world_dir.join("region"),
+        min_y: OVERWORLD_MIN_Y,
+        height: OVERWORLD_HEIGHT,
+        seed: OVERWORLD_DIMENSION.seed,
+    };
+    let report =
+        import_maps(&vanilla_world, slice::from_ref(&dimension)).expect("the maps should import");
+    assert_eq!(report.maps, 1, "{report}");
+    assert_eq!(report.failed.len(), 1, "{report}");
+    assert_eq!(report.last_map_id, 9);
+
+    let maps = DomainMaps::new();
+    maps.set_storage(SavedDataManager::new(Some(&world_dir)));
+    let loaded = maps.get(MapId::new(7)).expect("the imported map loads");
+    {
+        let loaded = loaded.lock();
+        assert_eq!(
+            (loaded.center_x, loaded.center_z, loaded.scale),
+            (64, 64, 1)
+        );
+        assert_eq!(loaded.color(3, 4), 18);
+    }
+    assert_eq!(
+        maps.free_map_id(),
+        MapId::new(10),
+        "new maps follow vanilla's"
+    );
+
+    let again =
+        import_maps(&vanilla_world, slice::from_ref(&dimension)).expect("the import can run again");
+    assert_eq!(again.maps, 0, "maps already in Steel are kept");
+    let _ = fs::remove_dir_all(&root);
+}

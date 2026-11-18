@@ -85,6 +85,15 @@ impl DomainMaps {
         shared
     }
 
+    /// Sets the last map id handed out, so new maps continue after imported
+    /// ones (vanilla `MapIndex.lastMapId`). It is saved on the next save.
+    pub fn set_last_map_id(&self, last_map_id: i32) {
+        *self.index.lock() = Some(MapIndex {
+            last_map_id,
+            dirty: true,
+        });
+    }
+
     /// Vanilla `Level.getFreeMapId` through `MapIndex.getNextMapId`.
     pub fn free_map_id(&self) -> MapId {
         let mut index = self.index.lock();

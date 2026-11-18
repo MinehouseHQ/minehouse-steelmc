@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use steel_core::anvil_import::{self, AnvilImportError, ImportReport, LevelReport, PlayerReport};
+use steel_core::anvil_import::{
+    self, AnvilImportError, ImportReport, LevelReport, MapReport, PlayerReport,
+};
 use steel_core::bootstrap::init_globals;
 use steel_minehouse::migrate;
 use tokio::runtime::Builder;
@@ -101,6 +103,7 @@ pub fn run(args: &[String]) -> i32 {
 /// Reports of a finished import.
 struct Summary {
     level: LevelReport,
+    maps: MapReport,
     players: PlayerReport,
     chunks: ImportReport,
 }
@@ -116,6 +119,8 @@ async fn import(
         anvil_import::vanilla_dimensions(&options.world, &options.save_path, &options.domain, seed);
     let level = anvil_import::import_level_data(&options.world, &dimensions)?;
     print!("{level}");
+    let maps = anvil_import::import_maps(&options.world, &dimensions)?;
+    print!("{maps}");
     let players =
         anvil_import::import_players(&options.world, &options.save_path, &options.domain).await?;
     print!("{players}");
@@ -153,6 +158,7 @@ async fn import(
     }
     Ok(Summary {
         level,
+        maps,
         players,
         chunks,
     })
@@ -196,6 +202,13 @@ impl Summary {
             eprintln!(
                 "{} players failed and were not imported; they start fresh on their next join.",
                 self.players.failed_players.len()
+            );
+            exit_code = 1;
+        }
+        if !self.maps.failed.is_empty() {
+            eprintln!(
+                "{} maps failed and were not imported; they show blank.",
+                self.maps.failed.len()
             );
             exit_code = 1;
         }
