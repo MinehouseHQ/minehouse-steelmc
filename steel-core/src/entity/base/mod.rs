@@ -1119,7 +1119,11 @@ impl EntityBase {
             }
         }
 
-        if let Err(error) = self.try_set_position(self.position()) {
+        // A passenger frozen by the same chunk unload has no live position to
+        // refresh, so only a real move failure is worth a warning.
+        if let Err(error) = self.try_set_position(self.position())
+            && !matches!(error, EntityMoveError::Inactive { .. })
+        {
             log::warn!(
                 "Failed to refresh passenger {} manager position before clearing vehicle {vehicle_id}: {error}",
                 self.id
