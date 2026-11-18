@@ -3,7 +3,8 @@
 //!
 //! The server only gives the word: an empty `minehouse:intro` plugin message. A client without
 //! the mod drops it. Who has had it is kept in `data/chapter2-intro.json`, so the scene plays
-//! once; take a player out of that file to show it to them again.
+//! once. `/intro` plays it again for whoever asks; `/intro <игроки>` plays it for others (the
+//! console and whoever may run shows).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,6 +13,10 @@ use std::{
 };
 
 use steel_core::{
+    command::{
+        CommandArgument, CommandContext, CommandError, CommandRegistration,
+        CommandRegistrationError, CommandRegistry, CommandSource, argument, literal,
+    },
     player::Player,
     server::Server,
     server::jobs::{JobPoll, ServerJob, ServerJobContext},
@@ -20,7 +25,7 @@ use steel_protocol::packets::common::CPluginMessage;
 use steel_utils::Identifier;
 use uuid::Uuid;
 
-use crate::config;
+use crate::{config, events::may_run_shows, moderation::format::render};
 
 const CHANNEL: Identifier = Identifier::new_static("minehouse", "intro");
 /// A moment for the client to take the world in; the scene covers it until its end.
@@ -112,6 +117,55 @@ impl ServerJob for ChapterIntro {
     }
 }
 
+/// Registers `/intro`: the scene again, for oneself or (for show runners) for others.
+pub(super) fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistrationError> {
+    registry.register(
+        CommandRegistration::new(Identifier::new("minehouse", "intro"), || {
+            literal("intro")
+                .executes(|context| replay_own(*context))
+                .then(
+                    argument("targets", CommandArgument::players())
+                        .requires(may_replay_for_others)
+                        .executes(|context| replay_for(*context)),
+                )
+        })
+        .default_access(),
+    )?;
+    Ok(())
+}
+
+fn may_replay_for_others(source: CommandSource<'_>) -> bool {
+    source.player().is_none_or(|player| may_run_shows(player))
+}
+
+fn replay_own(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let source = context.source();
+    let Some(player) = source.player() else {
+        return Err(CommandError::from("Укажи игрока: /intro <ник>"));
+    };
+    play(player);
+    Ok(1)
+}
+
+fn replay_for(context: CommandContext<'_>) -> Result<i32, CommandError> {
+    let players = context.players("targets")?;
+    for player in &players {
+        play(player);
+    }
+    let text = match players.as_slice() {
+        [only] => render(
+            "&7Заставка Главы 2 запущена у &f{name}",
+            &[("name", only.gameprofile.name())],
+        ),
+        all => render(
+            "&7Заставка Главы 2 запущена у &f{count} &7игроков",
+            &[("count", &all.len().to_string())],
+        ),
+    };
+    context.source().send_success(&text, true);
+    Ok(i32::try_from(players.len()).unwrap_or(i32::MAX))
+}
+
 /// Starts watching for players new to Chapter 2.
 pub(super) fn start(server: &Server) {
     server.jobs.spawn(ChapterIntro {
@@ -137,6 +191,12 @@ mod tests {
         assert!(!seen.mark(id));
         assert!(Seen::load(file).players.contains(&id));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn intro_command_registers() {
+        let mut registry = CommandRegistry::new();
+        assert!(register(&mut registry).is_ok());
     }
 
     #[test]

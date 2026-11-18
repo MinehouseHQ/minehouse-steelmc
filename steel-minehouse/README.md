@@ -622,6 +622,7 @@ pack the players already have draws them.
 | Command | What it does |
 | --- | --- |
 | `/mhgive <item> [count]` | Gives an item of ours to the player who asks. Permission `minehouse.command.mhgive`. |
+| `/intro [игроки]` | Plays the Chapter 2 opening again (it plays by itself once, on a player's first visit; who has seen it is in `data/chapter2-intro.json`). Anyone may replay it for themselves; for others it takes `minehouse.command.show`, or the console. |
 
 Items so far:
 

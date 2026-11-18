@@ -166,7 +166,7 @@ impl ServerJob for Tick {
     }
 }
 
-fn may_run_shows(player: &Player) -> bool {
+pub(crate) fn may_run_shows(player: &Player) -> bool {
     PermissionKey::parse(PERMISSION)
         .ok()
         .map(PermissionExpr::key)

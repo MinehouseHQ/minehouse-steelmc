@@ -482,6 +482,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     banker::commands::register(registry)?;
     guides::register(registry)?;
     events::register(registry)?;
+    chapter_intro::register(registry)?;
     commands::register(registry)
 }
 
