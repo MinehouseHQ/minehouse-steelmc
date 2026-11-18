@@ -108,6 +108,8 @@ pub enum Actions {
     Any,
     /// One action: [`BREAK`], [`PLACE`], [`TAKE`], [`PUT`].
     Only(u8),
+    /// [`BREAK`] and [`PLACE`], no clicks: who placed what.
+    PlaceOrBreak,
 }
 
 /// What a lookup asks for. Empty fields don't narrow it.
@@ -188,6 +190,17 @@ enum Read {
     Stop,
 }
 
+/// Looks up like [`Store::lookup`], and can be kept by an answer that needs to ask again.
+#[derive(Clone)]
+pub struct Reader(Sender<Read>);
+
+impl Reader {
+    /// Runs `query` on the reader thread and hands the page to `reply` there.
+    pub fn lookup(&self, query: Query, reply: impl FnOnce(Result<Page, String>) + Send + 'static) {
+        let _ = self.0.send(Read::Lookup(Box::new(query), Box::new(reply)));
+    }
+}
+
 /// The handle of the log. Cheap calls: everything is queued for the two threads.
 pub struct Store {
     writer: Sender<Write>,
@@ -242,6 +255,12 @@ impl Store {
     /// Blocks until everything queued so far is on disk. Not for the tick.
     pub fn flush(&self) {
         flush(&self.writer);
+    }
+
+    /// A handle that only looks up, for answers that ask again (paging).
+    #[must_use]
+    pub fn reader(&self) -> Reader {
+        Reader(self.reader.clone())
     }
 
     /// Runs `query` on the reader thread and hands the page to `reply` there.
@@ -629,9 +648,17 @@ fn condition(query: &Query, actions: Actions) -> (String, Vec<Value>) {
         clauses.push("t.rolled_back = ?".to_owned());
         values.push(Value::Integer(i64::from(rolled_back)));
     }
-    if let Actions::Only(action) = actions {
-        clauses.push("t.action = ?".to_owned());
-        values.push(Value::Integer(i64::from(action)));
+    match actions {
+        Actions::Any => {}
+        Actions::Only(action) => {
+            clauses.push("t.action = ?".to_owned());
+            values.push(Value::Integer(i64::from(action)));
+        }
+        Actions::PlaceOrBreak => {
+            clauses.push("t.action IN (?, ?)".to_owned());
+            values.push(Value::Integer(i64::from(PLACE)));
+            values.push(Value::Integer(i64::from(BREAK)));
+        }
     }
     (clauses.join(" AND "), values)
 }

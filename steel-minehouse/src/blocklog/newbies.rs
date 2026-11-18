@@ -19,7 +19,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use steel_core::{
-    behavior::blocks::FireBlock,
+    behavior::blocks::{FireBlock, connected_direction},
     command::{
         CommandContext, CommandError, CommandNode, CommandRegistration, CommandRegistrationError,
         CommandRegistry, CommandSource, literal,
@@ -32,12 +32,18 @@ use steel_core::{
     world::World,
 };
 use steel_registry::{
-    blocks::block_state_ext::BlockStateExt as _, item_stack::ItemStack, stat::vanilla_stat_types,
+    blocks::{
+        block_state_ext::BlockStateExt as _,
+        properties::{BlockStateProperties, ChestType},
+    },
+    item_stack::ItemStack,
+    stat::vanilla_stat_types,
+    vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_custom_stats, vanilla_items,
 };
 use steel_utils::{BlockPos, Direction, Identifier, locks::SyncMutex, types::InteractionHand};
 
-use super::store::{Actions, BREAK, Event, PLACE, Query, Store};
+use super::store::{Actions, BREAK, Event, PLACE, Query, Reader, Store};
 use crate::{
     config,
     moderation::{
@@ -57,6 +63,8 @@ const REGION_TTL_MS: i64 = 10 * 60_000;
 const SPOT_TTL_MS: i64 = 5 * 60_000;
 const RECENT_MS: i64 = 15 * 60_000;
 const NOTICE_MS: i64 = 3_000;
+/// Rows per page when fetching the owners of a region.
+const REGION_PAGE: u32 = 100_000;
 const MANAGE: &str = "minehouse.newbie.manage";
 const BYPASS: &str = "minehouse.newbie.bypass";
 const STATE_FILE: &str = "newbies.json";
@@ -166,6 +174,16 @@ const fn place(pos: BlockPos) -> (i32, i32, i32) {
 fn owners_of(rows: &[Event]) -> FxHashMap<(i32, i32, i32), String> {
     let mut seen = FxHashSet::default();
     let mut owners = FxHashMap::default();
+    add_owners(rows, &mut seen, &mut owners);
+    owners
+}
+
+/// [`owners_of`] for one page of many: `seen` carries the spots older pages already decided.
+fn add_owners(
+    rows: &[Event],
+    seen: &mut FxHashSet<(i32, i32, i32)>,
+    owners: &mut FxHashMap<(i32, i32, i32), String>,
+) {
     for row in rows {
         if (row.action != PLACE && row.action != BREAK) || !seen.insert(row.pos) {
             continue;
@@ -174,7 +192,60 @@ fn owners_of(rows: &[Event]) -> FxHashMap<(i32, i32, i32), String> {
             owners.insert(row.pos, row.actor.name.clone());
         }
     }
-    owners
+}
+
+/// The spots whose owners decide over the container at `pos`: both halves of a double chest
+/// (a newbie could otherwise put their own chest next to someone else's and open the pair through
+/// their half), the spot alone for anything else.
+fn container_spots(world: &World, pos: BlockPos) -> Vec<BlockPos> {
+    let state = world.get_block_state(pos);
+    if state
+        .try_get_value(&BlockStateProperties::CHEST_TYPE)
+        .is_some_and(|kind| kind != ChestType::Single)
+    {
+        let other = pos.relative(connected_direction(state));
+        if world
+            .get_block_state(other)
+            .try_get_value(&BlockStateProperties::CHEST_TYPE)
+            .is_some_and(|kind| kind != ChestType::Single)
+        {
+            return vec![pos, other];
+        }
+    }
+    vec![pos]
+}
+
+/// Where a hopper or a hopper minecart used on the `face` of the block at `pos` would sit, when
+/// there is a container right above it to pull from.
+fn drains_from(
+    stack: &ItemStack,
+    world: &World,
+    pos: BlockPos,
+    face: Direction,
+) -> Option<BlockPos> {
+    let spot = if stack.is(&vanilla_items::HOPPER_MINECART) {
+        // Minecarts go onto the rail that was clicked.
+        if !world
+            .get_block_state(pos)
+            .get_block()
+            .has_tag(&BlockTag::RAILS)
+        {
+            return None;
+        }
+        pos
+    } else if stack.is(&vanilla_items::HOPPER) {
+        if world.get_block_state(pos).is_replaceable() {
+            pos
+        } else {
+            pos.relative(face)
+        }
+    } else {
+        return None;
+    };
+    world
+        .get_block_entity(spot.above())
+        .and_then(ContainerRef::from_block_entity)
+        .map(|_| spot)
 }
 
 fn is_hazard(stack: &ItemStack) -> bool {
@@ -351,8 +422,9 @@ impl Newbies {
                 Query {
                     world: Some(world.to_owned()),
                     around: Some((at, 0)),
-                    blocks: Some(Actions::Any),
-                    limit: 20,
+                    // Only places and breaks: a much-used chest has more clicks than a page holds.
+                    blocks: Some(Actions::PlaceOrBreak),
+                    limit: 1,
                     ..Query::default()
                 },
                 move |answer| {
@@ -398,29 +470,70 @@ impl Newbies {
                 return;
             }
         }
+        Arc::clone(self).fetch_region_page(
+            store.reader(),
+            key,
+            world.to_owned(),
+            center,
+            0,
+            FxHashSet::default(),
+            FxHashMap::default(),
+        );
+    }
+
+    /// One page of [`Self::fetch_region`], newest first; asks for the next until one comes back
+    /// short. One capped page would drop the oldest rows, and with them who placed the chests of
+    /// a busy base long ago.
+    #[expect(clippy::too_many_arguments, reason = "the state of one paged lookup")]
+    fn fetch_region_page(
+        self: Arc<Self>,
+        store: Reader,
+        key: Spot,
+        world: String,
+        center: (i32, i32, i32),
+        offset: u32,
+        mut seen: FxHashSet<(i32, i32, i32)>,
+        mut owners: FxHashMap<(i32, i32, i32), String>,
+    ) {
         let radius = CUBE / 2 + MARGIN;
-        let newbies = Arc::clone(self);
-        let world = world.to_owned();
+        let next = store.clone();
         store.lookup(
             Query {
                 world: Some(world.clone()),
                 around: Some((center, radius)),
-                blocks: Some(Actions::Any),
-                limit: 200_000,
+                blocks: Some(Actions::PlaceOrBreak),
+                offset,
+                limit: REGION_PAGE,
                 ..Query::default()
             },
-            move |answer| {
-                let mut known = newbies.known.lock();
-                known.pending.remove(&key);
-                match answer {
-                    Ok(page) => known.regions.push(Region {
+            move |answer| match answer {
+                Ok(page) => {
+                    add_owners(&page.rows, &mut seen, &mut owners);
+                    if page.rows.len() >= REGION_PAGE as usize {
+                        self.fetch_region_page(
+                            next,
+                            key,
+                            world,
+                            center,
+                            offset + REGION_PAGE,
+                            seen,
+                            owners,
+                        );
+                        return;
+                    }
+                    let mut known = self.known.lock();
+                    known.pending.remove(&key);
+                    known.regions.push(Region {
                         world,
                         min: (center.0 - radius, center.1 - radius, center.2 - radius),
                         max: (center.0 + radius, center.1 + radius, center.2 + radius),
-                        owners: owners_of(&page.rows),
+                        owners,
                         at: now_ms(),
-                    }),
-                    Err(error) => log::warn!("Newbie protection lookup failed: {error}"),
+                    });
+                }
+                Err(error) => {
+                    self.known.lock().pending.remove(&key);
+                    log::warn!("Newbie protection lookup failed: {error}");
                 }
             },
         );
@@ -469,14 +582,76 @@ impl Newbies {
         if !self.is_newbie(player) {
             return false;
         }
-        let name = player.gameprofile.name();
-        let Some(owner) = self.owner(store, &world.key.to_string(), place(pos)) else {
-            // Being looked up: the answer is in before the next click.
-            return true;
+        // A double chest opens both halves: each must be the player's to open.
+        let spots = if hit {
+            vec![pos]
+        } else {
+            container_spots(world, pos)
         };
-        if owner.is_empty() || owner.eq_ignore_ascii_case(name) || self.trusts(&owner, name) {
+        self.keeps_from_spots(store, player, world, &spots, hit)
+    }
+
+    /// A newbie is about to place a hopper or a hopper minecart: whether it would sit under
+    /// someone else's container and empty it.
+    pub(super) fn keeps_hopper_from(
+        self: &Arc<Self>,
+        store: &Store,
+        player: &Arc<Player>,
+        hand: InteractionHand,
+        on: Option<(&Arc<World>, BlockPos, Direction)>,
+    ) -> bool {
+        let Some((world, pos, face)) = on else {
+            return false;
+        };
+        let spot = {
+            let inventory = player.inventory.lock();
+            drains_from(inventory.get_item_in_hand(hand), world, pos, face)
+        };
+        let Some(spot) = spot else {
+            return false;
+        };
+        if !self.is_newbie(player) {
             return false;
         }
+        self.keeps_from_spots(
+            store,
+            player,
+            world,
+            &container_spots(world, spot.above()),
+            false,
+        )
+    }
+
+    /// Whether any of `spots` is someone else's (or still being looked up); tells the player whose.
+    fn keeps_from_spots(
+        self: &Arc<Self>,
+        store: &Store,
+        player: &Arc<Player>,
+        world: &Arc<World>,
+        spots: &[BlockPos],
+        hit: bool,
+    ) -> bool {
+        let name = player.gameprofile.name();
+        let key = world.key.to_string();
+        let mut waiting = false;
+        let mut foreign = None;
+        for &spot in spots {
+            match self.owner(store, &key, place(spot)) {
+                // Being looked up: the answer is in before the next click.
+                None => waiting = true,
+                Some(owner) => {
+                    if !(owner.is_empty()
+                        || owner.eq_ignore_ascii_case(name)
+                        || self.trusts(&owner, name))
+                    {
+                        foreign.get_or_insert(owner);
+                    }
+                }
+            }
+        }
+        let Some(owner) = foreign else {
+            return waiting;
+        };
         if self.may_notice(player) {
             player.send_action_bar(render(
                 &format!(
@@ -819,6 +994,28 @@ mod tests {
         assert_eq!(owners.get(&(1, 0, 0)).map(String::as_str), Some("Alice"));
         assert_eq!(owners.get(&(2, 0, 0)), None);
         assert_eq!(owners.get(&(3, 0, 0)), None);
+    }
+
+    #[test]
+    fn older_pages_do_not_undo_what_newer_pages_decided() {
+        let mut seen = FxHashSet::default();
+        let mut owners = FxHashMap::default();
+        // Page one, newest: Bob broke (0,0,0). Page two, older: Alice placed both spots.
+        add_owners(
+            &[event("Bob", (0, 0, 0), BREAK, false)],
+            &mut seen,
+            &mut owners,
+        );
+        add_owners(
+            &[
+                event("Alice", (0, 0, 0), PLACE, false),
+                event("Alice", (5, 0, 0), PLACE, false),
+            ],
+            &mut seen,
+            &mut owners,
+        );
+        assert_eq!(owners.get(&(0, 0, 0)), None);
+        assert_eq!(owners.get(&(5, 0, 0)).map(String::as_str), Some("Alice"));
     }
 
     #[test]
