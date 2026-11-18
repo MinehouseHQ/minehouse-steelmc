@@ -12,6 +12,9 @@ use tokio::sync::{Mutex, RwLock};
 pub type SyncMutex<T> = parking_lot::Mutex<T>;
 /// A synchronous read-write lock.
 pub type SyncRwLock<T> = parking_lot::RwLock<T>;
+/// A synchronous read-write lock whose readers never queue behind a waiting
+/// writer, so a thread that already reads can read again.
+pub type SyncRecursiveRwLock<T> = parking_lot::RecursiveRwLock<T>;
 
 /// An asynchronous mutex.
 pub type AsyncMutex<T> = Mutex<T>;

@@ -1,4 +1,7 @@
 use super::*;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 #[test]
 fn add_live_entity_rejects_manager_owned_unloaded_chunk() {
@@ -114,4 +117,36 @@ fn duplicate_entity_id_is_a_loud_invariant_failure() {
         entity(1, 2, DVec3::new(2.0, 64.0, 1.0)),
         EntityOwnership::ManagerOwned,
     );
+}
+
+#[test]
+fn nested_lookup_does_not_wait_behind_a_queued_writer() {
+    let manager = Arc::new(WorldEntityManager::new());
+    let entity = entity(1, 7, DVec3::new(1.0, 64.0, 1.0));
+    let uuid = entity.uuid();
+    manager
+        .add_live_entity(entity, EntityOwnership::External)
+        .expect("external entity should be added");
+
+    // A tick callback holds the read guard, like `EntityPush` does.
+    let outer = manager.state.read();
+    let writer = {
+        let manager = Arc::clone(&manager);
+        thread::spawn(move || drop(manager.state.write()))
+    };
+    thread::sleep(Duration::from_millis(100));
+
+    let (sender, receiver) = mpsc::channel();
+    let lookup = {
+        let manager = Arc::clone(&manager);
+        thread::spawn(move || {
+            let _ = sender.send(manager.get_by_uuid(&uuid).is_some());
+        })
+    };
+    let found = receiver.recv_timeout(Duration::from_secs(5));
+    drop(outer);
+    writer.join().expect("writer thread should finish");
+    lookup.join().expect("lookup thread should finish");
+
+    assert_eq!(found, Ok(true));
 }

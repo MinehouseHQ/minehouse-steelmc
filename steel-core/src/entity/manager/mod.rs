@@ -13,7 +13,7 @@ use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use steel_registry::vanilla_entities;
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::locks::{SyncMutex, SyncRecursiveRwLock};
 use steel_utils::{BlockPos, ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
 use uuid::Uuid;
 
@@ -837,7 +837,11 @@ impl EntityTickList {
 
 /// Central world entity manager.
 pub struct WorldEntityManager {
-    state: SyncRwLock<ManagerState>,
+    /// Recursive: entity callbacks run under a read guard (pushing, area queries)
+    /// and look entities up again (a tamed cat's `team` resolves its owner). A
+    /// plain `RwLock` queues the nested read behind a waiting writer, which
+    /// deadlocks the tick when an entity is added (a player joins) at that moment.
+    state: SyncRecursiveRwLock<ManagerState>,
 }
 
 impl fmt::Debug for WorldEntityManager {
@@ -856,7 +860,7 @@ impl WorldEntityManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            state: SyncRwLock::new(ManagerState::default()),
+            state: SyncRecursiveRwLock::new(ManagerState::default()),
         }
     }
 
