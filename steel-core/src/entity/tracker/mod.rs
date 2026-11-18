@@ -661,6 +661,31 @@ impl EntityTracker {
         changes
     }
 
+    /// Despawns `entity` for every player who sees it and spawns it again, so their clients
+    /// build it anew. Vanilla has no such step; Steel uses it when a player's profile changes.
+    pub fn respawn_for_viewers(
+        &self,
+        entity: &SharedEntity,
+        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+    ) {
+        let entity_id = entity.id();
+        let Some(viewers) = self.entities.read_sync(&entity_id, |_, tracked| {
+            tracked.seen_by.read().iter().copied().collect::<Vec<_>>()
+        }) else {
+            return;
+        };
+        for player in viewers.into_iter().filter_map(&get_player) {
+            if let Some(packet) =
+                self.vehicle_passenger_packet_for_player(entity.as_ref(), player.id())
+            {
+                player.send_packet(packet);
+            }
+            player.send_packet(CRemoveEntities::single(entity_id));
+            entity.stop_seen_by_player(&player);
+            self.send_spawn_packets(entity, &player);
+        }
+    }
+
     /// Removes a player from every entity pairing and despawns those entities from their client.
     ///
     /// Mirrors vanilla `ChunkMap.removeEntity` calling `TrackedEntity.removePlayer` for each

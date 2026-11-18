@@ -93,6 +93,48 @@ impl Player {
         self.send_respawn_packet(&self.get_world(), reason);
     }
 
+    /// Has the client build its own player again where it stands, with a same-world respawn
+    /// that keeps attributes and entity data. Vanilla never does this: it is how a changed
+    /// profile (a new skin) reaches the client's own player, which keeps the tab entry it was
+    /// created with. The client keeps its world and chunks, so only the player state is resent.
+    pub(crate) fn recreate_client_player(self: &Arc<Self>) {
+        let world = self.get_world();
+        if self.remove_all_menus() != MenuRemovalStatus::Complete {
+            log::warn!(
+                "Player {} is recreated with a menu that could not close",
+                self.gameprofile.name()
+            );
+        }
+        self.set_client_loaded(false);
+        self.send_respawn_packet(&world, ResetReason::WorldChange);
+        self.send_packet(CGameEvent {
+            event: GameEventType::LevelChunksLoadStart,
+            data: 0.0,
+        });
+        let position = self.position();
+        let rotation = self.rotation();
+        let velocity = self.velocity();
+        // Already in the world: the position stays, only the client is told it again.
+        if let Err(error) = self.teleport_with_velocity_packet(
+            position,
+            velocity,
+            rotation,
+            position,
+            velocity,
+            rotation,
+            RelativeMovement::NONE,
+        ) {
+            log::error!(
+                "Player {} was recreated without a position: {error}",
+                self.gameprofile.name()
+            );
+        }
+        self.send_spawn_sync_after_teleport(&world, true);
+        if let Some(vehicle) = self.vehicle() {
+            self.send_restored_vehicle_mount_sync(vehicle.as_ref());
+        }
+    }
+
     fn send_respawn_packet(&self, world: &World, reason: ResetReason) {
         // 0x01 = keep attributes, 0x02 = keep entity data
         let data_kept = reason.respawn_data_kept();
@@ -266,15 +308,24 @@ impl Player {
                 self.id()
             );
         }
+        self.send_spawn_sync_after_teleport(&world, resend_player_context);
+        world
+    }
+
+    /// The state a new client player needs once its position is sent.
+    fn send_spawn_sync_after_teleport(
+        self: &Arc<Self>,
+        world: &World,
+        resend_player_context: bool,
+    ) {
         self.reset_flying_ticks();
-        self.send_spawn_state_packets(&world);
+        self.send_spawn_state_packets(world);
         self.reset_sent_info();
         if resend_player_context {
             self.server().resend_player_context(self);
         }
         self.send_active_effects_for_self();
         self.send_post_effects();
-        world
     }
 
     fn send_spawn_state_packets(&self, world: &World) {

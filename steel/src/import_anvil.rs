@@ -144,7 +144,11 @@ async fn import(
             dropped_block_entities: dropped,
         })
         .collect();
-    for line in migrate::carry_over(&carried, &options.save_path.join("minehouse")) {
+    for line in migrate::carry_over(
+        &options.world,
+        &carried,
+        &options.save_path.join("minehouse"),
+    ) {
         println!("{line}");
     }
     Ok(Summary {

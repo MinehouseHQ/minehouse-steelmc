@@ -5,7 +5,10 @@
 //! the order go out when someone joins or leaves, or when a style of a player changes
 //! (a new permission group).
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use serde::{Deserialize, Serialize};
 use steel_core::{
@@ -184,6 +187,14 @@ pub struct Tab {
     sent: SyncMutex<Vec<Look>>,
 }
 
+/// Set when a tab entry was added again (a new skin) and lost its name.
+static RESEND_NAMES: AtomicBool = AtomicBool::new(false);
+
+/// Has the names go out again on the next refresh, also when no style changed.
+pub fn resend_names() {
+    RESEND_NAMES.store(true, Ordering::Relaxed);
+}
+
 impl Tab {
     /// Loads the settings and takes over the tab list of `server`.
     pub fn start(server: &Arc<Server>) {
@@ -244,8 +255,9 @@ impl Tab {
             .collect();
         styles.sort_unstable();
         {
+            let resend = RESEND_NAMES.swap(false, Ordering::Relaxed);
             let mut sent = self.sent.lock();
-            if *sent == styles {
+            if *sent == styles && !resend {
                 return;
             }
             sent.clone_from(&styles);

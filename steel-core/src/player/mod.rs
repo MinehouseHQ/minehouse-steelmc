@@ -29,6 +29,7 @@ mod profile;
 pub mod recipe_book;
 mod session;
 mod shoulder;
+mod shown_profile;
 mod sleep;
 mod sleep_state;
 mod spam_throttler;

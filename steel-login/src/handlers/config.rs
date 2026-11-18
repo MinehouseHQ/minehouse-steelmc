@@ -129,6 +129,7 @@ impl JavaTcpClient {
             .await;
             return ConnectionAction::none();
         }
+        let gameprofile = self.take_admitted_profile().unwrap_or(gameprofile);
         // Admission can reject the join; the client already expects Play disconnect packets.
         self.protocol.store(ConnectionProtocol::Play);
         let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id()) else {
