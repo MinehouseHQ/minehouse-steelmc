@@ -3,6 +3,7 @@ mod autosave;
 mod broadcasting;
 pub mod chat_interceptor;
 mod debug_subscribers;
+mod disk_space;
 mod functions;
 /// Tick-polled server jobs.
 pub mod jobs;
@@ -100,6 +101,7 @@ use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
+    path::PathBuf,
     sync::{Arc, OnceLock, mpsc},
     time::{Duration, Instant},
 };
@@ -273,6 +275,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admissions: SyncMutex::new(FxHashMap::default()),
         player_admission_changed: Notify::new(),
         debug_subscribers: debug_subscribers::DebugSubscribers::default(),
+        save_root: PathBuf::new(),
         server_tick_changed: Notify::new(),
         login_gate: OnceLock::new(),
         chat_interceptor: OnceLock::new(),
@@ -545,6 +548,8 @@ pub struct Server {
     player_admission_changed: Notify,
     /// Vanilla `MinecraftServer.debugSubscribers`.
     debug_subscribers: debug_subscribers::DebugSubscribers,
+    /// The save directory, whose file system is checked for free space after saves.
+    save_root: PathBuf,
     /// Wakes connection lifecycle work waiting for a specific server tick.
     server_tick_changed: Notify,
     /// Holds verified logins in the configuration phase, see [`login_gate`].
@@ -790,6 +795,7 @@ impl Server {
                 .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
         });
 
+        let save_root = resolved_worlds.save_path.clone();
         let player_data_storage = PlayerDataStorage::from_selection(
             resolved_worlds.save_path.clone(),
             &resolved_worlds.player_storage,
@@ -949,6 +955,7 @@ impl Server {
             player_admissions: SyncMutex::new(FxHashMap::default()),
             player_admission_changed: Notify::new(),
             debug_subscribers: debug_subscribers::DebugSubscribers::default(),
+            save_root,
             server_tick_changed: Notify::new(),
             login_gate: OnceLock::new(),
             chat_interceptor: OnceLock::new(),
