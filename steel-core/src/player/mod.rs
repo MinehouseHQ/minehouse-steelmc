@@ -9,6 +9,7 @@ pub mod chunk_sender;
 pub mod connection;
 mod container_counter;
 pub mod death_observer;
+mod debug_subscriptions;
 mod entity_state;
 /// Experience System
 pub mod experience;
@@ -229,6 +230,9 @@ pub struct Player {
     /// The client's settings/information (language, view distance, chat visibility, etc.).
     /// Updated when the client sends `SClientInformation` during config or play phase.
     client_information: SyncMutex<ClientInformation>,
+    /// Vanilla `ServerPlayer.requestedDebugSubscriptions`: the debug data ids the
+    /// client last asked for.
+    requested_debug_subscriptions: SyncMutex<Vec<i32>>,
 
     /// Current and previous game mode.
     game_modes: SyncMutex<PlayerGameModeState>,
@@ -775,6 +779,7 @@ impl Player {
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
             client_information: SyncMutex::new(client_information),
+            requested_debug_subscriptions: SyncMutex::new(Vec::new()),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             current_game_mode: AtomicI8::new(GameType::Survival as i8),
             inventory: Arc::clone(&inventory),

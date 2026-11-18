@@ -15,15 +15,15 @@ use steel_protocol::packets::game::{
     SAcceptTeleportation, SAttack, SBlockEntityTagQuery, SChangeDifficulty, SChangeGameMode, SChat,
     SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived,
     SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick,
-    SContainerClose, SContainerSlotStateChanged, SEditBook, SEntityTagQuery, SInteract,
-    SJigsawGenerate, SLockDifficulty, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
-    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat, SPickItemFromBlock,
-    SPickItemFromEntity, SPlaceRecipe, SPlayerAbilities, SPlayerAction, SPlayerCommand,
-    SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings, SRecipeBookSeenRecipe,
-    SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade, SSetBeacon, SSetCarriedItem,
-    SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot, SSetGameRule, SSetJigsawBlock,
-    SSetStructureBlock, SSetTestBlock, SSignUpdate, SSpectatorAction, STeleportToEntity, SUseItem,
-    SUseItemOn,
+    SContainerClose, SContainerSlotStateChanged, SDebugSubscriptionRequest, SEditBook,
+    SEntityTagQuery, SInteract, SJigsawGenerate, SLockDifficulty, SMovePlayer, SMovePlayerPos,
+    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat,
+    SPickItemFromBlock, SPickItemFromEntity, SPlaceRecipe, SPlayerAbilities, SPlayerAction,
+    SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRecipeBookChangeSettings,
+    SRecipeBookSeenRecipe, SRenameItem, SSeenAdvancement, SSelectBundleItem, SSelectTrade,
+    SSetBeacon, SSetCarriedItem, SSetCommandBlock, SSetCommandMinecart, SSetCreativeModeSlot,
+    SSetGameRule, SSetJigsawBlock, SSetStructureBlock, SSetTestBlock, SSignUpdate,
+    SSpectatorAction, STeleportToEntity, SUseItem, SUseItemOn,
 };
 
 use crate::command::handle_client_request;
@@ -137,6 +137,7 @@ enum ScheduledPlayPacketKind {
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
     LockDifficulty(SLockDifficulty),
+    DebugSubscriptionRequest(SDebugSubscriptionRequest),
     SetGameRule(SSetGameRule),
     EntityTagQuery(SEntityTagQuery),
     BlockEntityTagQuery(SBlockEntityTagQuery),
@@ -193,6 +194,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ClientInformation(_)
             | ScheduledPlayPacketKind::ClientTickEnd
             | ScheduledPlayPacketKind::PlayerLoaded
+            | ScheduledPlayPacketKind::DebugSubscriptionRequest(_)
             | ScheduledPlayPacketKind::ChatCommand(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
             | ScheduledPlayPacketKind::ContainerClose(_)
@@ -419,6 +421,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::LockDifficulty(packet) => {
                 player.handle_lock_difficulty(&packet);
+            }
+            ScheduledPlayPacketKind::DebugSubscriptionRequest(packet) => {
+                player.request_debug_subscriptions(packet.subscriptions);
             }
             ScheduledPlayPacketKind::SetGameRule(packet) => player.handle_set_game_rule(packet),
             ScheduledPlayPacketKind::EntityTagQuery(packet) => {
@@ -976,6 +981,11 @@ impl JavaConnection {
             play::S_LOCK_DIFFICULTY => scheduled(ScheduledPlayPacketKind::LockDifficulty(
                 SLockDifficulty::read_packet(data)?,
             )),
+            play::S_DEBUG_SUBSCRIPTION_REQUEST => {
+                scheduled(ScheduledPlayPacketKind::DebugSubscriptionRequest(
+                    SDebugSubscriptionRequest::read_packet(data)?,
+                ))
+            }
             play::S_SET_GAME_RULE => scheduled(ScheduledPlayPacketKind::SetGameRule(
                 SSetGameRule::read_packet(data)?,
             )),

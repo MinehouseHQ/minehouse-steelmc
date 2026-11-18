@@ -84,6 +84,7 @@ impl Player {
             self.add_post_effect(effect);
         }
         self.set_waypoint_icon(old_player.waypoint_icon());
+        self.restore_debug_subscriptions_from(old_player);
         self.set_shoulder_entity_left(old_player.shoulder_entity_left());
         self.set_shoulder_entity_right(old_player.shoulder_entity_right());
         let residence = old_player.residence.lock().clone();

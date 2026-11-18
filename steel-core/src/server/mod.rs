@@ -2,6 +2,7 @@
 mod autosave;
 mod broadcasting;
 pub mod chat_interceptor;
+mod debug_subscribers;
 mod functions;
 /// Tick-polled server jobs.
 pub mod jobs;
@@ -271,6 +272,7 @@ pub async fn test_server_with_worlds_and_config(
         online_players: PlayerMap::new(),
         player_admissions: SyncMutex::new(FxHashMap::default()),
         player_admission_changed: Notify::new(),
+        debug_subscribers: debug_subscribers::DebugSubscribers::default(),
         server_tick_changed: Notify::new(),
         login_gate: OnceLock::new(),
         chat_interceptor: OnceLock::new(),
@@ -541,6 +543,8 @@ pub struct Server {
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
     /// Wakes verified logins waiting for an older session with the same UUID to leave.
     player_admission_changed: Notify,
+    /// Vanilla `MinecraftServer.debugSubscribers`.
+    debug_subscribers: debug_subscribers::DebugSubscribers,
     /// Wakes connection lifecycle work waiting for a specific server tick.
     server_tick_changed: Notify,
     /// Holds verified logins in the configuration phase, see [`login_gate`].
@@ -944,6 +948,7 @@ impl Server {
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
             player_admission_changed: Notify::new(),
+            debug_subscribers: debug_subscribers::DebugSubscribers::default(),
             server_tick_changed: Notify::new(),
             login_gate: OnceLock::new(),
             chat_interceptor: OnceLock::new(),
