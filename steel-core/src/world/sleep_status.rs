@@ -53,7 +53,8 @@ impl SleepStatus {
         if player.is_spectator() {
             return;
         }
-        if !player.is_sleeping()
+        let sleeping = player.is_sleeping() && !player.lies_without_bed();
+        if !sleeping
             && SLEEP_OBSERVER
                 .get()
                 .is_some_and(|observer| observer.skips(player))
@@ -61,7 +62,7 @@ impl SleepStatus {
             return;
         }
         self.active_players += 1;
-        if player.is_sleeping() {
+        if sleeping {
             self.sleeping_players += 1;
         }
     }

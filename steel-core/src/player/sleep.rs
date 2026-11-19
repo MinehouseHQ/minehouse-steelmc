@@ -287,7 +287,7 @@ impl Player {
     /// Returns whether this player has slept long enough for vanilla night skip.
     #[must_use]
     pub fn is_sleeping_long_enough(&self) -> bool {
-        self.is_sleeping() && self.sleep_counter() >= SLEEP_DURATION
+        self.is_sleeping() && !self.lies_without_bed() && self.sleep_counter() >= SLEEP_DURATION
     }
 
     fn set_sleep_counter(&self, sleep_counter: i32) {

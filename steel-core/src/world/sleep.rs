@@ -117,7 +117,7 @@ impl World {
     fn wake_up_all_players(&self) {
         self.sleep_status.lock().remove_all_sleepers();
         self.players.iter_players(|_, player| {
-            if player.is_sleeping() {
+            if player.is_sleeping() && !player.lies_without_bed() {
                 player.stop_sleep_in_bed(false, false);
             }
             true
