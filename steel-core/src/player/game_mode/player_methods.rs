@@ -10,6 +10,7 @@ use crate::behavior::blocks::PowderSnowBlock;
 use crate::enchantment_helper;
 use crate::entity::{SharedEntity, change_entity_world};
 use crate::portal::{PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest};
+use crate::server::tab_list;
 use crate::world::World;
 use glam::DVec3;
 use std::sync::Arc;
@@ -46,9 +47,16 @@ impl Player {
         self.send_abilities();
         self.update_game_mode_invisibility();
 
-        let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id(), gamemode as i32);
-        self.server().broadcast_to_online(update_packet);
+        let uuid = self.gameprofile.id();
+        if tab_list::observed() {
+            self.server().broadcast_to_online_with(|viewer| {
+                CPlayerInfoUpdate::update_game_mode(uuid, tab_list::shown(viewer, self) as i32)
+            });
+            tab_list::resend_to(self);
+        } else {
+            self.server()
+                .broadcast_to_online(CPlayerInfoUpdate::update_game_mode(uuid, gamemode as i32));
+        }
 
         self.get_world().update_sleeping_player_list();
 

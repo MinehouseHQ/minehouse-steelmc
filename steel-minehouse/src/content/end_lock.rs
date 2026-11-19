@@ -62,6 +62,22 @@ struct TweaksConfig {
     end: EndConfig,
     cloud: CloudConfig,
     minecarts: MinecartConfig,
+    phantoms: PhantomConfig,
+}
+
+/// The `[phantoms]` table of the config.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PhantomConfig {
+    /// Whether players who have not slept get phantoms, as in vanilla. Off unless set.
+    pub insomnia: bool,
+}
+
+/// Whether insomnia spawns phantoms ([`super::phantoms`]). An unreadable config keeps them off.
+pub(super) fn phantoms_from_insomnia() -> bool {
+    config::load::<TweaksConfig>(&config::path(CONFIG))
+        .inspect_err(|error| log::error!("MineHouse tweaks: {error}, phantoms stay off"))
+        .is_ok_and(|tweaks| tweaks.phantoms.insomnia)
 }
 
 /// The `[minecarts]` table of the config.
