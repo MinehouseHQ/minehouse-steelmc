@@ -38,6 +38,7 @@ mod recipes;
 mod ride;
 mod see;
 mod silent_tags;
+mod sitting;
 mod speed;
 mod station_menu;
 pub(crate) mod stations;
@@ -478,6 +479,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     }
     ride::register(registry)?;
     nametags::register(registry)?;
+    sitting::register(registry)?;
     admin_mode::register(registry)?;
     see::register(registry)?;
     transfer::register(registry)?;
@@ -503,6 +505,7 @@ pub fn start_jobs(server: &Server) {
     creative_tabs::start(server);
     phantoms::start(server);
     ping_wheel::start(server);
+    sitting::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
