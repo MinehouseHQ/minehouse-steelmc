@@ -13,9 +13,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::{DowncastType, DowncastTypeKey};
 use text_components::TextComponent;
+use uuid::Uuid;
 
 use super::display::{load_display, save_display, tick_display};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::player::Player;
 use crate::world::World;
 
 const TAG_TEXT: &str = "text";
@@ -92,6 +94,8 @@ pub struct TextDisplayEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<TextDisplayEntityData>,
+    /// The one player this display is not sent to ([`TextDisplayEntity::hide_from`]).
+    hidden_from: SyncMutex<Option<Uuid>>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `TextDisplayEntity`.
@@ -107,6 +111,7 @@ impl TextDisplayEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(TextDisplayEntityData::new()),
+            hidden_from: SyncMutex::new(None),
         }
     }
 
@@ -117,6 +122,7 @@ impl TextDisplayEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(TextDisplayEntityData::new()),
+            hidden_from: SyncMutex::new(None),
         }
     }
 
@@ -135,6 +141,14 @@ impl TextDisplayEntity {
     /// rest. What changed is sent to the clients on the next tick.
     pub fn edit(&self, change: impl FnOnce(&mut TextDisplayEntityData)) {
         change(&mut self.entity_data.lock());
+    }
+
+    /// Keeps the display from one player's client, or from nobody with `None`. Not vanilla:
+    /// for a label over a player's head that the player would only have in the way. Not
+    /// saved. It counts from when the player next comes into range, so set it before the
+    /// display is added to the world.
+    pub fn hide_from(&self, player: Option<Uuid>) {
+        *self.hidden_from.lock() = player;
     }
 
     /// Vanilla `TextDisplay.getFlags`.
@@ -164,6 +178,10 @@ impl Entity for TextDisplayEntity {
 
     fn tick(self: Arc<Self>) {
         tick_display(&*self);
+    }
+
+    fn broadcast_to_player(&self, player: &Player) -> bool {
+        *self.hidden_from.lock() != Some(player.gameprofile.id())
     }
 
     fn no_physics(&self) -> bool {

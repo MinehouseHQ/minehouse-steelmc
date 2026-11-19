@@ -22,7 +22,7 @@ use steel_utils::locks::SyncMutex;
 use text_components::{Modifier, TextComponent, format::Color};
 use uuid::Uuid;
 
-use crate::{config, moderation::format::render_parts, nitro};
+use crate::{config, moderation::format::render_parts, nitro, twitch};
 
 /// `config/minehouse/tab.toml`. Texts take `&` colors and `&#rrggbb`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -177,13 +177,14 @@ fn gradient(text: &str, from: [u8; 3], to: [u8; 3]) -> TextComponent {
     TextComponent::plain("").add_children(children)
 }
 
-/// A player, their style and their Nitro color.
-type Look = (Uuid, Option<usize>, Option<[u8; 3]>);
+/// A player, their style, their Nitro color and whether they stream on Twitch now.
+type Look = (Uuid, Option<usize>, Option<[u8; 3]>, bool);
 
 /// The tab list of one server.
 pub struct Tab {
     config: TabConfig,
-    /// Who was in the list with which style and Nitro color when names last went out.
+    /// Who was in the list with which style, Nitro color and Twitch marker when names last
+    /// went out.
     sent: SyncMutex<Vec<Look>>,
 }
 
@@ -250,6 +251,7 @@ impl Tab {
                     id,
                     self.config.style_of(player.gameprofile.name(), &groups),
                     nitro::color(id),
+                    twitch::is_live(id),
                 )
             })
             .collect();
@@ -269,9 +271,14 @@ impl Tab {
                 let id = player.gameprofile.id();
                 let (style, color) = styles
                     .iter()
-                    .find(|(styled, _, _)| *styled == id)
-                    .map_or((None, None), |(_, style, color)| (*style, *color));
+                    .find(|(styled, ..)| *styled == id)
+                    .map_or((None, None), |(_, style, color, _)| (*style, *color));
                 let (name, order) = self.config.entry(player.gameprofile.name(), style, color);
+                // A player who streams on Twitch now has the marker before the name.
+                let name = match twitch::marker(id) {
+                    Some(marker) => TextComponent::plain("").add_children(vec![marker, name]),
+                    None => name,
+                };
                 PlayerInfoEntry::new(id)
                     .with_display_name(Some(name))
                     .with_list_order(order)

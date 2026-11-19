@@ -25,6 +25,7 @@ mod flight;
 pub mod herb_guides;
 mod herbs;
 mod leaf_decay;
+mod live_label;
 mod lying;
 pub mod map_markers;
 mod map_view;
@@ -96,6 +97,7 @@ use crate::{
     bank::{atm_block::ATM_BLOCK, banker, terminal_block::TERMINAL_BLOCK, transfer, zones},
     events, guides,
     moderation::format::render,
+    twitch,
 };
 
 /// The key in `custom_data` that holds the id of an item of ours.
@@ -484,6 +486,7 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     sitting::register(registry)?;
     crawling::register(registry)?;
     lying::register(registry)?;
+    twitch::register(registry)?;
     admin_mode::register(registry)?;
     see::register(registry)?;
     transfer::register(registry)?;
@@ -512,6 +515,7 @@ pub fn start_jobs(server: &Server) {
     sitting::start(server);
     crawling::start(server);
     lying::start(server);
+    live_label::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
