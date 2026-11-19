@@ -15,7 +15,9 @@ use uuid::Uuid;
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, LivingEntity, damage::DamageSource, entities::PigEntity,
+    DEATH_DURATION, Entity, EntityBase, LivingEntity,
+    damage::DamageSource,
+    entities::{PigEntity, TextDisplayEntity},
     next_entity_id,
 };
 use crate::player::{Player, ResetReason};
@@ -97,6 +99,45 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
     assert!(world.remove_respawned_player(&replacement));
     assert!(world.players.get_by_uuid(&uuid).is_none());
     assert!(world.get_entity_by_id(replacement.id()).is_none());
+}
+
+#[test]
+// A label over a head is a display that rides its player. Vanilla lets nothing ride a
+// player, so only a forced display may.
+fn a_forced_display_rides_a_player() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("display_rides_player");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Streamer", next_entity_id()).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    let vehicle: SharedEntity = Arc::clone(&player) as SharedEntity;
+
+    let label: SharedEntity = Arc::new(TextDisplayEntity::new(
+        &vanilla_entities::TEXT_DISPLAY,
+        next_entity_id(),
+        player.position(),
+        Arc::downgrade(world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&label))
+        .expect("the label should attach to the loaded chunk");
+    assert!(!label.start_riding(&vehicle, false));
+    assert!(label.start_riding(&vehicle, true));
+    assert!(label.is_passenger());
+
+    let pig: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        player.position(),
+        Arc::downgrade(world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&pig))
+        .expect("the pig should attach to the loaded chunk");
+    assert!(!pig.start_riding(&vehicle, true));
 }
 
 #[test]
