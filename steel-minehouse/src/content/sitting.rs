@@ -97,8 +97,8 @@ fn save_block_sitters(sitters: &FxHashSet<Uuid>) {
     }
 }
 
-/// Whether a player in this state may sit down at all.
-fn may_sit(player: &Player) -> bool {
+/// Whether a player in this state may sit down at all, or crawl.
+pub(super) fn may_sit(player: &Player) -> bool {
     !player.is_passenger()
         && !player.is_dead_or_dying()
         && player.game_mode() != GameType::Spectator
@@ -298,7 +298,7 @@ fn sit_command(context: CommandContext<'_>) -> Result<i32, CommandError> {
     let Some(player) = source.player() else {
         return Err(CommandError::from("Сесть может только игрок."));
     };
-    if !may_sit(player) || !player.on_ground() {
+    if player.forced_pose().is_some() || !may_sit(player) || !player.on_ground() {
         return Err(CommandError::from("Здесь и сейчас не сесть."));
     }
     if !sit(player, player.position()) {

@@ -130,6 +130,20 @@ impl Player {
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
+    /// The pose an extension keeps the player in ([`Self::set_forced_pose`]).
+    #[must_use]
+    pub fn forced_pose(&self) -> Option<EntityPose> {
+        *self.forced_pose.lock()
+    }
+
+    /// Keeps the player in `pose` whatever they do, short of sleeping in a bed, or lets go
+    /// of it with `None`. Not vanilla: a client decides its own pose, so this is what
+    /// everybody else sees, and the extension has to bring the player's own client to the
+    /// same pose itself. It is not saved and a respawned player starts without it.
+    pub fn set_forced_pose(&self, pose: Option<EntityPose>) {
+        *self.forced_pose.lock() = pose;
+    }
+
     /// Sets whether the player is shifting (sneaking).
     pub fn set_crouching(&self, crouching: bool) {
         self.set_shared_shift_key_down(crouching);
@@ -170,6 +184,8 @@ impl Player {
     pub(super) fn get_desired_pose(&self) -> EntityPose {
         if self.is_sleeping() {
             EntityPose::Sleeping
+        } else if let Some(forced) = self.forced_pose() {
+            forced
         } else if self.is_swimming() {
             EntityPose::Swimming
         } else if self.is_fall_flying() {
