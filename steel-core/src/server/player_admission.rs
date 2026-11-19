@@ -1,4 +1,5 @@
 use crate::entity::SharedEntity;
+use crate::player::connection::tap_player;
 use crate::server::tab_list;
 use steel_protocol::packets::game::CServerData;
 use steel_utils::codec::VarInt;
@@ -281,6 +282,7 @@ impl Server {
 
         self.apply_cached_or_default_permission_state(&player);
         Self::apply_domain_player_state(&player, &state);
+        tap_player(&player);
         self.send_login_packet(&player, &state.world);
 
         player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);

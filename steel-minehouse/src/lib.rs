@@ -33,6 +33,7 @@ pub mod guides;
 pub mod migrate;
 pub mod moderation;
 pub mod nitro;
+pub mod replay;
 pub mod roles;
 pub mod site;
 pub mod skins;
@@ -109,6 +110,7 @@ impl Minehouse {
     pub fn start(server: &Arc<Server>, setup: Setup) -> Self {
         content::start();
         content::start_jobs(server);
+        replay::start(server);
         if let Some(moderation) = &setup.moderation {
             moderation.start(server);
         }
