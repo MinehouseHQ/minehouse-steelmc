@@ -5,12 +5,12 @@
 
 mod java;
 
-pub(crate) use java::tap_player;
 pub use java::{
     BundleBuilder, JavaConnection, JavaNetworkReader, JavaNetworkWriter, JavaTransportRead,
     JavaTransportWrite, OutboundPacket, PacketTap, PacketTapSource, set_packet_tap_source,
 };
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
+pub(crate) use java::{packets_are_tapped, tap_player};
 
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
@@ -108,6 +108,10 @@ pub trait NetworkConnection: Send + Sync {
 
     /// Returns whether the connection is closed.
     fn closed(&self) -> bool;
+
+    /// Shows `packet` to whatever records this connection ([`PacketTap`]) without sending it:
+    /// what the other players are told about this one. Not vanilla.
+    fn record(&self, _packet: &EncodedPacket) {}
 }
 
 /// Concrete player connection type using `enum_dispatch` for zero-cost dispatch.

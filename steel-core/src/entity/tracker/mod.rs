@@ -28,8 +28,10 @@ use crate::entity::{
     ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
 };
 use crate::player::Player;
+use crate::player::connection::BundleBuilder;
 use crate::world::region::regionized_ticking_enabled;
 use crate::world::tick_pool::{TICK_POOL_MIN_SPLIT, install_on_tick_pool};
+use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 
 const BLOCKS_PER_CHUNK: f64 = 16.0;
 
@@ -661,6 +663,18 @@ impl EntityTracker {
         changes
     }
 
+    /// The packets a client that starts to see `entity` is sent, without sending them: for a
+    /// recording of a player, who is never sent their own. Not vanilla.
+    #[must_use]
+    pub fn spawn_packets(
+        entity: &SharedEntity,
+        compression: Option<CompressionInfo>,
+    ) -> Vec<EncodedPacket> {
+        let mut bundle = BundleBuilder::new(compression);
+        EntitySpawnPairing::from_entity(entity, Vec::new()).add_to(entity.id(), &mut bundle);
+        bundle.into_packets()
+    }
+
     /// Despawns `entity` for every player who sees it and spawns it again, so their clients
     /// build it anew. Vanilla has no such step; Steel uses it when a player's profile changes.
     pub fn respawn_for_viewers(
@@ -1147,29 +1161,31 @@ impl EntitySpawnPairing {
     }
 
     fn send_to(self, entity_id: i32, player: &Player) {
-        player.send_bundle(|bundle| {
-            bundle.add(self.spawn_packet);
+        player.send_bundle(|bundle| self.add_to(entity_id, bundle));
+    }
 
-            if !self.entity_data.is_empty() {
-                bundle.add(CSetEntityData::new(entity_id, self.entity_data));
-            }
+    fn add_to(self, entity_id: i32, bundle: &mut BundleBuilder) {
+        bundle.add(self.spawn_packet);
 
-            if !self.attributes.is_empty() {
-                bundle.add(CUpdateAttributes::new(entity_id, self.attributes));
-            }
+        if !self.entity_data.is_empty() {
+            bundle.add(CSetEntityData::new(entity_id, self.entity_data));
+        }
 
-            if !self.equipment.is_empty() {
-                bundle.add(CSetEquipment::new(entity_id, self.equipment));
-            }
+        if !self.attributes.is_empty() {
+            bundle.add(CUpdateAttributes::new(entity_id, self.attributes));
+        }
 
-            for packet in self.passenger_packets {
-                bundle.add(packet);
-            }
+        if !self.equipment.is_empty() {
+            bundle.add(CSetEquipment::new(entity_id, self.equipment));
+        }
 
-            if let Some(packet) = self.entity_link_packet {
-                bundle.add(packet);
-            }
-        });
+        for packet in self.passenger_packets {
+            bundle.add(packet);
+        }
+
+        if let Some(packet) = self.entity_link_packet {
+            bundle.add(packet);
+        }
     }
 }
 
