@@ -42,10 +42,6 @@ use crate::moderation::format::render;
 /// Every how many ticks the clients are shown the beds again: one that came into the world
 /// or loaded the chunk since has the real block there.
 const SHOW_BEDS_EVERY_TICKS: u64 = 20;
-/// How many ticks after lying down the player is told again where they are. Their client
-/// moved them into the bed at the bottom of the world when it heard of it, and looks out
-/// from there; not every client then reports the move for the server to correct it.
-const PUT_BACK_AFTER_TICKS: u8 = 3;
 
 /// One lying player.
 struct Lying {
@@ -55,8 +51,6 @@ struct Lying {
     bed: BlockPos,
     /// The bed they are shown.
     state: BlockStateId,
-    /// In how many ticks their client is put back where they lie, if it was not yet.
-    put_back_in: Option<u8>,
 }
 
 static LYING: SyncMutex<Option<FxHashMap<Uuid, Lying>>> = SyncMutex::new(None);
@@ -115,17 +109,6 @@ fn get_up(player: &Player, lay: &Lying) {
     lay.hide_bed();
 }
 
-/// Tells the client of `player` where they really lie.
-fn put_back(player: &Player) {
-    let (yaw, pitch) = player.rotation();
-    if let Err(error) = player.teleport(player.position(), yaw, pitch) {
-        log::warn!(
-            "Could not put lying {} back in place: {error}",
-            player.gameprofile.name()
-        );
-    }
-}
-
 /// Keeps the beds shown and tidies up after the players who got up.
 struct LyingDown;
 
@@ -159,13 +142,6 @@ impl ServerJob for LyingDown {
             if show_beds {
                 show(&lay.world, lay.bed, lay.state);
             }
-            lay.put_back_in = match lay.put_back_in {
-                Some(0) => {
-                    put_back(player);
-                    None
-                }
-                waits => waits.map(|ticks| ticks - 1),
-            };
             true
         });
         JobPoll::Pending
@@ -193,15 +169,7 @@ fn lay_command(context: CommandContext<'_>) -> Result<i32, CommandError> {
     player.set_forced_pose(Some(EntityPose::Sleeping));
     player.set_sleeping_pos(bed);
     player.set_velocity(glam::DVec3::ZERO);
-    lying.insert(
-        player.uuid(),
-        Lying {
-            world,
-            bed,
-            state,
-            put_back_in: Some(PUT_BACK_AFTER_TICKS),
-        },
-    );
+    lying.insert(player.uuid(), Lying { world, bed, state });
     player.send_overlay_message(&render(
         "&7Чтобы встать, покинь кровать или введи /lay",
         &[],
