@@ -2,6 +2,7 @@ use super::{
     CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
     EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
+use crate::player::connection::packets_are_tapped;
 
 impl World {
     /// Broadcasts a signed chat message to all players in the world.
@@ -275,6 +276,7 @@ impl World {
             return;
         };
 
+        self.record_about(entity_id, &encoded);
         for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
             if excluded_player_ids.contains(&player_id) {
                 continue;
@@ -312,6 +314,7 @@ impl World {
         packet: EncodedPacket,
         exclude: Option<i32>,
     ) {
+        self.record_about(entity_id, &packet);
         for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
             if Some(player_id) == exclude {
                 continue;
@@ -319,6 +322,18 @@ impl World {
             if let Some(player) = self.players.get_by_entity_id(player_id) {
                 player.connection.send_encoded(packet.clone());
             }
+        }
+    }
+
+    /// What the players tracking `entity_id` are told also goes to the recording of that
+    /// player, if it is one being recorded: a client is not sent packets about itself, and a
+    /// replay needs them. Not vanilla. Movement is left out, the recorder writes its own.
+    fn record_about(&self, entity_id: i32, packet: &EncodedPacket) {
+        if !packets_are_tapped() {
+            return;
+        }
+        if let Some(player) = self.players.get_by_entity_id(entity_id) {
+            player.connection.record(packet);
         }
     }
 

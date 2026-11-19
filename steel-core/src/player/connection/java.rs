@@ -528,6 +528,11 @@ pub fn set_packet_tap_source(source: &'static dyn PacketTapSource) -> bool {
     PACKET_TAP_SOURCE.set(source).is_ok()
 }
 
+/// Whether a source of packet taps is installed, so some connection may be recorded.
+pub(crate) fn packets_are_tapped() -> bool {
+    PACKET_TAP_SOURCE.get().is_some()
+}
+
 /// Gives the connection of `player` its tap, if the installed source has one for them.
 pub(crate) fn tap_player(player: &Arc<Player>) {
     let PlayerConnection::Java(connection) = &*player.connection else {
@@ -1207,6 +1212,12 @@ impl NetworkConnection for JavaConnection {
 
     fn closed(&self) -> bool {
         self.cancel_token.is_cancelled()
+    }
+
+    fn record(&self, packet: &EncodedPacket) {
+        if let Some(tap) = self.tap.get() {
+            tap.queued(packet);
+        }
     }
 }
 

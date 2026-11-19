@@ -11,6 +11,7 @@
 //! stopped server left unpacked is packed at the next start.
 
 pub mod mcpr;
+mod own;
 
 use std::{
     fs::{self, File},
@@ -44,7 +45,10 @@ use steel_registry::packets::CURRENT_MC_PROTOCOL;
 use steel_utils::{FrontVec, MC_VERSION};
 use uuid::Uuid;
 
-use self::mcpr::Meta;
+use self::{
+    mcpr::Meta,
+    own::{OwnPlayers, Recorded},
+};
 use crate::config;
 
 /// The config module: `config/minehouse/replay.toml`.
@@ -112,7 +116,9 @@ enum Event {
 /// Sends the packets of one connection to the writer.
 struct Tap {
     id: u64,
+    player: Uuid,
     events: Sender<Event>,
+    recorded: Recorded,
 }
 
 impl PacketTap for Tap {
@@ -128,6 +134,7 @@ impl PacketTap for Tap {
 
 impl Drop for Tap {
     fn drop(&mut self) {
+        self.recorded.lock().remove(&self.player);
         let _ = self.events.send(Event::Stop { id: self.id });
     }
 }
@@ -137,6 +144,7 @@ struct Recorder {
     server: Weak<Server>,
     events: Sender<Event>,
     next: AtomicU64,
+    recorded: Recorded,
 }
 
 fn encoded<P: ClientPacket>(packet: &P, protocol: ConnectionProtocol) -> Option<Vec<u8>> {
@@ -185,9 +193,13 @@ impl PacketTapSource for Recorder {
                 first,
             })
             .ok()?;
+        let player = player.gameprofile.id();
+        self.recorded.lock().insert(player);
         Some(Arc::new(Tap {
             id,
+            player,
             events: self.events.clone(),
+            recorded: Arc::clone(&self.recorded),
         }))
     }
 }
@@ -539,12 +551,15 @@ pub fn start(server: &Arc<Server>) {
         log::warn!("MineHouse replay: no writer thread, nobody is recorded: {error}");
         return;
     }
+    let players = Recorded::default();
     let recorder: &'static Recorder = Box::leak(Box::new(Recorder {
         server: Arc::downgrade(server),
         events,
         next: AtomicU64::new(0),
+        recorded: Arc::clone(&players),
     }));
     if set_packet_tap_source(recorder) {
+        server.jobs.spawn(OwnPlayers::new(players));
         log::info!(
             "MineHouse replay: recording players to {}",
             folder.display()
