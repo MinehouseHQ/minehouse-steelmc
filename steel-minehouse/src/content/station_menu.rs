@@ -40,7 +40,7 @@ use super::{
     map_view::MapView,
     metro, nametags,
     rail_graph::{self, Edge},
-    ride, stations, trains,
+    ride, sitting, stations, trains,
     transfers::{self, Track},
 };
 use crate::{
@@ -955,6 +955,7 @@ impl PlayerInputObserver for Input {
         end_lock::clicked(player, world, hand, hit)
             .or_else(|| anvil_repair::clicked(player, world, hand, hit))
             .or_else(|| markup::clicked(player, world, hand, hit))
+            .or_else(|| sitting::clicked(player, world, hand, hit))
     }
 
     fn carried_item(&self, player: &Player, from: u8, to: u8) {
