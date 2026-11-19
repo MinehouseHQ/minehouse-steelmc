@@ -1,5 +1,7 @@
 use crate::entity::SharedEntity;
+use crate::server::tab_list;
 use steel_protocol::packets::game::CServerData;
+use steel_utils::codec::VarInt;
 use steel_utils::translations;
 use text_components::TextComponent;
 
@@ -723,7 +725,7 @@ impl Server {
         });
     }
 
-    pub(super) fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
+    pub(crate) fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.online_players.iter_players(|_, player| {
             player.send_packet(packet(player));
             true
@@ -740,7 +742,9 @@ impl Server {
             if existing_player.gameprofile.id() == player.gameprofile.id() {
                 return true;
             }
-            entries.push(Self::player_info_initializing_entry(existing_player));
+            let mut entry = Self::player_info_initializing_entry(existing_player);
+            entry.game_mode = Some(VarInt(tab_list::shown(player, existing_player) as i32));
+            entries.push(entry);
             true
         });
 
@@ -751,10 +755,27 @@ impl Server {
             });
         }
 
-        self.broadcast_to_online(CPlayerInfoUpdate {
-            actions: PLAYER_INFO_INIT_ACTIONS,
-            entries: vec![Self::player_info_initializing_entry(player)],
-        });
+        self.broadcast_player_info_entry(player);
+    }
+
+    /// Tells everyone the full tab entry of `player`, each with the game mode they are shown.
+    fn broadcast_player_info_entry(&self, player: &Player) {
+        let entry = Self::player_info_initializing_entry(player);
+        if tab_list::observed() {
+            self.broadcast_to_online_with(|viewer| {
+                let mut entry = entry.clone();
+                entry.game_mode = Some(VarInt(tab_list::shown(viewer, player) as i32));
+                CPlayerInfoUpdate {
+                    actions: PLAYER_INFO_INIT_ACTIONS,
+                    entries: vec![entry],
+                }
+            });
+        } else {
+            self.broadcast_to_online(CPlayerInfoUpdate {
+                actions: PLAYER_INFO_INIT_ACTIONS,
+                entries: vec![entry],
+            });
+        }
     }
 
     /// The full tab entry of `player`, with the profile clients are shown and its chat session.
@@ -783,10 +804,7 @@ impl Server {
             return;
         }
         self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
-        self.broadcast_to_online(CPlayerInfoUpdate {
-            actions: PLAYER_INFO_INIT_ACTIONS,
-            entries: vec![Self::player_info_initializing_entry(player)],
-        });
+        self.broadcast_player_info_entry(player);
         let world = player.get_world();
         let entity: SharedEntity = Arc::clone(player) as SharedEntity;
         world

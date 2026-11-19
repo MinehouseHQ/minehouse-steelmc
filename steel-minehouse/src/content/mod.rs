@@ -31,6 +31,8 @@ pub mod metro_guides;
 mod minecart_names;
 mod nametags;
 mod papirosa;
+mod phantoms;
+mod ping_wheel;
 mod rail_graph;
 mod recipes;
 mod ride;
@@ -39,6 +41,7 @@ mod silent_tags;
 mod speed;
 mod station_menu;
 pub(crate) mod stations;
+mod tab_spectators;
 mod trains;
 mod transfers;
 mod waxed_frames;
@@ -64,7 +67,7 @@ use steel_core::{
         death_observer::set_player_death_observer, input_observer::set_player_input_observer,
     },
     scoreboard::set_team_packet_observer,
-    server::Server,
+    server::{Server, tab_list::set_tab_mode_observer},
     set_portal_shape_observer,
     world::set_sleep_observer,
 };
@@ -498,6 +501,8 @@ pub fn start_jobs(server: &Server) {
     see::start(server);
     guides::start(server);
     creative_tabs::start(server);
+    phantoms::start(server);
+    ping_wheel::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.
@@ -521,6 +526,9 @@ pub fn start() {
         trains::count()
     );
     map_markers::changed();
+    if !set_tab_mode_observer(&tab_spectators::TAB_SPECTATORS) {
+        log::warn!("MineHouse tab: tab modes are already observed, spectators show as such");
+    }
     if !set_sleep_observer(&afk::AFK_SLEEP) {
         log::warn!("MineHouse AFK: sleep is already observed, AFK players count as awake");
     }
