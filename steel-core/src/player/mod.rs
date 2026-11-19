@@ -391,7 +391,7 @@ impl Player {
     /// Vanilla `ServerPlayer.doTick`'s sleeping check: wakes the player when
     /// the bed no longer allows sleep or is gone or out of reach.
     fn wake_if_bed_invalid(&self) {
-        if !self.is_sleeping() {
+        if !self.is_sleeping() || self.lies_without_bed() {
             return;
         }
         let world = self.get_world();

@@ -1,49 +1,115 @@
 //! Lying down (the `/lay` of the mod `FSit` the Fabric server had).
 //!
-//! `/lay` lays the player down where they stand, as others see it: in the pose of a
-//! sleeping player, without a bed, without the night passing and without the "leave bed"
-//! screen. Sneaking, a step aside or `/lay` again gets them up. A client decides its own
-//! pose, so in their own third person view the player still stands.
+//! `/lay` lays the player down where they stand, the way `FSit` does it for a client without
+//! the mod: the player sleeps without a bed. They get the sleeping pose and a sleeping
+//! position at the bottom of the world under them, and every client in the world is shown a
+//! bed there, which only tells it which way the sleeper lies. The player's own client then
+//! shows them lying and offers its "leave bed" button. The night does not pass for it.
+//!
+//! The button, `/lay` again, damage or anything else that wakes a sleeper gets them up.
 
-use glam::DVec3;
+use std::sync::Arc;
+
 use rustc_hash::FxHashMap;
 use steel_core::{
     command::{
         CommandContext, CommandError, CommandNode, CommandRegistration, CommandRegistrationError,
         CommandRegistry, literal,
     },
-    entity::Entity as _,
+    entity::{Entity as _, LivingEntity as _},
+    player::Player,
     server::{
         Server,
         jobs::{JobPoll, ServerJob, ServerJobContext},
     },
+    world::World,
 };
-use steel_registry::entity_data::EntityPose;
-use steel_utils::{Identifier, locks::SyncMutex};
+use steel_protocol::packets::game::CBlockUpdate;
+use steel_registry::{
+    blocks::{
+        block_state_ext::BlockStateExt as _,
+        properties::{BedPart, BlockStateProperties},
+    },
+    entity_data::EntityPose,
+    vanilla_blocks,
+};
+use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, locks::SyncMutex};
 use uuid::Uuid;
 
 use super::sitting;
 use crate::moderation::format::render;
 
-/// How far a lying player may be moved before they are up again, blocks.
-const STAYS_WITHIN: f64 = 0.2;
+/// Every how many ticks the clients are shown the beds again: one that came into the world
+/// or loaded the chunk since has the real block there.
+const SHOW_BEDS_EVERY_TICKS: u64 = 20;
 
 /// One lying player.
 struct Lying {
-    /// Where they lay down.
-    at: DVec3,
-    /// Whether they sneaked on the last tick.
-    sneaking: bool,
+    /// The world they lay down in.
+    world: Arc<World>,
+    /// Where the clients are shown a bed.
+    bed: BlockPos,
+    /// The bed they are shown.
+    state: BlockStateId,
 }
 
 static LYING: SyncMutex<Option<FxHashMap<Uuid, Lying>>> = SyncMutex::new(None);
 
-/// Whether a player lying at `at` and now at `now` still lies.
-fn stays(at: DVec3, now: DVec3) -> bool {
-    at.distance_squared(now) <= STAYS_WITHIN * STAYS_WITHIN
+/// Which way the bed of a sleeper who looks along `yaw` faces, so that they lie the way
+/// they stood (as `FSit` turns it).
+fn bed_facing(yaw: f32) -> Direction {
+    Direction::from_yaw(yaw).opposite()
 }
 
-/// Gets the lying players up once they sneak, move or cannot lie any more.
+/// The bed a client is shown for a sleeper who looks along `yaw`: its head.
+fn bed_for(yaw: f32) -> BlockStateId {
+    vanilla_blocks::BLACK_BED
+        .default_state()
+        .set_value(&BlockStateProperties::HORIZONTAL_FACING, bed_facing(yaw))
+        .set_value(&BlockStateProperties::BED_PART, BedPart::Head)
+}
+
+/// Where the bed of `player` is shown: in their block column, at the bottom of the
+/// world, out of sight.
+fn bed_under(world: &World, player: &Player) -> BlockPos {
+    let at = player.block_position();
+    BlockPos::new(at.x(), world.get_min_y(), at.z())
+}
+
+fn show(world: &World, pos: BlockPos, block_state: BlockStateId) {
+    world.players.iter_players(|_, player| {
+        player.send_packet(CBlockUpdate { pos, block_state });
+        true
+    });
+}
+
+impl Lying {
+    /// Whether `player` still lies as they lay down.
+    fn goes_on(&self, player: &Player) -> bool {
+        player.lies_without_bed()
+            && player.sleeping_pos() == Some(self.bed)
+            && Arc::ptr_eq(&self.world, &player.get_world())
+    }
+
+    /// Shows the clients the block that is really there.
+    fn hide_bed(&self) {
+        show(&self.world, self.bed, self.world.get_block_state(self.bed));
+    }
+}
+
+/// Gets `player` up, if they still lie.
+fn get_up(player: &Player, lay: &Lying) {
+    let lies = lay.goes_on(player);
+    if player.lies_without_bed() {
+        player.set_forced_pose(None);
+    }
+    if lies {
+        player.stop_sleeping();
+    }
+    lay.hide_bed();
+}
+
+/// Keeps the beds shown and tidies up after the players who got up.
 struct LyingDown;
 
 impl ServerJob for LyingDown {
@@ -56,21 +122,27 @@ impl ServerJob for LyingDown {
             return JobPoll::Pending;
         };
         let players = server.get_players();
+        let show_beds = context.tick_count.is_multiple_of(SHOW_BEDS_EVERY_TICKS);
         lying.retain(|uuid, lay| {
-            let Some(player) = players.iter().find(|player| player.uuid() == *uuid) else {
+            let player = players.iter().find(|player| player.uuid() == *uuid);
+            // Woken by the button, by damage, by a teleport: the pose is all that is left.
+            let Some(player) = player.filter(|player| lay.goes_on(player)) else {
+                if let Some(player) = player
+                    && player.lies_without_bed()
+                {
+                    player.set_forced_pose(None);
+                }
+                lay.hide_bed();
                 return false;
             };
-            let sneaked = player.is_crouching() && !lay.sneaking;
-            lay.sneaking = player.is_crouching();
-            // A respawned player is a new one, without the pose.
-            let goes_on = !sneaked
-                && player.forced_pose() == Some(EntityPose::Sleeping)
-                && sitting::may_sit(player)
-                && stays(lay.at, player.position());
-            if !goes_on && player.forced_pose() == Some(EntityPose::Sleeping) {
-                player.set_forced_pose(None);
+            if player.is_dead_or_dying() {
+                get_up(player, lay);
+                return false;
             }
-            goes_on
+            if show_beds {
+                show(&lay.world, lay.bed, lay.state);
+            }
+            true
         });
         JobPoll::Pending
     }
@@ -83,22 +155,25 @@ fn lay_command(context: CommandContext<'_>) -> Result<i32, CommandError> {
     };
     let mut lying = LYING.lock();
     let lying = lying.get_or_insert_default();
-    if lying.remove(&player.uuid()).is_some() {
-        player.set_forced_pose(None);
+    if let Some(lay) = lying.remove(&player.uuid()) {
+        get_up(player, &lay);
         return Ok(1);
     }
     if player.forced_pose().is_some() || !sitting::may_sit(player) || !player.on_ground() {
         return Err(CommandError::from("Здесь и сейчас не лечь."));
     }
+    let world = player.get_world();
+    let bed = bed_under(&world, player);
+    let state = bed_for(player.rotation().0);
+    show(&world, bed, state);
     player.set_forced_pose(Some(EntityPose::Sleeping));
-    lying.insert(
-        player.uuid(),
-        Lying {
-            at: player.position(),
-            sneaking: player.is_crouching(),
-        },
-    );
-    player.send_overlay_message(&render("&7Шифт, чтобы встать", &[]));
+    player.set_sleeping_pos(bed);
+    player.set_velocity(glam::DVec3::ZERO);
+    lying.insert(player.uuid(), Lying { world, bed, state });
+    player.send_overlay_message(&render(
+        "&7Чтобы встать, покинь кровать или введи /lay",
+        &[],
+    ));
     Ok(1)
 }
 
@@ -123,11 +198,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_step_aside_gets_a_lying_player_up() {
-        let at = DVec3::new(10.5, 64.0, -3.5);
-        assert!(stays(at, at));
-        assert!(stays(at, at + DVec3::new(0.1, 0.0, 0.1)));
-        assert!(!stays(at, at + DVec3::new(0.3, 0.0, 0.0)));
-        assert!(!stays(at, at + DVec3::new(0.0, -1.0, 0.0)));
+    fn the_bed_lies_the_way_the_player_stood() {
+        // Yaw 0 looks south, yaw 90 west.
+        assert_eq!(bed_facing(0.0), Direction::North);
+        assert_eq!(bed_facing(90.0), Direction::East);
+        assert_eq!(bed_facing(-90.0), Direction::West);
     }
 }

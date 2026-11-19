@@ -174,6 +174,15 @@ impl Player {
         self.default_living_on_climbable()
     }
 
+    /// Whether an extension laid the player down ([`Self::set_forced_pose`] with the sleeping
+    /// pose): they have a sleeping position, so their client lies down too, but no bed. Such
+    /// a player is not woken for the missing bed and does not count as sleeping when the
+    /// night is skipped. Not vanilla.
+    #[must_use]
+    pub fn lies_without_bed(&self) -> bool {
+        self.forced_pose() == Some(EntityPose::Sleeping)
+    }
+
     /// Sets the player's fall flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
         LivingEntity::set_fall_flying(self, fall_flying);
