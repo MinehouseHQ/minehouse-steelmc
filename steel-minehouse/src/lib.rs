@@ -38,6 +38,7 @@ pub mod site;
 pub mod skins;
 pub mod stats;
 pub mod tab;
+pub mod twitch;
 pub mod villagers;
 pub mod voice;
 
@@ -119,6 +120,8 @@ impl Minehouse {
         // And who has Nitro (colored nicknames in the tab list and chat).
         if let Some(auth) = &setup.auth {
             nitro::start(auth.site.clone(), auth.config.server_id.clone());
+            // And who streams on Twitch now.
+            twitch::start(server, auth.site.clone());
         }
         // So do the statistics of the players go to it.
         let stats = setup
