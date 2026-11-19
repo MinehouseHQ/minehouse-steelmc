@@ -41,7 +41,7 @@ use steel_protocol::{
     packets::{config::CFinishConfiguration, login::CLoginFinished},
     utils::ConnectionProtocol,
 };
-use steel_registry::packets::CURRENT_MC_PROTOCOL;
+use steel_registry::packets::{CURRENT_MC_PROTOCOL, play::C_SHOW_DIALOG};
 use steel_utils::{FrontVec, MC_VERSION};
 use uuid::Uuid;
 
@@ -396,6 +396,11 @@ impl Writer {
         let wrote = mcpr::unframed(frame, recording.compressed)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "a broken frame"))
             .and_then(|packet| {
+                // The player closed the dialog on their side, which no packet says: in a
+                // replay it would stay open over everything to the end.
+                if mcpr::id(&packet) == Some(C_SHOW_DIALOG) {
+                    return Ok(());
+                }
                 let millis = at.saturating_duration_since(recording.began).as_millis();
                 recording.last = u32::try_from(millis).unwrap_or(u32::MAX);
                 recording.written += packet.len() as u64 + 8;
@@ -632,6 +637,17 @@ mod tests {
         let player = Uuid::from_u128(7);
         writer.start(1, "Steve", player, &[vec![2, 1], vec![3]]);
         writer.packet(1, Instant::now(), &frame(&[0x2B, 9, 9]));
+        // The id as a two-byte `VarInt`, then a field.
+        let dialog = [
+            u8::try_from(C_SHOW_DIALOG & 0x7F).unwrap_or_default() | 0x80,
+            u8::try_from(C_SHOW_DIALOG >> 7).unwrap_or_default(),
+            0,
+        ];
+        assert_eq!(mcpr::id(&dialog), Some(C_SHOW_DIALOG));
+        writer.packet(1, Instant::now(), &frame(&dialog));
+        let written = writer.recordings.get(&1).map(|recording| recording.written);
+        // Two packets of the start and one of the play: the dialog is left out.
+        assert_eq!(written, Some((2 + 8) + (1 + 8) + (3 + 8)));
         writer.stop(1);
         let first: Vec<Finished> = to_pack.try_iter().collect();
         assert_eq!(first.len(), 1);
