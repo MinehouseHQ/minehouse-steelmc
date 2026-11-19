@@ -34,6 +34,12 @@ fn var_int(bytes: &[u8]) -> Option<(usize, &[u8])> {
     None
 }
 
+/// The id an unframed packet begins with.
+#[must_use]
+pub fn id(packet: &[u8]) -> Option<i32> {
+    var_int(packet).and_then(|(id, _)| i32::try_from(id).ok())
+}
+
 /// The packet inside a frame the server queued for a client: its id and fields. `compressed`
 /// is whether the connection compresses, so whether the frame says how long the packet is
 /// when it is not deflated. `None` if the frame is broken.
