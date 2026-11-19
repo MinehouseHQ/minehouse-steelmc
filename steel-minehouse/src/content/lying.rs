@@ -43,7 +43,7 @@ use crate::moderation::format::render;
 /// or loaded the chunk since has the real block there.
 const SHOW_BEDS_EVERY_TICKS: u64 = 20;
 /// How many ticks after lying down the player is told again where they are. Their client
-/// moved them into the bed at the bottom of the world when it learnt of it, and looks out
+/// moved them into the bed at the bottom of the world when it heard of it, and looks out
 /// from there; not every client then reports the move for the server to correct it.
 const PUT_BACK_AFTER_TICKS: u8 = 3;
 
