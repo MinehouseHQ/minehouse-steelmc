@@ -1032,7 +1032,16 @@ pub(crate) fn start_riding_entities_with(
         return false;
     }
 
-    if !entity_to_ride.entity_type().can_serialize {
+    // Vanilla lets nothing ride what is not saved, which is a player. A forced display may:
+    // a label over a head rides its player. `/ride` refuses a player before it gets here.
+    let display = [
+        &vanilla_entities::TEXT_DISPLAY,
+        &vanilla_entities::ITEM_DISPLAY,
+        &vanilla_entities::BLOCK_DISPLAY,
+    ]
+    .contains(&passenger.entity_type());
+    let label_on_player = force && display && entity_to_ride.as_player().is_some();
+    if !entity_to_ride.entity_type().can_serialize && !label_on_player {
         return false;
     }
 
