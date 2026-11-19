@@ -17,6 +17,7 @@ mod chapter_intro;
 mod cloud;
 mod commands;
 mod couplings;
+mod crawling;
 mod creative_tabs;
 mod end_lock;
 mod first_join;
@@ -24,6 +25,7 @@ mod flight;
 pub mod herb_guides;
 mod herbs;
 mod leaf_decay;
+mod lying;
 pub mod map_markers;
 mod map_view;
 mod metro;
@@ -480,6 +482,8 @@ pub fn register(registry: &mut CommandRegistry) -> Result<(), CommandRegistratio
     ride::register(registry)?;
     nametags::register(registry)?;
     sitting::register(registry)?;
+    crawling::register(registry)?;
+    lying::register(registry)?;
     admin_mode::register(registry)?;
     see::register(registry)?;
     transfer::register(registry)?;
@@ -506,6 +510,8 @@ pub fn start_jobs(server: &Server) {
     phantoms::start(server);
     ping_wheel::start(server);
     sitting::start(server);
+    crawling::start(server);
+    lying::start(server);
 }
 
 /// Says in the log what of ours the built registry holds.

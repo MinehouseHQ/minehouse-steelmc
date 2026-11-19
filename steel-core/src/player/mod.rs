@@ -240,6 +240,8 @@ pub struct Player {
     /// lock. Mobs and natural spawning read it for every player many times a
     /// tick (spectator checks), where taking the mutex dominated the profile.
     current_game_mode: AtomicI8,
+    /// The pose an extension keeps the player in ([`Player::set_forced_pose`]).
+    forced_pose: SyncMutex<Option<EntityPose>>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: Shared<PlayerInventory>,
@@ -782,6 +784,7 @@ impl Player {
             requested_debug_subscriptions: SyncMutex::new(Vec::new()),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             current_game_mode: AtomicI8::new(GameType::Survival as i8),
+            forced_pose: SyncMutex::new(None),
             inventory: Arc::clone(&inventory),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             ender_chest_inventory,
