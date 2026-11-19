@@ -1,6 +1,6 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
@@ -41,7 +41,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError}
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use crate::player::connection::NetworkConnection;
+use crate::player::connection::{NetworkConnection, PlayerConnection};
 use crate::player::{Player, PlayerSession};
 use crate::server::Server;
 
@@ -506,8 +506,46 @@ struct KeepAliveTracker {
     alive_id: u64,
 }
 
+/// Sees every play packet queued for one Java client, in the order they are queued: a
+/// recorder of what the player was shown. Not vanilla. It runs on whatever thread sends the
+/// packet, so it has to hand the packet on and return.
+pub trait PacketTap: Send + Sync {
+    /// `packet` was queued for the client, framed and compressed as the client gets it.
+    fn queued(&self, packet: &EncodedPacket);
+}
+
+/// Decides which players get a [`PacketTap`].
+pub trait PacketTapSource: Send + Sync {
+    /// The tap for `player`, who is about to be sent the play login packet. `None` leaves
+    /// the connection alone.
+    fn tap_for(&self, player: &Arc<Player>) -> Option<Arc<dyn PacketTap>>;
+}
+
+static PACKET_TAP_SOURCE: OnceLock<&'static dyn PacketTapSource> = OnceLock::new();
+
+/// Installs the source of packet taps. Returns `false` if one is already installed.
+pub fn set_packet_tap_source(source: &'static dyn PacketTapSource) -> bool {
+    PACKET_TAP_SOURCE.set(source).is_ok()
+}
+
+/// Gives the connection of `player` its tap, if the installed source has one for them.
+pub(crate) fn tap_player(player: &Arc<Player>) {
+    let PlayerConnection::Java(connection) = &*player.connection else {
+        return;
+    };
+    if let Some(tap) = PACKET_TAP_SOURCE
+        .get()
+        .and_then(|source| source.tap_for(player))
+    {
+        // A connection keeps the tap it has: a respawned player is on the same one.
+        let _ = connection.tap.set(tap);
+    }
+}
+
 /// A connection to a Java client.
 pub struct JavaConnection {
+    /// Sees the packets queued for the client ([`PacketTap`]).
+    tap: OnceLock<Arc<dyn PacketTap>>,
     outgoing_packets: UnboundedSender<OutboundPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
@@ -530,6 +568,7 @@ impl JavaConnection {
         session: Arc<PlayerSession>,
     ) -> Self {
         Self {
+            tap: OnceLock::new(),
             outgoing_packets,
             cancel_token,
             compression,
@@ -667,6 +706,9 @@ impl JavaConnection {
     pub fn send_packet<P: ClientPacket>(&self, packet: P) {
         let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
+        if let Some(tap) = self.tap.get() {
+            tap.queued(&packet);
+        }
         if self
             .outgoing_packets
             .send(OutboundPacket::Packet(packet))
@@ -681,6 +723,9 @@ impl JavaConnection {
     /// # Panics
     /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
+        if let Some(tap) = self.tap.get() {
+            tap.queued(&packet);
+        }
         if self
             .outgoing_packets
             .send(OutboundPacket::Packet(packet))

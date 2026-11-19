@@ -38,7 +38,8 @@ impl Server {
 /// Vanilla `LevelStorageAccess.estimateDiskSpace`: the usable bytes of the save
 /// directory's file system, or `u64::MAX` when it cannot be read.
 #[cfg(unix)]
-pub(super) fn usable_space(path: &Path) -> u64 {
+#[must_use]
+pub fn usable_space(path: &Path) -> u64 {
     let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
         return u64::MAX;
     };
@@ -55,7 +56,7 @@ pub(super) fn usable_space(path: &Path) -> u64 {
 
 /// Vanilla `LevelStorageAccess.estimateDiskSpace` without a file system query.
 #[cfg(not(unix))]
-pub(super) fn usable_space(_path: &Path) -> u64 {
+pub fn usable_space(_path: &Path) -> u64 {
     u64::MAX
 }
 

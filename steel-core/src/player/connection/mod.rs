@@ -5,9 +5,10 @@
 
 mod java;
 
+pub(crate) use java::tap_player;
 pub use java::{
     BundleBuilder, JavaConnection, JavaNetworkReader, JavaNetworkWriter, JavaTransportRead,
-    JavaTransportWrite, OutboundPacket,
+    JavaTransportWrite, OutboundPacket, PacketTap, PacketTapSource, set_packet_tap_source,
 };
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
 

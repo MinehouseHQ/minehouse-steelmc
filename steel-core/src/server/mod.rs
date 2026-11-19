@@ -4,6 +4,7 @@ mod broadcasting;
 pub mod chat_interceptor;
 mod debug_subscribers;
 mod disk_space;
+pub use disk_space::usable_space;
 mod functions;
 /// Tick-polled server jobs.
 pub mod jobs;
