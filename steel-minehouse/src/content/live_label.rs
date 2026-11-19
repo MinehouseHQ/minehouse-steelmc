@@ -1,6 +1,10 @@
 //! "● LIVE" over the head of a player who streams on Twitch right now, above the name (the
 //! Fabric `LiveOverhead`). Who is live comes from [`twitch`].
 //!
+//! A client draws no name over an entity something rides (`LivingEntityRenderer.shouldShowName`
+//! wants `!isVehicle()`), so the label carries the name itself, on its second line, where the
+//! name tag would be.
+//!
 //! The label is a text display that rides the player. Other players see it, the streamer
 //! does not, and it is empty while the player is invisible, a spectator or sneaking, like
 //! the name. A label without its player is removed, also one a stopped server left behind.
@@ -20,7 +24,7 @@ use steel_core::{
 };
 use steel_registry::{entity_data::Vector3f, vanilla_entities};
 use steel_utils::{WorldAabb, types::GameType};
-use text_components::TextComponent;
+use text_components::{Modifier as _, TextComponent};
 use uuid::Uuid;
 
 use crate::twitch;
@@ -32,10 +36,12 @@ const CHECK_EVERY_TICKS: u64 = 20;
 const SWEEP_EVERY_TICKS: u64 = 200;
 /// How far around a player they are looked for, blocks.
 const SWEEP_RADIUS: f64 = 32.0;
-/// A passenger of a player is at the top of their box, and vanilla draws the name half a
-/// block above it; this is one line higher.
-const ABOVE_HEAD: f32 = 0.8;
-const SCALE: f32 = 0.8;
+/// A passenger of a player is at the top of their box. Vanilla's name tag hangs from half a
+/// block above it, one line (9 pixels at 1/40 of a block) tall: the label's bottom line, the
+/// name, goes there.
+const ABOVE_HEAD: f32 = 0.5 - 9.0 * 0.025;
+/// The name tag's own size.
+const SCALE: f32 = 1.0;
 /// Vanilla `Display.BillboardConstraints.CENTER`.
 const BILLBOARD_CENTER: i8 = 3;
 /// Vanilla `TextDisplay.FLAG_SHADOW`.
@@ -57,6 +63,15 @@ struct Label {
 /// Whether the label of a player in this state shows its text.
 const fn shows(invisible: bool, spectator: bool, sneaking: bool) -> bool {
     !(invisible || spectator || sneaking)
+}
+
+/// The label's text: the overhead line, then the name the label hides.
+fn with_name(overhead: &TextComponent, name: &str) -> TextComponent {
+    TextComponent::plain("").add_children(vec![
+        overhead.clone(),
+        TextComponent::plain("\n"),
+        TextComponent::plain(name.to_owned()),
+    ])
 }
 
 fn attach(player: &Arc<Player>) -> Option<Arc<TextDisplayEntity>> {
@@ -152,7 +167,7 @@ impl LiveLabels {
             if shown != label.shown {
                 label.shown = shown;
                 label.display.set_text(if shown {
-                    text.clone()
+                    with_name(&text, player.gameprofile.name())
                 } else {
                     TextComponent::plain("")
                 });
