@@ -288,13 +288,15 @@ pub fn parse_whitelist(text: &str) -> Result<Whitelisted, SiteError> {
 
 impl SiteClient {
     /// Bans the Discord account behind the nickname, with all its nicknames.
-    /// `duration_seconds` is `None` for a permanent ban.
+    /// `duration_seconds` is `None` for a permanent ban. `no_buyout`: the player can't lift
+    /// this ban for `MineHouse Coins` on the site.
     pub async fn ban(
         &self,
         target: &str,
         reason: &str,
         duration_seconds: Option<u64>,
         by: &Actor,
+        no_buyout: bool,
     ) -> Result<Option<Banned>, SiteError> {
         let body = json!({
             "target": target,
@@ -302,6 +304,7 @@ impl SiteClient {
             "duration_seconds": duration_seconds,
             "by_uuid": by.uuid,
             "by_name": by.name,
+            "no_buyout": no_buyout,
         });
         parse_ban(&self.post_json("/api/mc/ban", body.to_string()).await?)
     }
