@@ -377,6 +377,22 @@ fn whitelist_tree(moderation: Arc<Moderation>) -> CommandNode {
         ))
 }
 
+/// `/ban <ник> [--wipe] --no-buyout [причина]`: the flag rides at the start of the greedy
+/// reason. Returns the reason without it (`None` if nothing is left) and whether it was set.
+fn split_no_buyout(reason: Option<String>) -> (Option<String>, bool) {
+    const FLAG: &str = "--no-buyout";
+    let Some(text) = reason else {
+        return (None, false);
+    };
+    let trimmed = text.trim();
+    let lower = trimmed.to_lowercase();
+    if lower == FLAG || lower.starts_with(&format!("{FLAG} ")) {
+        let rest = trimmed[FLAG.len()..].trim();
+        return ((!rest.is_empty()).then(|| rest.to_owned()), true);
+    }
+    (Some(text), false)
+}
+
 fn ban(
     moderation: &Arc<Moderation>,
     context: CommandContext<'_>,
@@ -404,8 +420,12 @@ fn ban(
     Ok(moderation.call(source, async move {
         let moderation = moderation_task;
         let config = BansConfig::load();
+        let (reason, no_buyout) = split_no_buyout(reason);
         let reason = reason.unwrap_or_else(|| config.default_reason.clone());
-        let result = moderation.site.ban(&target, &reason, seconds, &by).await?;
+        let result = moderation
+            .site
+            .ban(&target, &reason, seconds, &by, no_buyout)
+            .await?;
         let wiped = match &result {
             Some(result) => {
                 let message = result
@@ -429,7 +449,15 @@ fn ban(
             );
             success(
                 source,
-                format!("{} заблокирован {until}: {reason}", result.nickname),
+                format!(
+                    "{} заблокирован {until}: {reason}{}",
+                    result.nickname,
+                    if no_buyout {
+                        " (без разбана за монеты)"
+                    } else {
+                        ""
+                    }
+                ),
                 Some(Color::Red),
                 true,
             );
