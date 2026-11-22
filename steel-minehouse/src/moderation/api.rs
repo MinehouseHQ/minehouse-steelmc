@@ -289,7 +289,7 @@ pub fn parse_whitelist(text: &str) -> Result<Whitelisted, SiteError> {
 impl SiteClient {
     /// Bans the Discord account behind the nickname, with all its nicknames.
     /// `duration_seconds` is `None` for a permanent ban. `no_buyout`: the player can't lift
-    /// this ban for MineHouse Coins on the site.
+    /// this ban for `MineHouse Coins` on the site.
     pub async fn ban(
         &self,
         target: &str,
