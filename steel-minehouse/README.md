@@ -1,7 +1,7 @@
 # steel-minehouse
 
 MineHouse features for our Steel fork: the survival mods from the Fabric server
-(`P5ina/minehouse-landing`, `P5ina/minehouse-mods`), ported one by one. Everything
+(`minehouse/minehouse-landing`, `minehouse/minehouse-mods`), ported one by one. Everything
 MineHouse-specific lives here; `steel-core` only gets small hooks.
 
 Configs are in `config/minehouse/<module>.toml`, created with defaults on first start.
