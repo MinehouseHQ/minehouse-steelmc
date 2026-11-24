@@ -1,7 +1,7 @@
 # MineHouse parity specs
 
 Flint specs for the mechanics our survival server needs. Each spec mirrors a
-GameTest in [minehouse-pumpkin](https://github.com/P5ina/minehouse-pumpkin/tree/master/tools/minehouse-parity)
+GameTest in [minehouse-pumpkin](https://github.com/MinehouseHQ/minehouse-pumpkin/tree/master/tools/minehouse-parity)
 that passes on the vanilla 26.3 server, so a failure here is a gap in SteelMC,
 not in the test.
 
@@ -22,7 +22,7 @@ python3 minehouse-tests/check.py steel-flint/log/flint_summary.json
 Flint checks a state at a fixed tick. GameTests wait until a condition holds,
 so block specs check at the GameTest's tick limit, after the state settles.
 Mob behavior happens at a random tick, so mob specs use `within: N` on the
-assert, which our flint-core fork (P5ina/flint-core) adds: the assert is
+assert, which our flint-core fork (MinehouseHQ/flint-core) adds: the assert is
 retried every tick until it passes or N ticks have run.
 
 `barrel_opens_when_used` and `trapped_chest_powers_when_opened` have no
