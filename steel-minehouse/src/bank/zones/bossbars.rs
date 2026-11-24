@@ -1,6 +1,6 @@
-//! Boss bars for zone auctions (the Fabric `ZoneBossBars`): one bar per announced or running
-//! auction, the soonest three, with a countdown to its start or end, redrawn every second for
-//! everyone online.
+//! Boss bars for zone auctions (the Fabric `ZoneBossBars`): one bar per running auction or one
+//! starting within an hour, the soonest three, with a countdown to its start or end, redrawn every
+//! second for everyone online. An announced auction further than that from its start has no bar yet.
 //!
 //! `/zones bossbar` hides them for one player; who hid them is kept in
 //! `zones-hidden-bars.txt` of the data directory.
@@ -24,6 +24,8 @@ use crate::{bank::Bank, config};
 
 /// The most bars shown at once.
 pub const MAX: usize = 3;
+/// How long before its start an announced auction gets a bar.
+const SHOW_BEFORE: i64 = 3600;
 /// A running auction turns red in its last ten minutes.
 const LAST_SECONDS: i64 = 600;
 const FILE: &str = "zones-hidden-bars.txt";
@@ -139,7 +141,8 @@ fn read_hidden(text: &str) -> BTreeSet<Uuid> {
         .collect()
 }
 
-/// The auctions that get a bar: not over yet, the soonest moment first.
+/// The auctions that get a bar: not over yet and running or starting within [`SHOW_BEFORE`],
+/// the soonest moment first.
 fn shown(zones: &[Zone], now: DateTime<Utc>) -> Vec<&Zone> {
     let mut auctions: Vec<(DateTime<Utc>, &Zone)> = zones
         .iter()
@@ -150,6 +153,8 @@ fn shown(zones: &[Zone], now: DateTime<Utc>) -> Vec<&Zone> {
             }
             let next = if auction.started(now) {
                 auction.ends_at
+            } else if (auction.starts_at - now).num_seconds() > SHOW_BEFORE {
+                return None;
             } else {
                 auction.starts_at
             };
@@ -198,7 +203,8 @@ fn view(zone: &Zone, now: DateTime<Utc>, soon_span: i64) -> View {
             .filter(|announced| *announced < auction.starts_at)
             .map_or(soon_span, |announced| {
                 (auction.starts_at - announced).num_seconds()
-            });
+            })
+            .min(SHOW_BEFORE);
         return View {
             name: format!(
                 "Аукцион «{name}» начнётся через {} · старт {} АР · /zones",
@@ -329,6 +335,13 @@ mod tests {
         ];
         let nums: Vec<i32> = shown(&zones, now()).iter().map(|zone| zone.num).collect();
         assert_eq!(nums, [4, 2, 1]);
+    }
+
+    #[test]
+    fn an_auction_gets_a_bar_only_an_hour_before_its_start() {
+        let zones = [zone(1, 61, 120, None), zone(2, 60, 120, None)];
+        let nums: Vec<i32> = shown(&zones, now()).iter().map(|zone| zone.num).collect();
+        assert_eq!(nums, [2]);
     }
 
     #[test]
