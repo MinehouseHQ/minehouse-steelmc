@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes one Flint spec per mob (every spawn-egg mob, plus giant and illusioner).
 
-Same scenarios as tools/minehouse-parity/mobs.py in minehouse/minehouse-pumpkin,
+Same scenarios as tools/minehouse-parity/mobs.py in MinehouseHQ/minehouse-pumpkin,
 which pass on vanilla 26.3. Mob behavior happens at a random tick, so the
 checks use `within` (our flint-core fork): retried every tick until they pass.
 

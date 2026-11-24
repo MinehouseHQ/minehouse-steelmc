@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes the MineHouse block parity tests as Flint specs.
 
-Same setups as the GameTests in minehouse/minehouse-pumpkin
+Same setups as the GameTests in MinehouseHQ/minehouse-pumpkin
 (tools/minehouse-parity/gen_tests.py), which pass on vanilla 26.3. A GameTest
 waits until its condition holds; here every check runs at the GameTest's
 max_ticks, after the state has settled.
