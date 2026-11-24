@@ -1,7 +1,7 @@
 //! Waxed and invisible item frames (the Fabric `WaxedFrames`).
 //!
-//! Sneaking shears hide or show an item frame while it holds an item; an invisible frame
-//! turns visible again once its item is taken out, so an empty one cannot get lost.
+//! Sneaking shears hide or show an item frame, empty or not; an invisible frame turns visible
+//! again once its item is taken out, so an emptied one cannot get lost.
 //!
 //! Honeycomb waxes an item frame (sneak to put the honeycomb in instead), a sneaking axe
 //! scrapes the wax off, like copper. A waxed frame is vanilla's fixed frame: the item cannot
@@ -102,8 +102,8 @@ impl ItemFrameObserver for WaxedFrames {
         let held = player.inventory.lock().get_item_in_hand(hand).clone();
         let sneaking = player.is_secondary_use_active();
 
-        // Sneaking shears hide or show a frame that holds something, waxed or not.
-        if sneaking && held.is(&vanilla_items::SHEARS) && !frame.item().is_empty() {
+        // Sneaking shears hide or show a frame, empty or not, waxed or not.
+        if sneaking && held.is(&vanilla_items::SHEARS) {
             frame.set_invisible(!frame.is_invisible());
             wear(player, hand);
             sound(frame, &sound_events::ITEM_SHEARS_SNIP);
