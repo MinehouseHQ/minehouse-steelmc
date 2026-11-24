@@ -794,8 +794,8 @@ Waxed and invisible item frames (`content/waxed_frames.rs`, the Fabric `WaxedFra
 honeycomb waxes an item frame (sneak to put the honeycomb in instead) and a sneaking axe
 scrapes the wax off. A waxed frame is vanilla's fixed frame: its item cannot be turned or
 taken and the frame cannot be broken; a right click on it goes to the block it hangs on, so
-a frame on a chest opens the chest. Sneaking shears hide or show a frame that holds an
-item, and a hidden frame shows again once its item is out. `steel-core` has
+a frame on a chest opens the chest. Sneaking shears hide or show a frame, empty or not,
+and a hidden frame shows again once its item is taken out. `steel-core` has
 `ItemFrameObserver` (`display_ui/item_frame.rs`) and `player::game_mode::use_block` for this.
 
 Waxed maps and smithing templates (`content/waxed_items.rs`, the Fabric `MapLock` and
