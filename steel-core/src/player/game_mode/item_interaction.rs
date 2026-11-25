@@ -39,12 +39,27 @@ fn spectator_use_item_on(
 /// The block half of [`use_item_on`]: the block's `use_item_on`, then for the main hand its
 /// `use_without_item`. The held item is not used on the block. `Pass` if the block took
 /// nothing.
+///
+/// For clicks relayed to a block (a waxed item frame passes them to the block it hangs on), so
+/// the click is asked about like a real one first: the world border and, for the main hand, the
+/// world log, which keeps newbies out of other players' containers. `Fail` if refused.
 pub fn use_block(
     player: &Player,
     world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
 ) -> InteractionResult {
+    let pos = hit_result.block_pos;
+    if !world.may_interact(player, pos) {
+        return InteractionResult::Fail;
+    }
+    if hand == InteractionHand::MainHand
+        && let Some(world_log) = player.world_log()
+        && let Some(player) = world.players.get_by_uuid(&player.gameprofile.id())
+        && world_log.block_clicked(&player, world, pos, hit_result.direction, false)
+    {
+        return InteractionResult::Fail;
+    }
     use_block_with_item_flag(player, world, hand, hit_result).0
 }
 
